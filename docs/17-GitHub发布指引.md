@@ -4,11 +4,27 @@
 
 项目本地已经准备好了：
 
-- ✅ Git 仓库已初始化，分支 `main`
-- ✅ 首个提交已创建（`ed2e600`），共 237 个文件
+- ✅ Git 仓库已初始化，分支 `main`，共 3 个提交（最新 `46f4f83`），238 个文件、约 35 MB
+- ✅ 版本标签 `v1.0.0` 已打好
 - ✅ `.gitignore` 已排除 `data/`（你的真实模型库、打印机访问码）、`dist/`、`node_modules/`
-- ✅ 源码里的真实 IP / 序列号 / 访问码已改成示例值
+- ✅ 源码 / README / 文档里的真实内网 IP、设备型号已全部换成示例值（2026-11-21 复查通过）
 - ✅ `LICENSE`（MIT）和第三方许可声明已就位
+- ✅ 完整测试通过：12 套 / 507 条断言 / 0 失败
+- ✅ 发布包已生成：`dist/PrintShelf-1.0.0-portable.zip`（113 MB）、绿色版目录（270 MB）
+
+### 你需要提前准备的东西
+
+| 项目 | 说明 | 是否必须 |
+| --- | --- | --- |
+| GitHub 账号 | https://github.com 免费注册 | 必须 |
+| 用户名 | 会成为 `github.com/用户名`，注册时就定了 | 必须 |
+| 邮箱 | 注册验证用；可用 GitHub 隐私邮箱代替公开 | 必须 |
+| 仓库名 | 建议就叫 `PrintShelf` | 必须 |
+| 仓库地址 | 建完仓库后形如 `https://github.com/用户名/PrintShelf.git` | 必须 |
+| 访问令牌（PAT） | 只有 push 不弹浏览器登录时才需要 | 按需 |
+| 公开还是私有 | Public 别人能看；Private 只有你能看 | 需要决定 |
+
+> 不需要：不需要买任何服务，不需要下载 GitHub Copilot，也不需要把密码告诉任何人。
 
 ---
 
@@ -49,11 +65,15 @@ cd /d/AI工具workbuddy/PrintShelf
 git config user.name "你的GitHub用户名"
 git config user.email "你的注册邮箱"
 
-# 把首个提交也改成你的身份
-git commit --amend --reset-author --no-edit
+# 把已有的 3 个提交全部改成你的身份（不是只改最后一个）
+git rebase --root --exec "git commit --amend --reset-author --no-edit"
 ```
 
+执行后会看到 `Successfully rebased and updated refs/heads/main.`，再用 `git log --format="%an <%ae>"` 确认作者已经变成你。
+
 > 如果不想公开你的真实邮箱，GitHub 提供隐私邮箱：在 GitHub → Settings → Emails → 勾选 "Keep my email addresses private"，会给你一个类似 `12345678+yourname@users.noreply.github.com` 的地址，用它代替上面的注册邮箱。
+>
+> 注意：`v1.0.0` 标签是在改写作者之前打的。如果希望标签也指向改写后的提交，改完作者后执行一次：`git tag -f -a v1.0.0 -m "PrintShelf v1.0.0 — 首个公开版本"`。
 
 ### 2.2 关联远程仓库并推送
 
@@ -73,6 +93,9 @@ git remote add origin https://github.com/你的用户名/PrintShelf.git
 
 # 推送到 GitHub
 git push -u origin main
+
+# 标签不会跟着 main 自动推，单独推一次
+git push origin v1.0.0
 ```
 
 第一次推送会弹出登录窗口：
@@ -98,11 +121,17 @@ git push -u origin main
 GitHub 的 Release 可以放安装包，别人不用装 Node 也能用：
 
 1. 仓库页面右侧 **Releases** → **Create a new release**
-2. Tag version 填 `v1.0.0`，Title 填 `PrintShelf 1.0.0`
-3. 把 `dist/PrintShelf-1.0.0-portable.zip`（约 113 MB）拖进附件区
-4. 写几句说明，点 **Publish release**
+2. **Choose a tag** 里选已经存在的 `v1.0.0`（本地已经打好并会随下面命令推上去）
+3. Title 填 `PrintShelf 1.0.0`
+4. 把 `dist/PrintShelf-1.0.0-portable.zip`（113 MB）拖进附件区
+5. 写几句说明，点 **Publish release**
 
-> 单个附件 GitHub 免费额度是 100 MB 文件上限吗？不是——免费版单文件上限 **100 MB** 会有警告，但实测 113 MB 的 zip 通常也能传；如果传不了，可以把绿色版目录自己用 7-Zip 分卷压缩，或者只传源码让别人自己 `npm install` + `node tools/build-all.js --force` 构建。
+关于大小限制，说清楚免得担心：
+
+- **Release 附件**单文件上限是 **2 GB**，我们的 113 MB 完全没问题。
+- **Git 仓库本体**里单文件超过 **100 MB** 才会被拒绝（要用 Git LFS）；我们的 `dist/` 根本没进仓库（被 `.gitignore` 排除），所以不会触发。
+
+> 如果以后想传绿色版目录（270 MB），建议先用 7-Zip 压成 zip 再传，别传散文件夹。
 
 ---
 
@@ -149,7 +178,9 @@ git push
 
 ```bash
 cd /d/AI工具workbuddy/PrintShelf
-git status --short
+git status --short    # 应该没有 data/ dist/ node_modules/ 开头的文件
+git log --oneline -3  # 应该看到 3 个提交
+git tag -l            # 应该看到 v1.0.0
 ```
 
 输出里如果看到以下任何一项，说明 `.gitignore` 没生效，先别 push：
