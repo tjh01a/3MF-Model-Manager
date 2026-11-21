@@ -202,30 +202,30 @@ function collectRuntimeDeps(rootPkg) {
 
 // ---------------------------------------------------------------- 生成物
 
-const READ_ME_TEXT = `PrintShelf ${VERSION} —— 免安装绿色版使用说明
+const READ_ME_TEXT = `${APP_NAME} ${VERSION} —— 免安装绿色版使用说明
 =====================================================
 
 一、怎么启动
-    双击本文件夹里的 PrintShelf.exe 就能用。
+    双击本文件夹里的 ${APP_NAME}.exe 就能用。
     第一次启动可能要多等几秒（Windows 在检查新程序），之后会快很多。
 
 二、数据存在哪里
-    第一次启动后，程序会自动在「PrintShelf.exe 所在的文件夹」里建一个 data 文件夹。
+    第一次启动后，程序会自动在「${APP_NAME}.exe 所在的文件夹」里建一个 data 文件夹。
     你的模型索引、缩略图、耗材库、打印回执全都存在这里面，不会上传到任何地方。
     备份或换电脑：把整个 data 文件夹复制走即可。
-    注意：不要只把 PrintShelf.exe 单独剪切到别处，那样它会以为自己是全新的，另建一份空 data。
+    注意：不要只把 ${APP_NAME}.exe 单独剪切到别处，那样它会以为自己是全新的，另建一份空 data。
 
 三、安装到桌面 / 开始菜单（可选）
     双击「一键安装.bat」，程序会被安装到：
-        %LOCALAPPDATA%\\Programs\\PrintShelf
-    并在桌面和开始菜单创建 PrintShelf 快捷方式，安装完成后自动启动一次。
+        %LOCALAPPDATA%\\Programs\\${APP_NAME}
+    并在桌面和开始菜单创建 ${APP_NAME} 快捷方式，安装完成后自动启动一次。
     安装版的数据在安装目录下的 data 文件夹里。
     如果不想安装，直接用绿色版也完全一样，数据会留在这个文件夹。
 
 四、怎么卸载
     绿色版：直接删除整个文件夹即可。
             想保留模型库，先把 data 文件夹复制到别处再删。
-    安装版：到安装目录运行「卸载 PrintShelf.bat」。
+    安装版：到安装目录运行「卸载 ${APP_NAME}.bat」。
             桌面和开始菜单的快捷方式会被删除，
             你的 data 目录会被保留，脚本会告诉你它在哪里。
 
@@ -281,7 +281,7 @@ function buildInstallBat() {
     "Write-Host '提示：数据保存在安装目录的 data 文件夹，卸载时会保留。'",
     "Write-Host '卸载：运行安装目录里的「卸载 PrintShelf.bat」。'",
     "Read-Host '按回车键关闭这个窗口'",
-  ].join('\r\n');
+  ].join('\r\n').replace(/PrintShelf/g, APP_NAME);
 
   const encoded = Buffer.from(ps, 'utf16le').toString('base64');
   const bat = [
@@ -298,7 +298,7 @@ function buildInstallBat() {
     ')',
     'endlocal',
     '',
-  ].join('\r\n');
+  ].join('\r\n').replace(/PrintShelf/g, APP_NAME);
 
   fs.writeFileSync(path.join(OUT_DIR, '一键安装.bat'), bat, 'utf8');
 }
@@ -334,7 +334,7 @@ function buildUninstallBat() {
     "Read-Host '按回车键退出'",
     "$self = Join-Path $dest '卸载 PrintShelf.bat'",
     "Start-Process -FilePath $env:ComSpec -ArgumentList @('/c', ('ping -n 4 127.0.0.1 >nul & del /f /q \"' + $self + '\"')) -WindowStyle Hidden",
-  ].join('\r\n');
+  ].join('\r\n').replace(/PrintShelf/g, APP_NAME);
 
   const encoded = Buffer.from(ps, 'utf16le').toString('base64');
   const bat = [
@@ -345,9 +345,9 @@ function buildUninstallBat() {
     'powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ' + encoded,
     'endlocal',
     '',
-  ].join('\r\n');
+  ].join('\r\n').replace(/PrintShelf/g, APP_NAME);
 
-  fs.writeFileSync(path.join(OUT_DIR, '卸载 PrintShelf.bat'), bat, 'utf8');
+  fs.writeFileSync(path.join(OUT_DIR, `卸载 ${APP_NAME}.bat`), bat, 'utf8');
 }
 
 function buildAppPackageJson(depVersions) {

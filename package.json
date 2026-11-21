@@ -1,6 +1,6 @@
 {
-  "name": "printshelf",
-  "productName": "PrintShelf",
+  "name": "3mf-manager",
+  "productName": "3MF模型管理器",
   "version": "1.0.0",
   "description": "本地 3MF 模型库 —— 扫描、分类、预览、去重、一键送切片软件，数据 100% 留在本机",
   "main": "electron/main.js",

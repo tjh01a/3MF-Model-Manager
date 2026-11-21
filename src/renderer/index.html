@@ -5,7 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' shelf: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:;">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <!-- 7 张外部样式表（原 6 张 + motion.css）。启动动画仍内联在 <head>，首帧不依赖它们。 -->
-  <title>PrintShelf · 本地 3MF 模型库</title>
+  <title>3MF模型管理器 · 本地 3MF 模型库</title>
   <!--
     启动动画：内联在 <head> 里，HTML 一解析就能画出来，不等 7 张外部样式表 / ES Modules。
     纯 CSS（transform + opacity），无图片、无 JS 定时器，不阻塞后端初始化。
@@ -88,7 +88,7 @@
     <div class="boot-ring" aria-hidden="true">
       <svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5Z"/><path d="m3 13 9 5 9-5M3 17.5l9 5 9-5"/></svg>
     </div>
-    <div class="boot-title">PrintShelf</div>
+    <div class="boot-title">3MF模型管理器</div>
     <div class="boot-sub">本地 3MF 模型库</div>
     <div class="boot-track" id="boot-track" aria-hidden="true"><i></i></div>
     <div class="boot-hint" id="boot-hint">

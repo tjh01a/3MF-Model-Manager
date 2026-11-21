@@ -350,7 +350,7 @@ function createWindow({ show = true } = {}) {
     frame: false,
     show,
     backgroundColor: '#f7f8fc',
-    title: 'PrintShelf · 本地 3MF 模型库',
+    title: '3MF模型管理器 · 本地 3MF 模型库',
     icon: fs.existsSync(APP_ICON) ? APP_ICON : undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -422,7 +422,7 @@ function showSystemNotification(n) {
   if (!Notification || (typeof Notification.isSupported === 'function' && !Notification.isSupported())) return;
   try {
     const note = new Notification({
-      title: String(n.title || 'PrintShelf'),
+      title: String(n.title || '3MF模型管理器'),
       body: String(n.body || ''),
       icon: fs.existsSync(APP_ICON) ? APP_ICON : undefined,
       silent: false,
