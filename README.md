@@ -20,7 +20,10 @@ npm start         # 启动桌面应用
 
 **方式二（已有桌面快捷方式时）**：直接双击桌面上的 **3MF模型管理器** 快捷方式，双击即开、无黑框。快捷方式指向项目内的 `electron.exe`，因此**不要移动或删除 `PrintShelf` 项目目录**；若要搬走，请先运行 `npm run shortcut` 重建。
 
-**方式三（不想装 Node / 只想拿现成程序）**：下载本仓库 Releases 里的 `3MF模型管理器-1.0.0-portable.zip`，解压后双击 `3MF模型管理器.exe` 即用；或自己运行 `node tools/build-all.js --force` 生成绿色版（详见下文「发给朋友」）。
+**方式三（不想装 Node，直接下载现成程序）**：到本仓库 **Releases** 页面下载：
+
+- **安装版**（推荐）：`3MF-Model-Manager-1.0.0-setup.exe`（80 MB）——双击按向导安装，可自选安装位置，自动建桌面/开始菜单快捷方式，可在「设置 → 应用」里卸载
+- **绿色版**：`3MF-Model-Manager-1.0.0-portable.zip`（113 MB）——解压到任意文件夹，双击 `3MF模型管理器.exe` 即用
 
 环境要求：Windows 10/11、Node.js 20+（仅从源码运行时需要）。图标可用 `npm run icon` 重新生成。
 
@@ -32,18 +35,28 @@ npm start         # 启动桌面应用
 
 ## 发给朋友（安装包 / 绿色版）
 
-不需要装 Node、不需要命令行：
+不需要装 Node、不需要命令行，一条命令全部生成：
 
 ```bash
-node tools/build-all.js --force
+npm run setup:rebuild
+```
+
+也可以分开执行：
+
+```bash
+npm run build      # 生成绿色版目录 + 便携 zip
+npm run setup      # 用已有绿色版编译 Windows 安装包
 ```
 
 | 产物 | 说明 |
 |---|---|
+| `dist/3MF模型管理器-1.0.0-setup.exe` | **安装版**（≈80 MB）。带安装向导：选安装位置、建快捷方式、写卸载信息。压缩率比 zip 更好 |
 | `dist/3MF模型管理器-1.0.0-portable.zip` | 免安装，解压后双击 `3MF模型管理器.exe` 即用（≈113 MB） |
 | `dist/3MF模型管理器-1.0.0-win-x64/` | 绿色版目录（≈270 MB），里面带 `一键安装.bat` / `卸载 3MF模型管理器.bat` / `使用说明.txt` |
 
-- **一键安装**：双击 `一键安装.bat`，复制到 `%LOCALAPPDATA%\Programs\3MF模型管理器`，自动建桌面与开始菜单快捷方式并启动；卸载跑同目录的 `卸载 3MF模型管理器.bat`（保留 data 并提示）。
+- **安装版怎么做的**：用 NSIS 编译。首次运行 `npm run setup` 会自动把 NSIS 便携版（2.3 MB）下载到 `tools/.cache/`，不污染系统、不进 git。安装脚本模板在 `tools/setup-template.nsi`，构建逻辑在 `tools/build-setup.js`。
+- **卸载行为**：安装版卸载时会问「是否保留模型库数据」——选「是」只删程序，保留 `data` 文件夹里的索引和缩略图。
+- **绿色版一键安装**：双击 `一键安装.bat`，复制到 `%LOCALAPPDATA%\Programs\3MF模型管理器`，自动建桌面与开始菜单快捷方式并启动；卸载跑同目录的 `卸载 3MF模型管理器.bat`（保留 data 并提示）。
 - **数据位置**：绿色版的数据在 **exe 同级的 `data/`**——整个文件夹拷走就带走了模型索引、缩略图、耗材与回执；目录不可写（如装进 Program Files）时退回 `%APPDATA%\3MF模型管理器\data`。
 - **没有代码签名**，首次运行 Windows SmartScreen 会提示「未知发布者」，点「更多信息 → 仍要运行」即可。
 - 打包细节与已知限制见 `docs/16-首次启动向导与分发.md`。

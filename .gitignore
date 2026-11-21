@@ -13,6 +13,9 @@ dist/
 # ============ 依赖（别人 clone 后 npm install 即可）============
 node_modules/
 
+# ============ 打包工具缓存（NSIS 便携版，首次 build:setup 自动下载）============
+tools/.cache/
+
 # ============ 日志与临时文件 ============
 *.log
 logs/
