@@ -1,0 +1,400 @@
+/* ==========================================================================
+   PrintShelf · motion.css
+   界面高雅化（降视觉密度）与适度动效。最后一张加载的样式表。
+
+   两条硬约束：
+   1. 所有「简洁化」规则都以 html[data-iconset="lucide"] 开头。
+      切到 ui.iconSet='legacy' 时它们全部失效，界面回到改造前的视觉。
+   2. 所有「新增动效」都由 html[data-motion-effective] 与
+      prefers-reduced-motion 短路。off 档不产生任何新动画。
+   变量一律定义在 base.css（--ease-ui / --dur-*），本文件只使用 var(--*)，
+   不写死任何颜色，也不改动既有 56 条 transition 读的 --ease。
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. 视觉简洁化 · 只属于 lucide 档
+   目标：更少边框、更少底色块、hover 同帧只表达「抬起 + 工具条」两件事。
+   -------------------------------------------------------------------------- */
+
+/* 1.1 统计条：6 个 stat 原本各自带底色 + 描边 + 圆角，像一排小按钮。
+       改为安静的一行文字，只留极淡的分隔，把视觉重量让给模型卡片。 */
+html[data-iconset="lucide"] .stat {
+  min-width: 88px;
+  padding: 6px 10px;
+  background: transparent;
+  border-color: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+html[data-iconset="lucide"] .stat + .stat { border-left: 1px solid var(--border); }
+html[data-iconset="lucide"] .stats-cells { gap: 0; }
+html[data-iconset="lucide"] .stats-actions,
+html[data-iconset="lucide"] .stats-links { border-left-color: transparent; padding-left: 4px; }
+
+/* 两个模型网站入口从「带框按钮」收敛为文字入口，点击区域与可见性保持不变。
+   probe-weblinks.js 检查的是位置 / 可见 / 可点，不依赖边框。 */
+html[data-iconset="lucide"] .web-link {
+  color: var(--text-dim);
+  background: transparent;
+  border-color: transparent;
+}
+html[data-iconset="lucide"] .web-link:hover,
+html[data-iconset="lucide"] .web-link:focus-visible {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+html[data-iconset="lucide"] .web-link .web-link-ext { opacity: .7; }
+
+/* 1.2 卡片：去掉 hover 时闪一下的描边变化，只保留一次轻微抬起。
+       浮标 / 徽标 / 色板 / 工具条统一到同一时长与同一条缓动曲线，
+       让它们看起来像「一次动作」而不是五处各自抖动。 */
+/* 只作用于网格模式：列表模式原本就明确 transform:none，
+   不能被这里覆盖成「整行浮起」。 */
+html[data-iconset="lucide"] .content-grid .card {
+  border-color: var(--border);
+  transition: transform var(--t-fast) var(--ease-ui),
+              box-shadow var(--t-fast) var(--ease-ui),
+              border-color var(--t-fast) var(--ease-ui);
+}
+html[data-iconset="lucide"] .content-grid .card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border);
+  box-shadow: var(--shadow);
+}
+html[data-iconset="lucide"] .card:focus-visible {
+  border-color: var(--accent);
+  outline-offset: 3px;
+}
+html[data-iconset="lucide"] .card.selected { border-color: var(--accent); }
+
+html[data-iconset="lucide"] .card-check,
+html[data-iconset="lucide"] .card-fav,
+html[data-iconset="lucide"] .card-badges,
+html[data-iconset="lucide"] .content-grid .card-colors,
+html[data-iconset="lucide"] .card-quick {
+  transition-duration: var(--t-fast);
+  transition-timing-function: var(--ease-ui);
+}
+/* 徽标去掉描边，保留语义底色；色板 / 徽标的位置与层级一律不动，
+   probe-colors.js 的 noBadgeOverlap 与列表模式 position 断言仍成立。 */
+html[data-iconset="lucide"] .card-badges .badge {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* 1.3 按钮：按下反馈统一为 80ms 的一次轻压，不再各自 translateY / scale 混用 */
+html[data-iconset="lucide"] .btn:active,
+html[data-iconset="lucide"] .icon-btn:active,
+html[data-iconset="lucide"] .mini-btn:active,
+html[data-iconset="lucide"] .card-quick button:active {
+  transform: scale(.96);
+  transition-duration: var(--dur-tap);
+}
+
+/* 1.4 焦点：hover 才出现的操作，键盘必须等价可达 */
+html[data-iconset="lucide"] .web-link:focus-visible,
+html[data-iconset="lucide"] .nav-item:focus-visible { background: var(--hover); }
+html[data-iconset="lucide"] .card:focus-visible .card-quick { opacity: 1; transform: translateY(0); }
+
+/* 1.5 浮层只统一缓动曲线，时长与 z-index 体系（docs/09 §11.3）原样保留 */
+html[data-iconset="lucide"] .modal,
+html[data-iconset="lucide"] .toast,
+html[data-iconset="lucide"] .context-menu,
+html[data-iconset="lucide"] .bulkbar,
+html[data-iconset="lucide"] .settings-window {
+  animation-timing-function: var(--ease-ui);
+}
+
+/* 1.6 按钮级等待态：只降透明度，不加全局遮罩、不加骨架层。
+       S4 按「克制」原则主动缩减，业务侧想用只需给按钮加 aria-busy + .is-pending。 */
+[aria-busy="true"].is-pending { opacity: .72; pointer-events: none; }
+html[data-motion-effective="full"] [aria-busy="true"].is-pending {
+  transition: opacity var(--dur-feedback) var(--ease-ui);
+}
+
+/* --------------------------------------------------------------------------
+   2. View Transitions（S1 视图切换）
+   只给标题命名；#content 不命名，避免几百张卡各自成组。
+   -------------------------------------------------------------------------- */
+#view-title { view-transition-name: shelf-title; }
+
+/* 转场伪元素会盖在最上层拦截点击，必须放行 */
+::view-transition { pointer-events: none; }
+::view-transition-group(shelf-title) {
+  animation-duration: var(--dur-enter);
+  animation-timing-function: var(--ease-ui);
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--dur-enter);
+  animation-timing-function: var(--ease-ui);
+}
+::view-transition-old(shelf-title) {
+  animation: shelf-title-out var(--dur-enter) var(--ease-ui) both;
+}
+::view-transition-new(shelf-title) {
+  animation: shelf-title-in var(--dur-enter) var(--ease-ui) both;
+}
+@keyframes shelf-title-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes shelf-title-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* off 档：连命名组都不给，双保险（JS 侧本来也不会调用 startViewTransition） */
+html[data-motion-effective="off"] #view-title { view-transition-name: none; }
+
+/* --------------------------------------------------------------------------
+   3. 主题切换（S8）：大块表面做一次 160ms 颜色交叉，不整页闪白
+   只在 full 档启用；reduced / off 保持瞬时切换。
+   -------------------------------------------------------------------------- */
+html[data-motion-effective="full"] #app,
+html[data-motion-effective="full"] #titlebar,
+html[data-motion-effective="full"] #sidebar,
+html[data-motion-effective="full"] #statusbar,
+html[data-motion-effective="full"] .stats-bar,
+html[data-motion-effective="full"] .settings-window {
+  transition: background-color var(--dur-surface) var(--ease-ui),
+              color var(--dur-surface) var(--ease-ui);
+}
+
+/* --------------------------------------------------------------------------
+   4. 降级与短路
+   -------------------------------------------------------------------------- */
+
+/* 4.1 用户主动关闭动效：新增 keyframes 与拖拽落地的飞行 chip 全部不出现。
+       dropfx.js 原本刻意不跟随系统 reduce（本机实测会命中，拖入分类会完全没反馈），
+       所以这里只在「用户显式选择 off」时压掉，系统 reduce 仍保留拖拽反馈。 */
+html[data-motion-effective="off"] .fly-chip { display: none !important; }
+html[data-motion-effective="off"] .nav-item.just-dropped,
+html[data-motion-effective="off"] .nav-item.just-dropped .nav-count { animation: none !important; }
+html[data-motion-effective="off"] #view-title { animation: none !important; }
+
+/* 4.2 系统「减少动态效果」：View Transitions 不会被浏览器自动关掉，必须显式写。
+       base.css 的全局规则已把时长压到 .001ms，这里再对转场伪元素做双保险。 */
+/* 应用设置优先：只有用户显式「跟随系统」且系统 reduce 时才降档，
+   否则即使系统开了减少动态效果，启动动画 / 骨架屏也照样跑（与游戏、其他软件一致）。 */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) { animation: none !important; }
+  html[data-motion-effective="off"] #view-title { view-transition-name: none; }
+  html:not([data-motion-effective="full"]) .boot-ring,
+  html:not([data-motion-effective="full"]) .boot-track > i,
+  html:not([data-motion-effective="full"]) .boot-dots > i,
+  html:not([data-motion-effective="full"]) .skeleton-card,
+  html:not([data-motion-effective="full"]) .mo-loading-ico,
+  html:not([data-motion-effective="full"]) .dev-cam.is-loading .ico,
+  html:not([data-motion-effective="full"]) .btn.is-loading::before { animation: none !important; }
+}
+
+/* --------------------------------------------------------------------------
+   5. 卡片分类底色
+   卡片的白色底子上混入所属分类的颜料（浅色 8% / 深色 14%），像纸张自带的
+   一点色温，很淡，不抢缩略图，但一排看过去能分出归属。
+   未分类卡片没有 --cat-color，color-mix 的回落值就是原来的 --bg-elev，
+   外观与改造前完全一致。
+   用 :not(.selected) 让选中态继续走 --accent-soft，不被这里覆盖。
+   网格 hover 只抬起 + 换阴影，底色不变；列表每行很窄，hover 才加深一档。
+   -------------------------------------------------------------------------- */
+html[data-iconset="lucide"] .card:not(.selected) {
+  background: color-mix(in srgb, var(--cat-color, var(--bg-elev)) 8%, var(--bg-elev));
+}
+html[data-iconset="lucide"] .content-grid .card:not(.selected) {
+  border-color: color-mix(in srgb, var(--cat-color, var(--border)) 14%, var(--border));
+}
+html[data-iconset="lucide"] .content-grid .card:not(.selected):hover {
+  border-color: color-mix(in srgb, var(--cat-color, var(--border-strong)) 26%, var(--border-strong));
+}
+html[data-iconset="lucide"] .content-list .card:not(.selected) {
+  background: color-mix(in srgb, var(--cat-color, var(--bg-elev)) 7%, var(--bg-elev));
+}
+html[data-iconset="lucide"] .content-list .card:not(.selected):hover {
+  background: color-mix(in srgb, var(--cat-color, var(--hover)) 16%, var(--bg-elev));
+}
+html[data-theme="dark"][data-iconset="lucide"] .card:not(.selected) {
+  background: color-mix(in srgb, var(--cat-color, var(--bg-elev)) 14%, var(--bg-elev));
+}
+html[data-theme="dark"][data-iconset="lucide"] .content-list .card:not(.selected) {
+  background: color-mix(in srgb, var(--cat-color, var(--bg-elev)) 12%, var(--bg-elev));
+}
+html[data-theme="dark"][data-iconset="lucide"] .content-list .card:not(.selected):hover {
+  background: color-mix(in srgb, var(--cat-color, var(--hover)) 22%, var(--bg-elev));
+}
+
+/* --------------------------------------------------------------------------
+   4. 交互反馈补强（2026-11-19）
+   目标：让「按下 / 悬停 / 消失」三种瞬间都有回应，且全部走同一条曲线。
+   约束不变：只在 data-motion-effective=full 下给位移，reduced 只剩透明度，
+   off 完全不生效（这些选择器都挂在属性上，天然短路）。
+   -------------------------------------------------------------------------- */
+
+/* 4.1 按压反馈：按钮、图标按钮、导航、菜单项统一回弹。
+   只做 scale，不位移，避免与卡片 hover 的 translateY 叠加后抖动。 */
+html[data-motion-effective="full"] .btn,
+html[data-motion-effective="full"] .icon-btn,
+html[data-motion-effective="full"] .text-btn,
+html[data-motion-effective="full"] .mini-btn,
+html[data-motion-effective="full"] .nav-item,
+html[data-motion-effective="full"] .menu-item,
+html[data-motion-effective="full"] .chip-btn,
+html[data-motion-effective="full"] .card-quick button {
+  transition:
+    transform var(--dur-tap) var(--ease-ui),
+    background-color var(--t-fast) var(--ease-ui),
+    border-color var(--t-fast) var(--ease-ui),
+    color var(--t-fast) var(--ease-ui),
+    box-shadow var(--t-fast) var(--ease-ui);
+}
+html[data-motion-effective="full"] .btn:not(:disabled):active,
+html[data-motion-effective="full"] .icon-btn:not(:disabled):active,
+html[data-motion-effective="full"] .text-btn:active,
+html[data-motion-effective="full"] .mini-btn:not(:disabled):active,
+html[data-motion-effective="full"] .nav-item:active,
+html[data-motion-effective="full"] .menu-item:active,
+html[data-motion-effective="full"] .chip-btn:active,
+html[data-motion-effective="full"] .card-quick button:active {
+  transform: scale(.97);
+}
+/* disabled 也要有「按不动」的明确信号 */
+html[data-motion-effective="full"] .btn:disabled:active { transform: none; }
+
+/* 4.2 行级悬停：列表行、设置行、重复项原本是「瞬间变色」，补一段短过渡 */
+.list-row,
+html[data-motion-effective] .settings-content .folder-row,
+html[data-motion-effective] .settings-content .slicer-row,
+html[data-motion-effective] .menu-item,
+html[data-motion-effective] .nav-item,
+html[data-motion-effective] .dup-item {
+  transition-duration: var(--t-fast);
+  transition-timing-function: var(--ease-ui);
+}
+
+/* 4.3 Toast 退场：之前只有 toast-in，关闭时元素被硬删，看起来是「闪一下没了」 */
+html[data-motion-effective]:not([data-motion-effective="off"]) .toast {
+  transition: opacity 180ms var(--ease-ui), transform 180ms var(--ease-ui);
+}
+.toast-leaving {
+  opacity: 0;
+  transform: translateX(10px);
+  pointer-events: none;
+}
+html[data-motion-effective="reduced"] .toast-leaving,
+html[data-motion-effective="off"] .toast-leaving { transform: none; }
+
+/* 4.4 快开菜单：qpop 是动态创建后立即定位，补一次 pop-in，避免「凭空出现」 */
+html[data-motion-effective="full"] .qpop { animation: pop-in var(--t-fast) var(--ease-ui) both; }
+html[data-motion-effective="full"] .context-menu { animation-timing-function: var(--ease-ui); }
+
+/* 4.5 进度与开关：把节奏对齐到同一条曲线（原本 width 用 ease，会有「先快后顿」） */
+.progress-fill { transition-timing-function: var(--ease-ui); }
+.switch > span,
+.switch > span::after,
+.switch .switch-track,
+.switch .switch-track::after { transition-timing-function: var(--ease-ui); }
+
+/* 4.6 设置页保存提示：原本没有样式，只是一段白字挤在 label 后面 */
+.save-hint {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--success);
+  opacity: 0;
+  transform: translateY(-2px);
+}
+html[data-motion-effective]:not([data-motion-effective="off"]) .save-hint {
+  transition: opacity var(--t-fast) var(--ease-ui), transform var(--t-fast) var(--ease-ui);
+}
+.save-hint.show { opacity: 1; transform: none; }
+
+/* 4.7 无障碍：系统要求减少动态，或用户选 off 时，按压也不缩放 */
+@media (prefers-reduced-motion: reduce) {
+  html[data-motion-effective] .btn:active,
+  html[data-motion-effective] .icon-btn:active,
+  html[data-motion-effective] .text-btn:active,
+  html[data-motion-effective] .mini-btn:active,
+  html[data-motion-effective] .nav-item:active,
+  html[data-motion-effective] .menu-item:active,
+  html[data-motion-effective] .chip-btn:active,
+  html[data-motion-effective] .card-quick button:active {
+    transform: none;
+  }
+  .toast-leaving { transform: none; }
+}
+
+/* 4.8 统计数字变化：比 count-pop 更克制，只抬 1px、放大 6%，
+   用来回答「刚才那次扫描/分类到底改了什么」。 */
+html[data-motion-effective="full"] .stat.bump .stat-value {
+  animation: stat-bump 420ms var(--ease-ui);
+}
+@keyframes stat-bump {
+  0%   { transform: none; }
+  28%  { transform: translateY(-1px) scale(1.06); color: var(--accent); }
+  100% { transform: none; }
+}
+
+/* --------------------------------------------------------------------------
+   5. reduced 档的「非位移反馈」（2026-11-19）
+   系统开了「减少动态效果」时，本应用按契约只保留淡入，所有 scale/translate 都会被关掉。
+   但「按下去没有任何反应」同样是可用性问题——这里改用透明度与颜色表达按压/变化，
+   完全不产生位移，前庭敏感用户也不会不适。
+   -------------------------------------------------------------------------- */
+html[data-motion-effective="reduced"] .btn:not(:disabled),
+html[data-motion-effective="reduced"] .icon-btn:not(:disabled),
+html[data-motion-effective="reduced"] .text-btn,
+html[data-motion-effective="reduced"] .mini-btn:not(:disabled),
+html[data-motion-effective="reduced"] .nav-item,
+html[data-motion-effective="reduced"] .menu-item,
+html[data-motion-effective="reduced"] .chip-btn {
+  transition: opacity 90ms linear, background-color var(--t-fast) linear, color var(--t-fast) linear;
+}
+html[data-motion-effective="reduced"] .btn:not(:disabled):active,
+html[data-motion-effective="reduced"] .icon-btn:not(:disabled):active,
+html[data-motion-effective="reduced"] .text-btn:active,
+html[data-motion-effective="reduced"] .mini-btn:not(:disabled):active,
+html[data-motion-effective="reduced"] .nav-item:active,
+html[data-motion-effective="reduced"] .menu-item:active,
+html[data-motion-effective="reduced"] .chip-btn:active {
+  opacity: .68;
+}
+/* 统计数字变化：只闪一次主色，不缩放 */
+html[data-motion-effective="reduced"] .stat.bump .stat-value {
+  animation: stat-flash 520ms linear;
+}
+@keyframes stat-flash {
+  0%, 100% { color: inherit; }
+  30%      { color: var(--accent); }
+}
+
+/* --------------------------------------------------------------------------
+   6. reduced 档放行「非位移」过渡（2026-11-19）
+   base.css 的无障碍兜底会把 * 的 animation/transition 时长压到 .001ms，
+   连纯透明度渐变也一起杀了 —— 结果是开了「减少动态效果」的机器上，
+   界面所有反馈都是瞬间硬切，看起来像没做过渡。
+   这里只对「不产生位移」的属性（透明度 / 颜色 / 背景 / 边框 / 阴影）放回 150ms；
+   transform 相关的过渡在 reduced 档本来就没定义，仍然是静的。
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  html[data-motion-effective="reduced"] .toast,
+  html[data-motion-effective="reduced"] .btn,
+  html[data-motion-effective="reduced"] .icon-btn,
+  html[data-motion-effective="reduced"] .text-btn,
+  html[data-motion-effective="reduced"] .mini-btn,
+  html[data-motion-effective="reduced"] .nav-item,
+  html[data-motion-effective="reduced"] .menu-item,
+  html[data-motion-effective="reduced"] .chip-btn,
+  html[data-motion-effective="reduced"] .list-row,
+  html[data-motion-effective="reduced"] .context-menu,
+  html[data-motion-effective="reduced"] .toolbar .btn {
+    transition-duration: 150ms !important;
+    animation-duration: 150ms !important;
+  }
+  /* 浮层遮罩只有 opacity，放行；窗口本身带位移，仍保持瞬间出现 */
+  html[data-motion-effective="reduced"] .overlay,
+  html[data-motion-effective="reduced"] .settings-overlay {
+    animation-duration: 160ms !important;
+  }
+}

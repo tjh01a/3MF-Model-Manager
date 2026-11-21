@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300" role="img" aria-label="3MF 模型缩略图占位">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#94a3b8" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#94a3b8" stop-opacity="0.02"/>
+    </linearGradient>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#94a3b8" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#94a3b8" stop-opacity="0.04"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 柔和中性渐变底（半透明，深浅主题均可透出卡片底色） -->
+  <rect x="0" y="0" width="400" height="300" fill="url(#bg)"/>
+
+  <!-- 地面投影 -->
+  <ellipse cx="200" cy="238" rx="88" ry="10" fill="#64748b" opacity="0.08"/>
+
+  <!-- 等距立方体线稿 -->
+  <g stroke="#94a3b8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- 顶面 -->
+    <path d="M200 62 L282 108 L200 154 L118 108 Z" fill="#94a3b8" fill-opacity="0.10"/>
+    <!-- 左面 -->
+    <path d="M118 108 L200 154 L200 232 L118 186 Z" fill="#94a3b8" fill-opacity="0.04"/>
+    <!-- 右面 -->
+    <path d="M200 154 L282 108 L282 186 L200 232 Z" fill="url(#face)"/>
+    <!-- 内侧棱线，强化立体感 -->
+    <path d="M200 154 L200 232" stroke-opacity="0.55"/>
+  </g>
+
+  <!-- 角标装饰点 -->
+  <circle cx="96" cy="70" r="3" fill="#94a3b8" opacity="0.35"/>
+  <circle cx="304" cy="70" r="2" fill="#94a3b8" opacity="0.28"/>
+  <circle cx="312" cy="196" r="3" fill="#94a3b8" opacity="0.25"/>
+  <circle cx="88" cy="196" r="2" fill="#94a3b8" opacity="0.28"/>
+
+  <!-- 字样 -->
+  <text x="200" y="278" text-anchor="middle" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+        font-size="22" font-weight="600" letter-spacing="6" fill="#94a3b8" opacity="0.85">3MF</text>
+</svg>

@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 220" width="360" height="220" role="img" aria-label="空的模型库">
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#a5b4fc"/>
+    </linearGradient>
+    <linearGradient id="folder" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#818cf8" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#4f46e5" stop-opacity="0.06"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#818cf8" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#818cf8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 透明底，仅一层柔和光晕 -->
+  <ellipse cx="180" cy="196" rx="146" ry="28" fill="url(#glow)"/>
+
+  <!-- 装饰圆点 -->
+  <g fill="#818cf8">
+    <circle cx="36" cy="56" r="4" opacity="0.45"/>
+    <circle cx="60" cy="34" r="2.5" opacity="0.30"/>
+    <circle cx="326" cy="62" r="3" opacity="0.40"/>
+    <circle cx="334" cy="146" r="2.5" opacity="0.28"/>
+    <circle cx="26" cy="152" r="3" opacity="0.30"/>
+    <circle cx="196" cy="14" r="2.5" opacity="0.35"/>
+  </g>
+  <path d="M300 26 v10 M295 31 h10" stroke="#818cf8" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
+
+  <!-- 后排文件卡（叠层） -->
+  <g transform="rotate(-9 157 72)" fill="url(#brand)" fill-opacity="0.10" stroke="#6366f1" stroke-width="2.5">
+    <rect x="92" y="30" width="130" height="86" rx="10"/>
+  </g>
+
+  <!-- 前排文件卡 + 文本线 -->
+  <g transform="rotate(8 205 70)">
+    <rect x="140" y="26" width="130" height="92" rx="10" fill="url(#brand)" fill-opacity="0.18" stroke="#4f46e5" stroke-width="2.5"/>
+    <g stroke="#4f46e5" stroke-width="2.5" stroke-linecap="round" opacity="0.42">
+      <path d="M158 52 h84"/>
+      <path d="M158 66 h70"/>
+      <path d="M158 80 h52"/>
+    </g>
+  </g>
+
+  <!-- 文件夹正面（遮住文件卡下缘，形成收纳感） -->
+  <path d="M46 96 a12 12 0 0 1 12-12 h58 l18 20 h166 a12 12 0 0 1 12 12 v62 a12 12 0 0 1 -12 12 H58 a12 12 0 0 1 -12-12 Z"
+        fill="url(#folder)" stroke="#4f46e5" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M58 84 h58 l18 20" fill="none" stroke="#4f46e5" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/>
+
+  <!-- 悬浮的小立方体 -->
+  <g stroke="#4f46e5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M278 30 L306 44 L278 58 L250 44 Z" fill="#818cf8" fill-opacity="0.16"/>
+    <path d="M250 44 L278 58 L278 82 L250 68 Z" fill="#818cf8" fill-opacity="0.06"/>
+    <path d="M278 58 L306 44 L306 68 L278 82 Z" fill="#818cf8" fill-opacity="0.22"/>
+  </g>
+</svg>

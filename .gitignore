@@ -1,0 +1,46 @@
+# ============ 个人隐私数据（绝对不能上传）============
+# data/ 里是本机模型库、缩略图、耗材价格、打印机配置（含访问码）、日志
+data/
+
+# ============ 构建产物（可重新生成，体积很大）============
+dist/
+*.zip
+*.exe
+*.msi
+*.dmg
+*.AppImage
+
+# ============ 依赖（别人 clone 后 npm install 即可）============
+node_modules/
+
+# ============ 日志与临时文件 ============
+*.log
+logs/
+*.tmp
+*.temp
+~$*
+.DS_Store
+Thumbs.db
+tmp-*
+_probe*
+
+# ============ 编辑器 / 系统 ============
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# docs/screenshots/ 保留在仓库里（README 引用了其中的预览图，约 32 MB）
+
+# ============ 环境变量与密钥 ============
+.env
+.env.*
+*.pem
+*.key
+*_token*
+*.secret
+
+# ============ npm / node ============
+npm-debug.log*
+.npm/
+.cache/

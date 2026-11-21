@@ -1,0 +1,193 @@
+'use strict';
+/** 工具栏：搜索(防抖)、排序、筛选 chips、视图切换、尺寸滑块、全选、标题与结果数。 */
+import { state, setState } from '../state.js';
+import { api, emitRefresh } from '../api.js';
+import { escapeHtml, icon, debounce, clamp, qs, qsa } from '../utils.js';
+
+const SMART_LABELS = {
+  all: '全部模型', favorites: '收藏', recentOpened: '最近打开',
+  unprinted: '未打印', uncategorized: '未分类', untagged: '未打标签',
+  recent: '最近 7 天', printed: '已完成打印', rated: '已评分',
+  duplicates: '重复文件', missing: '失效文件',
+};
+const STATUS_LABELS = {
+  unprinted: '未打印', queued: '待打印', printing: '打印中', printed: '已完成', failed: '失败',
+};
+
+let mounted = false;
+
+function viewName() {
+  return SMART_LABELS[state.query.smart] || '全部模型';
+}
+function hasFilters() {
+  const q = state.query;
+  return !!(q.keyword || q.categoryId || (q.tagIds && q.tagIds.length) ||
+    (q.printStatuses && q.printStatuses.length) || q.favoritesOnly || q.ratingMin > 0 ||
+    q.folderId || (q.statuses && q.statuses.length));
+}
+function filterChipsHtml() {
+  const q = state.query;
+  const chips = [];
+  const add = (key, label) => chips.push(
+    '<button class="chip" data-filter="' + escapeHtml(key) + '">' +
+    escapeHtml(label) + icon('i-close', 'ico chip-x') + '</button>'
+  );
+  if (q.keyword) add('keyword', '搜索：' + q.keyword);
+  if (q.categoryId) {
+    const c = (state.categories || []).find((x) => x.id === q.categoryId);
+    add('categoryId', '分类：' + (c ? c.name : q.categoryId));
+  }
+  if (q.tagIds && q.tagIds.length) {
+    for (const id of q.tagIds) {
+      const t = (state.tags || []).find((x) => x.id === id);
+      add('tag:' + id, '标签：' + (t ? t.name : id));
+    }
+  }
+  if (q.printStatuses && q.printStatuses.length) {
+    for (const s of q.printStatuses) add('status:' + s, '状态：' + (STATUS_LABELS[s] || s));
+  }
+  if (q.favoritesOnly) add('favoritesOnly', '仅收藏');
+  if (q.ratingMin > 0) add('ratingMin', '评分 ≥ ' + q.ratingMin);
+  if (q.folderId) add('folderId', '指定目录');
+  if (q.statuses && q.statuses.length) {
+    for (const s of q.statuses) add('fileStatus:' + s, '文件：' + s);
+  }
+  return chips.join('');
+}
+
+export function syncToolbar() {
+  const title = qs('#view-title');
+  if (title) title.textContent = viewName();
+  const sub = qs('#view-subtitle');
+  if (sub) sub.textContent = '共 ' + state.total + ' 个模型' + (hasFilters() ? ' · 已筛选' : '');
+
+  const chips = qs('#filter-chips');
+  if (chips) chips.innerHTML = filterChipsHtml();
+  const clearBtn = qs('#btn-clear-filters');
+  if (clearBtn) clearBtn.hidden = !hasFilters();
+
+  const sort = qs('#sort-select');
+  if (sort && sort.value !== state.query.sortBy) sort.value = state.query.sortBy;
+  const dirBtn = qs('#btn-sort-dir');
+  if (dirBtn) {
+    dirBtn.title = state.query.sortDir === 'asc' ? '当前升序，点击降序' : '当前降序，点击升序';
+    dirBtn.classList.toggle('is-asc', state.query.sortDir === 'asc');
+  }
+  qsa('#view-switch [data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === state.view));
+  const slider = qs('#size-slider');
+  if (slider && slider.value !== String(state.cardSize)) slider.value = String(state.cardSize);
+
+  const input = qs('#search-input');
+  if (input && document.activeElement !== input && input.value !== state.query.keyword) {
+    input.value = state.query.keyword;
+  }
+  const searchClear = qs('#search-clear');
+  if (searchClear) searchClear.hidden = !state.query.keyword;
+}
+
+function applyKeyword() {
+  const input = qs('#search-input');
+  const kw = input ? input.value.trim() : '';
+  if (kw === state.query.keyword) return;
+  setState({ query: { ...state.query, keyword: kw } }, 'query');
+  syncToolbar();
+  emitRefresh('keyword');
+}
+function clearFilters() {
+  setState({
+    query: {
+      ...state.query, keyword: '', categoryId: null, tagIds: [], printStatuses: [],
+      favoritesOnly: false, ratingMin: 0, folderId: null, statuses: [], smart: 'all',
+    },
+  }, 'query');
+  const input = qs('#search-input');
+  if (input) input.value = '';
+  syncToolbar();
+  emitRefresh('clear');
+}
+
+export function mountToolbar() {
+  if (mounted) return;
+  mounted = true;
+
+  const input = qs('#search-input');
+  if (input) {
+    const debounced = debounce(applyKeyword, 180);
+    input.addEventListener('input', () => {
+      const c = qs('#search-clear');
+      if (c) c.hidden = !input.value;
+      debounced();
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); applyKeyword(); }
+    });
+  }
+  const sc = qs('#search-clear');
+  if (sc) sc.addEventListener('click', () => {
+    if (input) { input.value = ''; input.focus(); }
+    applyKeyword();
+  });
+
+  const sort = qs('#sort-select');
+  if (sort) sort.addEventListener('change', () => {
+    setState({ query: { ...state.query, sortBy: sort.value } }, 'query');
+    api.settingsUpdate({ ui: { sortBy: sort.value } }).catch(() => {});
+    emitRefresh('sort');
+  });
+
+  const dirBtn = qs('#btn-sort-dir');
+  if (dirBtn) dirBtn.addEventListener('click', () => {
+    const dir = state.query.sortDir === 'asc' ? 'desc' : 'asc';
+    setState({ query: { ...state.query, sortDir: dir } }, 'query');
+    api.settingsUpdate({ ui: { sortDir: dir } }).catch(() => {});
+    syncToolbar();
+    emitRefresh('sort');
+  });
+
+  qsa('#view-switch [data-view]').forEach((b) => b.addEventListener('click', () => {
+    if (!b.dataset.view) return;
+    setState({ view: b.dataset.view }, 'view');
+    api.settingsUpdate({ ui: { view: b.dataset.view } }).catch(() => {});
+    syncToolbar();
+    emitRefresh('viewmode'); // 纯 UI 变更：只改 #content 的 className，不重新查库/重建卡片
+  }));
+
+  const slider = qs('#size-slider');
+  if (slider) {
+    slider.addEventListener('input', () => {
+      const size = clamp(slider.value, 140, 340);
+      setState({ cardSize: size }, 'cardSize');
+      document.documentElement.style.setProperty('--card-w', size + 'px');
+    });
+    slider.addEventListener('change', () => {
+      api.settingsUpdate({ ui: { cardSize: clamp(slider.value, 140, 340) } }).catch(() => {});
+    });
+  }
+
+  const chips = qs('#filter-chips');
+  if (chips) chips.addEventListener('click', (e) => {
+    const b = e.target && e.target.closest ? e.target.closest('[data-filter]') : null;
+    if (!b) return;
+    const key = b.dataset.filter || '';
+    const q = { ...state.query };
+    if (key === 'keyword') q.keyword = '';
+    else if (key === 'categoryId') q.categoryId = null;
+    else if (key.indexOf('tag:') === 0) q.tagIds = (q.tagIds || []).filter((x) => x !== key.slice(4));
+    else if (key.indexOf('status:') === 0) q.printStatuses = (q.printStatuses || []).filter((x) => x !== key.slice(7));
+    else if (key === 'favoritesOnly') q.favoritesOnly = false;
+    else if (key === 'ratingMin') q.ratingMin = 0;
+    else if (key === 'folderId') q.folderId = null;
+    else if (key.indexOf('fileStatus:') === 0) q.statuses = (q.statuses || []).filter((x) => x !== key.slice(11));
+    setState({ query: q }, 'query');
+    if (key === 'keyword' && input) input.value = '';
+    syncToolbar();
+    emitRefresh('filter');
+  });
+
+  const clearBtn = qs('#btn-clear-filters');
+  if (clearBtn) clearBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('shelf:clearfilters')));
+  window.addEventListener('shelf:clearfilters', clearFilters);
+
+  const selAll = qs('#btn-select-all');
+  if (selAll) selAll.addEventListener('click', () => window.dispatchEvent(new CustomEvent('shelf:selectall')));
+}

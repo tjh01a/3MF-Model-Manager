@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-iconset="lucide" data-motion="full" data-motion-effective="full">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' shelf: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:;">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 7 张外部样式表（原 6 张 + motion.css）。启动动画仍内联在 <head>，首帧不依赖它们。 -->
+  <title>PrintShelf · 本地 3MF 模型库</title>
+  <!--
+    启动动画：内联在 <head> 里，HTML 一解析就能画出来，不等 7 张外部样式表 / ES Modules。
+    纯 CSS（transform + opacity），无图片、无 JS 定时器，不阻塞后端初始化。
+    12 秒后有一层纯 CSS 自动隐藏兜底：即便脚本整体加载失败，也不会留下挡住界面的遮罩。
+  -->
+  <style>
+    #boot-splash {
+      position: fixed; inset: 0; z-index: 9999;
+      display: grid; place-items: center;
+      background: #f5f7fa; color: #1e293b;
+      font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+      /* 纯视觉层：不拦截任何点击，启动流程与用户操作都不被它阻塞 */
+      pointer-events: none;
+      transition: opacity .28s ease, transform .28s ease;
+      animation: boot-autohide .01s linear 12s forwards;
+    }
+    html[data-theme="dark"] #boot-splash { background: #0f1420; color: #e7ecf6; }
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) #boot-splash { background: #0f1420; color: #e7ecf6; }
+    }
+    #boot-splash.is-leaving { opacity: 0; transform: scale(1.02); pointer-events: none; }
+    @keyframes boot-autohide { to { opacity: 0; visibility: hidden; pointer-events: none; } }
+    .boot-card { display: flex; flex-direction: column; align-items: center; padding: 8px 16px 24px; }
+    .boot-ring {
+      width: 62px; height: 62px; border-radius: 19px;
+      display: grid; place-items: center;
+      background: linear-gradient(135deg, #4f46e5, #7c73f0);
+      box-shadow: 0 12px 30px rgba(79, 70, 229, .22);
+      animation: boot-breathe 1.9s ease-in-out infinite;
+    }
+    .boot-ring svg { width: 30px; height: 30px; fill: none; stroke: #fff; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    @keyframes boot-breathe { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-4px) scale(1.035); } }
+    .boot-title { margin-top: 20px; font-size: 18px; font-weight: 600; letter-spacing: .02em; }
+    .boot-sub { margin-top: 4px; font-size: 11px; color: #94a3b8; }
+    .boot-track { position: relative; width: 220px; height: 5px; margin-top: 24px; border-radius: 999px; background: #e5e9f0; overflow: hidden; }
+    html[data-theme="dark"] .boot-track { background: #2b3446; }
+    .boot-track > i {
+      position: absolute; top: 0; left: 0; width: 44%; height: 100%;
+      border-radius: 999px; background: linear-gradient(90deg, #4f46e5, #7c73f0);
+      animation: boot-slide 1.25s ease-in-out infinite;
+    }
+    /* 后端把阶段推过来后切成「确定进度」：宽度平滑增长，用户看得到在往前走 */
+    .boot-track.is-determinate > i {
+      width: var(--boot-pct, 0%);
+      animation: none;
+      transition: width .32s cubic-bezier(.22,.8,.3,1);
+    }
+    @keyframes boot-slide { from { transform: translateX(-110%); } to { transform: translateX(240%); } }
+    .boot-hint { margin-top: 14px; font-size: 11px; color: #94a3b8; display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 16px; text-align: center; }
+    .boot-pct { margin-left: 4px; color: #4f46e5; font-variant-numeric: tabular-nums; }
+    html[data-theme="dark"] .boot-pct { color: #a5a0ff; }
+    .boot-dots { display: inline-flex; gap: 3px; }
+    .boot-dots > i { width: 4px; height: 4px; border-radius: 50%; background: #4f46e5; animation: boot-dot 1s ease-in-out infinite; }
+    .boot-dots > i:nth-child(2) { animation-delay: .15s; }
+    .boot-dots > i:nth-child(3) { animation-delay: .3s; }
+    @keyframes boot-dot { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+    #boot-splash.is-error .boot-track, #boot-splash.is-error .boot-dots { display: none; }
+    #boot-splash.is-error .boot-hint { color: #b45309; max-width: 320px; text-align: center; }
+    /* 阶段切换时提示文字轻微淡入，避免生硬跳字 */
+    .boot-hint.is-changing > span:first-child { animation: boot-text-in .2s ease; }
+    @keyframes boot-text-in { from { opacity: .25; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+  </style>
+  <link rel="stylesheet" href="styles/base.css">
+  <link rel="stylesheet" href="styles/layout.css">
+  <link rel="stylesheet" href="styles/components.css">
+  <link rel="stylesheet" href="styles/views.css">
+  <link rel="stylesheet" href="styles/meshopt.css">
+  <link rel="stylesheet" href="styles/devices.css">
+  <link rel="stylesheet" href="styles/filaments.css">
+  <link rel="stylesheet" href="styles/onboarding.css">
+  <!-- 最后加载：简洁化规则以 html[data-iconset] 为前缀、动效以 html[data-motion-effective]
+       为前缀，两个设置项切到 legacy / off 即可一键回到改造前界面。详见 docs/11。 -->
+  <link rel="stylesheet" href="styles/motion.css">
+</head>
+<body>
+
+<!-- ============ 启动动画（首帧可见；由 components/boot.js 在首屏渲染完成后移除） ============ -->
+<div id="boot-splash" role="status" aria-live="polite" aria-label="正在启动 PrintShelf">
+  <div class="boot-card">
+    <div class="boot-ring" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5Z"/><path d="m3 13 9 5 9-5M3 17.5l9 5 9-5"/></svg>
+    </div>
+    <div class="boot-title">PrintShelf</div>
+    <div class="boot-sub">本地 3MF 模型库</div>
+    <div class="boot-track" id="boot-track" aria-hidden="true"><i></i></div>
+    <div class="boot-hint" id="boot-hint">
+      <span id="boot-stage-text">正在启动 PrintShelf</span>
+      <span class="boot-pct" id="boot-pct">0%</span>
+      <span class="boot-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 图标 sprite（主代理维护，<use href="#i-xxx"> 引用） ============ -->
+<svg id="icon-sprite" xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <!-- 自动生成：tools/icons/build-sprite.js + apply-sprite.js；Lucide v1.73.0 / ISC。
+       许可原文见 docs/licenses/LUCIDE-LICENSE.txt；勿手工编辑，改图标请重跑生成器。 -->
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect width="7" height="7" x="3" y="3" rx="1" /> <rect width="7" height="7" x="14" y="3" rx="1" /> <rect width="7" height="7" x="14" y="14" rx="1" /> <rect width="7" height="7" x="3" y="14" rx="1" /></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M3 5h.01" /> <path d="M3 12h.01" /> <path d="M3 19h.01" /> <path d="M8 5h13" /> <path d="M8 12h13" /> <path d="M8 19h13" /></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34" /> <circle cx="11" cy="11" r="8" /></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14" /> <path d="M12 5v14" /></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /> <path d="M21 3v5h-5" /> <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /> <path d="M8 16H3v5" /></symbol>
+  <symbol id="i-dice" viewBox="0 0 24 24"><rect width="12" height="12" x="2" y="10" rx="2" ry="2" /> <path d="m17.92 14 3.5-3.5a2.24 2.24 0 0 0 0-3l-5-4.92a2.24 2.24 0 0 0-3 0L10 6" /> <path d="M6 18h.01" /> <path d="M10 14h.01" /> <path d="M15 6h.01" /> <path d="M18 9h.01" /></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" /></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" /> <path d="M12 2v2" /> <path d="M12 20v2" /> <path d="m4.93 4.93 1.41 1.41" /> <path d="m17.66 17.66 1.41 1.41" /> <path d="M2 12h2" /> <path d="M20 12h2" /> <path d="m6.34 17.66-1.41 1.41" /> <path d="m19.07 4.93-1.41 1.41" /></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" /> <circle cx="12" cy="12" r="3" /></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" /></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="M12 6v6l4 2" /></symbol>
+  <symbol id="i-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></symbol>
+  <symbol id="i-folder-open" viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" /></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" /> <circle cx="7.5" cy="7.5" r=".5" fill="currentColor" /></symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /> <path d="M20 2v4" /> <path d="M22 4h-4" /> <circle cx="4" cy="20" r="2" /></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="m16 9-5.5 5.5L8 12" /></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /> <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" /> <path d="M12 9v4" /> <path d="M12 17h.01" /></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z" /> <path d="M12 22V12" /> <polyline points="3.29 7 12 12 20.71 7" /> <path d="m7.5 4.27 9 5.15" /></symbol>
+  <symbol id="i-cube" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /> <path d="m3.3 7 8.7 5 8.7-5" /> <path d="M12 22V12" /></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M10 5H3" /> <path d="M12 19H3" /> <path d="M14 3v4" /> <path d="M16 17v4" /> <path d="M21 12h-9" /> <path d="M21 19h-5" /> <path d="M21 5h-7" /> <path d="M8 10v4" /> <path d="M8 12H3" /></symbol>
+  <symbol id="i-tool" viewBox="0 0 24 24"><path d="m15 12-9.373 9.373a1 1 0 0 1-3.001-3L12 9" /> <path d="m18 15 4-4" /> <path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172v-.344a2 2 0 0 0-.586-1.414l-1.657-1.657A6 6 0 0 0 12.516 3H9l1.243 1.243A6 6 0 0 1 12 8.485V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5" /></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M18 6 6 18" /> <path d="m6 6 12 12" /></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6" /></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1" /> <circle cx="19" cy="12" r="1" /> <circle cx="5" cy="12" r="1" /></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M10 11v6" /> <path d="M14 11v6" /> <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /> <path d="M3 6h18" /> <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /> <path d="m15 5 4 4" /></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6" /> <path d="M10 14 21 3" /> <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></symbol>
+  <symbol id="i-printer" viewBox="0 0 24 24"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /> <path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6" /> <rect x="6" y="14" width="12" height="8" rx="1" /></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z" /></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path d="m21 16-4 4-4-4" /> <path d="M17 20V4" /> <path d="m3 8 4-4 4 4" /> <path d="M7 4v16" /></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /> <circle cx="9" cy="9" r="2" /> <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 15V3" /> <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /> <path d="m7 10 5 5 5-5" /></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 3v12" /> <path d="m17 8-5-5-5 5" /> <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5" /> <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" /></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /> <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="M12 16v-4" /> <path d="M12 8h.01" /></symbol>
+  <symbol id="i-hard-drive" viewBox="0 0 24 24"><path d="M10 16h.01" /> <path d="M2.212 11.577a2 2 0 0 0-.212.896V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5.527a2 2 0 0 0-.212-.896L18.55 5.11A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /> <path d="M21.946 12.013H2.054" /> <path d="M6 16h.01" /></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" /> <path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7" /> <path d="M7 3v4a1 1 0 0 0 1 1h7" /></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" /> <circle cx="12" cy="12" r="3" /></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z" /> <path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12" /> <path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17" /></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="m18 14 4 4-4 4" /> <path d="m18 2 4 4-4 4" /> <path d="M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22" /> <path d="M2 6h1.972a4 4 0 0 1 3.6 2.2" /> <path d="M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45" /></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" /></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="14" y="3" width="5" height="18" rx="1" /> <rect x="5" y="3" width="5" height="18" rx="1" /></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14" /></symbol>
+  <symbol id="i-square" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" /></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18" /> <path d="m6 6 12 12" /></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5" /></symbol>
+  <symbol id="i-warning" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <line x1="12" x2="12" y1="8" y2="12" /> <line x1="12" x2="12.01" y1="16" y2="16" /></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" /></symbol>
+  <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z" /></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><path d="M11 10.27 7 3.34" /> <path d="m11 13.73-4 6.93" /> <path d="M12 22v-2" /> <path d="M12 2v2" /> <path d="M14 12h8" /> <path d="m17 20.66-1-1.73" /> <path d="m17 3.34-1 1.73" /> <path d="M2 12h2" /> <path d="m20.66 17-1.73-1" /> <path d="m20.66 7-1.73 1" /> <path d="m3.34 17 1.73-1" /> <path d="m3.34 7 1.73 1" /> <circle cx="12" cy="12" r="2" /> <circle cx="12" cy="12" r="8" /></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /> <path d="M2 12h20" /></symbol>
+</svg>
+
+<!-- ==================== DOM CONTRACT（E/F 只读，不得修改本文件） ====================
+关键 id 清单：
+  #titlebar #global-search #search-input #search-clear #btn-quick-add #btn-scan
+  #btn-roulette #btn-theme #btn-settings #btn-win-min #btn-win-max #btn-win-close
+  #sidebar #nav-library #nav-categories #nav-tags #nav-views #btn-category-add
+  #btn-tag-add #btn-view-save #sidebar-toggle
+  侧栏底部统计（#storage-meter）与「打开数据目录」（#btn-data-dir）已于 2026-11-16 按用户要求移除，不要再引用
+  侧栏分组（views/sidebar.js 的 GROUPS，docs/14）：模型库 / 质量检查 / 耗材与成本。
+  「智能视图」组已移除；原「已完成打印」迁入耗材与成本组并改名「打印回执 · 成本账本」，
+  仍用 data-smart="printed" 走 app.js 的 receipts 视图；同组另有 data-act="open-filaments" 打开耗材库浮层。
+  #main #toolbar #view-title #view-subtitle #filter-chips #sort-select #btn-sort-dir
+  #view-switch #size-slider #btn-select-all #btn-clear-filters
+  #stats-bar #stats-cells #stats-actions #stats-selected #btn-bulk-delete #btn-bulk-deselect
+  #scan-progress #scan-label #scan-bar #content #empty-state #empty-models-add
+  #monitor-bar .mon-headbar .mon-list .mon-card .mon-note（常驻打印监控条，可开关）
+  #detail #detail-close #detail-body
+  #statusbar #status-text #status-selection #status-count #status-datadir
+  #bulkbar #bulk-count #bulk-category #bulk-tag #bulk-status #bulk-fav
+  #bulk-remove #bulk-delete #bulk-clear
+  #toast-container #context-menu #modal-root
+  #lightbox #lightbox-img #lightbox-caption #lightbox-prev #lightbox-next #lightbox-close
+  #settings-panel #settings-nav #settings-content #settings-close
+  #drag-mask
+  #boot-splash #boot-hint（仅启动期存在，淡出后由 components/boot.js 移除）
+  #stats-links（统计条右侧常驻的两个模型网站导航按钮，URL 写在 button[data-url] 上）
+  #btn-filaments #filaments-panel #filaments-close #filaments-body（耗材库浮层，docs/13）
+
+卡片结构（views/grid.js 渲染，components.css 提供样式）：
+  <article class="card" data-id="ID" tabindex="0" draggable="true">   ← 可拖到左侧分类完成归类
+    <div class="card-media">
+      <img class="card-img" src="shelf://thumbs/xxx.png" loading="lazy" alt="">
+      <label class="card-check"><input type="checkbox" class="card-cb"></label>
+      <button class="card-fav" data-act="fav" title="收藏"><svg><use href="#i-star"/></svg></button>
+      <div class="card-badges"><span class="badge status-unprinted" data-act="status">未打印</span></div>
+      <div class="card-colors" role="img" title="零件用到的耗材颜色：PLA #FFFFFF、ABS #FF0000">
+        <span class="card-color" style="background:#FFFFFF"></span>
+        <span class="card-color" style="background:#FF0000"></span>
+      </div>
+      <div class="card-quick">
+        <span class="q-open-wrap">
+          <button data-act="open" class="q-open" title="用切片软件打开（悬停可选拓竹 / 快造）"><svg><use href="#i-printer"/></svg></button>
+        </span>
+        <button data-act="source" title="在浏览器打开来源网页"><svg><use href="#i-globe"/></svg></button>
+        <button data-act="reveal" title="在资源管理器中显示"><svg><use href="#i-folder-open"/></svg></button>
+        <button data-act="trash" class="q-del" title="删除（移入回收站）"><svg><use href="#i-trash"/></svg></button>
+        <button data-act="more" title="更多"><svg><use href="#i-more"/></svg></button>
+      </div>
+    </div>
+    <div class="card-info">
+      <div class="card-title" title="...">名称</div>
+      <div class="card-meta"><span class="card-meta-text">12.4 MB · 3 个对象</span><span class="card-price" data-price="20|??" title="成本说明">¥20 或 ¥??</span></div>
+      <div class="card-sub"><span class="chip">功能件</span><span class="card-stars">★★★☆☆</span></div>
+    </div>
+  </article>
+  列表模式：#content.content-list 下同一结构由 CSS 改为行布局。
+  状态徽标 class：status-unprinted / status-queued / status-printing / status-printed / status-failed
+
+  拖拽归类（Steam 库式交互）：卡片 draggable，拖到侧栏 [data-cat] 分类、[data-smart="uncategorized"]、
+  [data-tag] 标签或 [data-drop="category"]（分类区标题行，新建分类并放入）即完成归类。
+  落地逻辑见 components/assign.js，投放目标与高亮见 views/sidebar.js。
+  库内拖动期间 body 带 .drag-holding-card，app.js 的窗口级导入判定会跳过它（否则会误弹导入遮罩）。
+
+  编辑模式（components/editmode.js）：卡片上按住 480ms 进入，body 带 .edit-mode，
+  顶部浮出 #editbar（全选 / 迁移到分类 / 删除 / 完成），此时单击卡片 = 切换选中、不打开详情。
+  「用切片软件打开」按钮常态高亮，悬停时由 components/quickopen.js 在 body 上弹出 .qpop 二层菜单。
+
+  缩略图耗材色板：cardHtml() 读 m.meta.filamentColors / filamentTypes / colorSource，
+  在 .card-media 右下角渲染 .card-colors（最多 6 个 .card-color 圆点 + "+N"）。
+  颜色由 src/core/model3mf.js 解析 3MF：优先按 Metadata/model_settings.config 里每个零件的
+  extruder 槽位去映射 Metadata/project_settings.config 的 filament_colour；找不到零件映射时
+  退回展示全部配置色并标 colorSource='project'。色值在进 style 前必须匹配 /^#[0-9a-fA-F]{6}$/。
+  旧库记录由 src/core/colors.js 的 backfillFilamentColors() 在启动后异步回填（只合并颜色字段、
+  一次写库触发一次刷新），capture 模式下会在 app:ready 之前先跑完以便走查看色板。
+  网格模式 hover 时工具条从底部盖满，色板用 transform 上移 30px 让开按钮区（不淡出，
+  这样鼠标停在圆点上还能看到「PLA · #FFFFFF」提示）；列表模式常显且不上移。
+
+  模型网站导航：#stats-links 里两个 button[data-url] 的网址是静态常量，改网址直接改本文件。
+  点击由 app.js 的 bindWebLinks() 事件委托 → api.openExternal() → 主进程 shell.openExternal
+  用系统浏览器打开；不要换成 <a href> 或应用内导航（CSP 只允许 script-src 'self'，且 app://
+  页面被导航走会把应用窗口变空白）。它跟随 #stats-bar 的显示开关（设置页「显示统计条」）。
+
+  启动链路：本文件 <head> 内联 CSS 先画出 #boot-splash（首帧可见、pointer-events:none、
+  12s 纯 CSS 自动隐藏兜底）→ 主进程 services.init() + 注册 IPC 后推 app:ready
+  → preload 的 shelf.whenReady() / api.js 的 whenBackendReady() 放行
+  → app.js 首轮刷新完成调 components/boot.js 的 finishBoot() 淡出并移除节点。
+  改动画时长要同时改 boot.js 的 HARD_TIMEOUT_MS 与本文件 boot-autohide 的 12s 延迟。
+
+  诊断字段（控制台可读，详见 docs/09-实现说明书.md 附录 A.4 / A.10）：
+    window.__printshelfBoot / __printshelfBootApi   启动动画状态与收尾次数
+    window.__printshelfRender                      full / patch / lastMs / lastMode / replaced
+    window.__printshelfIpc                         bootstrap / query / stats / smartCounts 调用次数
+    window.__printshelfMotion                      level / effective / vt / vtFallback / enter / pulse
+
+  图标与动效（详见 docs/10 调研、docs/11 计划书、docs/09 §A.10）：
+    #icon-sprite 内的 57 个 <symbol id="i-*"> 由 tools/icons/build-sprite.js 从
+    lucide-static v1.73.0（ISC）提取，再由 tools/icons/apply-sprite.js 安装进本文件。
+    许可原文在 docs/licenses/LUCIDE-LICENSE.txt。改图标不要手改本文件，重跑生成器。
+    设置项 ui.iconSet='lucide'|'legacy'：两套路径共用同一组 id，切换只替换 symbol
+    内容（components/icon-set.js），静态 <use href="#i-*"> 与 icon() 都不需要改。
+    设置项 ui.motionLevel='full'|'reduced'|'off'：写进 <html> 的 data-motion /
+    data-motion-effective，components/motion.js 是所有新增动效的唯一入口。
+    「legacy + off」等价于本次美化前的界面。styles/motion.css 必须最后加载：
+    简洁化规则以 html[data-iconset="lucide"] 为前缀，动效规则以 data-motion-effective
+    为前缀，否则一键回退不成立。
+  网格会按卡片指纹做增量 replaceChild()，所以 cardHtml() 里新增任何可见字段，
+  必须同步加进 views/grid.js 的 cardSig()，否则该字段变化时不会重画卡片。
+
+  卡片价格（docs/14）：.card-meta 行右端的 .card-price 徽标显示派生成本，数据来自
+  state.costs（app.js 用批量 modelsCosts() 一次拉全，不逐卡发 IPC）；算不出显示 ¥??。
+  改耗材单价 / 分配耗材后由 filaments:changed 触发重拉并进 cardSig 重画。
+
+  打印监控（详见 docs/09 A.14）：#monitor-bar 由 components/monitorbar.js 按 printers:update
+  增量渲染，插在 #stats-bar 与 #scan-progress 之间，layout.css 里与它们同属 flex:0 0 auto。
+  关掉 ui.monitorBar、或没配置打印机时整条 hidden。每张 .mon-card 带 data-sig，
+  只有温度/进度/状态真的变了才替换那一张卡片（整条重绘会打断 hover 与按钮点击）。
+  曲线弹窗由 components/monitorchart.js 用主进程给好的坐标模型套 SVG 外壳；
+  采样与通知判定全在 src/core/monitor.js（纯 Node），不依赖设备面板是否打开。
+  诊断字段：window.__printshelfMonitor / __printshelfMonitorChart / __printshelfCam。
+============================================================================= -->
+
+<div id="app">
+
+  <!-- 标题栏 -->
+  <header id="titlebar">
+    <div class="tb-left">
+      <div class="brand">
+        <span class="brand-mark"><svg><use href="#i-layers"/></svg></span>
+        <span class="brand-text"><strong>PrintShelf</strong><small>本地 3MF 模型库</small></span>
+      </div>
+    </div>
+    <div class="tb-center">
+      <div id="global-search" class="search-box">
+        <svg class="ico"><use href="#i-search"/></svg>
+        <input id="search-input" type="text" autocomplete="off" spellcheck="false" placeholder="搜索名称、备注、标签、作者…">
+        <kbd class="search-kbd">/</kbd>
+        <button id="search-clear" class="search-clear" hidden aria-label="清空搜索"><svg class="ico"><use href="#i-close"/></svg></button>
+      </div>
+    </div>
+    <div class="tb-right">
+      <button id="btn-quick-add" class="btn btn-primary btn-sm"><svg class="ico"><use href="#i-plus"/></svg><span>添加目录</span></button>
+      <button id="btn-scan" class="icon-btn" title="重新扫描 (F5)"><svg class="ico"><use href="#i-refresh"/></svg></button>
+      <button id="btn-devices" class="icon-btn dev-btn" title="设备：管理你的打印机">
+        <svg class="ico"><use href="#i-printer"/></svg><span class="dev-badge" hidden></span>
+      </button>
+      <button id="btn-filaments" class="icon-btn" title="耗材库：管理耗材与单价"><svg class="ico"><use href="#i-box"/></svg></button>
+      <button id="btn-roulette" class="icon-btn" title="打印轮盘：随机挑一个未打印模型"><svg class="ico"><use href="#i-dice"/></svg></button>
+      <button id="btn-theme" class="icon-btn" title="切换深浅主题"><svg class="ico"><use href="#i-moon"/></svg></button>
+      <button id="btn-settings" class="icon-btn" title="设置"><svg class="ico"><use href="#i-settings"/></svg></button>
+      <span class="tb-sep"></span>
+      <button id="btn-win-min" class="win-btn" title="最小化"><svg class="ico"><use href="#i-minus"/></svg></button>
+      <button id="btn-win-max" class="win-btn" title="最大化"><svg class="ico"><use href="#i-square"/></svg></button>
+      <button id="btn-win-close" class="win-btn win-close" title="关闭"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+  </header>
+
+  <!-- 主体三栏 -->
+  <div id="body">
+    <aside id="sidebar">
+      <button id="sidebar-toggle" class="sidebar-toggle" title="收起侧栏"><svg class="ico"><use href="#i-chevron-left"/></svg></button>
+      <div class="sidebar-scroll">
+        <nav id="nav-library" class="nav-group" aria-label="模型库"></nav>
+        <section class="sidebar-section">
+          <div class="section-head" data-drop="category" title="新建分类；也可以把模型直接拖到这一行"><span>分类</span><button id="btn-category-add" class="mini-btn" title="新建分类"><svg class="ico"><use href="#i-plus"/></svg></button></div>
+          <div id="nav-categories" class="nav-group"></div>
+        </section>
+        <section class="sidebar-section">
+          <div class="section-head" data-drop="tag" title="新建标签；也可以把模型直接拖到这一行"><span>标签</span><button id="btn-tag-add" class="mini-btn" title="新建标签"><svg class="ico"><use href="#i-plus"/></svg></button></div>
+          <div id="nav-tags" class="nav-group tag-cloud"></div>
+        </section>
+        <section class="sidebar-section">
+          <div class="section-head"><span>我的视图</span><button id="btn-view-save" class="mini-btn" title="保存当前筛选为视图"><svg class="ico"><use href="#i-plus"/></svg></button></div>
+          <div id="nav-views" class="nav-group"></div>
+        </section>
+      </div>
+    </aside>
+
+    <main id="main">
+      <div id="toolbar">
+        <div class="tb-title-wrap">
+          <h1 id="view-title">全部模型</h1>
+          <span id="view-subtitle"></span>
+        </div>
+        <div class="tb-actions">
+          <div id="filter-chips" class="filter-chips"></div>
+          <button id="btn-clear-filters" class="text-btn" hidden>清除筛选</button>
+          <label class="select-wrap" title="排序字段">
+            <svg class="ico"><use href="#i-sort"/></svg>
+            <select id="sort-select" class="select">
+              <option value="createdAt">添加时间</option>
+              <option value="name">名称</option>
+              <option value="category">分类</option>
+              <option value="size">文件大小</option>
+              <option value="mtime">文件修改时间</option>
+              <option value="lastOpenedAt">最近打开</option>
+              <option value="lastPrintedAt">最近打印</option>
+              <option value="rating">评分</option>
+              <option value="printCount">打印次数</option>
+              <option value="openCount">打开次数</option>
+            </select>
+          </label>
+          <button id="btn-sort-dir" class="icon-btn" title="切换升序/降序"><svg class="ico"><use href="#i-chevron-down"/></svg></button>
+          <div id="view-switch" class="segmented" role="group" aria-label="浏览方式">
+            <button data-view="grid" class="active" title="网格视图"><svg class="ico"><use href="#i-grid"/></svg></button>
+            <button data-view="list" title="列表视图"><svg class="ico"><use href="#i-list"/></svg></button>
+          </div>
+          <label class="size-slider-wrap" title="缩略图大小">
+            <svg class="ico"><use href="#i-image"/></svg>
+            <input id="size-slider" type="range" min="140" max="340" step="10" value="220">
+          </label>
+          <button id="btn-select-all" class="text-btn" title="全选 (Ctrl+A)">全选</button>
+        </div>
+      </div>
+
+      <div id="stats-bar" class="stats-bar">
+        <div id="stats-cells" class="stats-cells"></div>
+        <div id="stats-actions" class="stats-actions" hidden>
+          <span class="stats-picked">已勾选 <strong id="stats-selected">0</strong> 项</span>
+          <button id="btn-bulk-delete" class="btn btn-sm btn-danger-solid" title="把勾选的文件移入系统回收站">
+            <svg class="ico"><use href="#i-trash"/></svg>删除勾选
+          </button>
+          <button id="btn-bulk-deselect" class="btn btn-ghost btn-sm" title="取消全部勾选">取消勾选</button>
+        </div>
+        <!-- 模型网站导航：URL 是静态常量，点击由 components/weblinks.js 走 openExternal，
+             绝不在 app:// 页面里导航（会被 CSP 拦下，也会把应用窗口变成空白）。 -->
+        <div id="stats-links" class="stats-links" aria-label="模型网站导航">
+          <button type="button" class="btn btn-sm web-link" data-url="https://makerworld.com.cn/zh"
+                  title="在浏览器打开拓竹模型库 MakerWorld（makerworld.com.cn）">
+            <svg class="ico"><use href="#i-cube"/></svg><span>MakerWorld</span>
+            <svg class="ico web-link-ext"><use href="#i-external"/></svg>
+          </button>
+          <button type="button" class="btn btn-sm web-link" data-url="https://space.snapmaker.cn/zh?tab=home-featured"
+                  title="在浏览器打开快造模型空间（space.snapmaker.cn）">
+            <svg class="ico"><use href="#i-printer"/></svg><span>快造空间</span>
+            <svg class="ico web-link-ext"><use href="#i-external"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 主界面常驻打印监控条：components/monitorbar.js 按 printers:update 增量渲染。
+           没配置打印机、或在「设置 → 打印监控」里关掉时整条 hidden，不占布局。 -->
+      <div id="monitor-bar" class="monitor-bar" hidden>
+        <div class="mon-headbar">
+          <span class="mon-title"><svg class="ico"><use href="#i-printer"/></svg>打印监控</span>
+          <span class="mon-live">暂无打印任务</span>
+          <span class="mon-count"></span>
+          <span class="mon-note" hidden></span>
+          <span class="mon-spacer"></span>
+          <button type="button" class="mon-link" data-mon-act="chart-first">看曲线</button>
+          <button type="button" class="mon-link" data-mon-act="settings">监控设置</button>
+        </div>
+        <div class="mon-list"></div>
+      </div>
+
+      <div id="scan-progress" class="scan-progress" hidden>
+        <div class="scan-progress-top"><span id="scan-label">正在扫描…</span><span id="scan-percent"></span></div>
+        <div class="progress-track"><div id="scan-bar" class="progress-fill"></div></div>
+      </div>
+
+      <div id="content" class="content-grid"></div>
+
+      <div id="empty-state" class="empty-state" hidden>
+        <img src="assets/empty-library.svg" alt="" class="empty-illustration">
+        <h2 id="empty-title">这里还没有模型</h2>
+        <p id="empty-desc">添加一个本机文件夹，PrintShelf 会自动扫描其中的 .3mf 文件并生成缩略图。</p>
+        <div class="empty-actions">
+          <button id="empty-add" class="btn btn-primary"><svg class="ico"><use href="#i-plus"/></svg>添加模型文件夹</button>
+          <button id="empty-demo" class="btn btn-ghost">扫描工作区示例</button>
+          <button id="empty-models-add" class="btn btn-primary" hidden><svg class="ico"><use href="#i-folder"/></svg>手动添加模型</button>
+        </div>
+        <p class="empty-hint">也可以直接把文件夹或 .3mf 文件拖进窗口</p>
+      </div>
+    </main>
+
+    <aside id="detail" class="detail" hidden>
+      <header class="detail-head">
+        <h2>模型详情</h2>
+        <button id="detail-close" class="icon-btn" title="关闭详情 (Esc)"><svg class="ico"><use href="#i-close"/></svg></button>
+      </header>
+      <div id="detail-body" class="detail-body"></div>
+    </aside>
+  </div>
+
+  <!-- 状态栏 -->
+  <footer id="statusbar">
+    <span id="status-text" class="status-left"><span class="status-dot"></span>就绪</span>
+    <span id="status-selection"></span>
+    <span class="status-spacer"></span>
+    <span id="status-count"></span>
+    <span id="status-datadir" class="status-dir" title="点击打开数据目录"></span>
+  </footer>
+</div>
+
+<!-- ============ 浮层 ============ -->
+<div id="bulkbar" class="bulkbar" hidden>
+  <div class="bulk-left"><strong id="bulk-count">0</strong><span>项已选中</span></div>
+  <div class="bulk-actions">
+    <button id="bulk-category" class="btn btn-ghost btn-sm" title="把选中的模型迁移到一个分类"><svg class="ico"><use href="#i-folder"/></svg>迁移</button>
+    <button id="bulk-tag" class="btn btn-ghost btn-sm"><svg class="ico"><use href="#i-tag"/></svg>加标签</button>
+    <button id="bulk-status" class="btn btn-ghost btn-sm"><svg class="ico"><use href="#i-printer"/></svg>打印状态</button>
+    <button id="bulk-fav" class="btn btn-ghost btn-sm"><svg class="ico"><use href="#i-star"/></svg>收藏</button>
+    <span class="bulk-sep"></span>
+    <button id="bulk-open" class="btn btn-ghost btn-sm" title="批量送入切片软件"><svg class="ico"><use href="#i-printer"/></svg>打开</button>
+    <button id="bulk-remove" class="btn btn-ghost btn-sm" title="移出索引：只从库中移除，磁盘文件保留"><svg class="ico"><use href="#i-minus"/></svg>移出索引</button>
+    <button id="bulk-delete" class="btn btn-ghost btn-sm danger" title="删除：把磁盘文件移入系统回收站"><svg class="ico"><use href="#i-trash"/></svg>删除</button>
+    <button id="bulk-clear" class="icon-btn" title="取消选择"><svg class="ico"><use href="#i-close"/></svg></button>
+  </div>
+</div>
+
+<div id="toast-container" class="toast-container" aria-live="polite"></div>
+<div id="context-menu" class="context-menu" hidden></div>
+<div id="modal-root"></div>
+
+<div id="lightbox" class="lightbox" hidden>
+  <button id="lightbox-close" class="lightbox-close icon-btn" title="关闭 (Esc)"><svg class="ico"><use href="#i-close"/></svg></button>
+  <button id="lightbox-prev" class="lightbox-nav prev" title="上一个 (←)"><svg class="ico"><use href="#i-chevron-left"/></svg></button>
+  <img id="lightbox-img" src="" alt="模型预览">
+  <button id="lightbox-next" class="lightbox-nav next" title="下一个 (→)"><svg class="ico"><use href="#i-chevron-right"/></svg></button>
+  <div id="lightbox-caption" class="lightbox-caption"></div>
+</div>
+
+<div id="settings-panel" class="overlay settings-overlay" hidden>
+  <div class="settings-window">
+    <header class="settings-head">
+      <h2><svg class="ico"><use href="#i-settings"/></svg>设置</h2>
+      <button id="settings-close" class="icon-btn" title="关闭 (Esc)"><svg class="ico"><use href="#i-close"/></svg></button>
+    </header>
+    <div class="settings-layout">
+      <nav id="settings-nav" class="settings-nav"></nav>
+      <div id="settings-content" class="settings-content"></div>
+    </div>
+  </div>
+</div>
+
+<div id="devices-panel" class="overlay devices-overlay" hidden>
+  <div class="devices-window">
+    <header class="devices-head">
+      <h2><svg class="ico"><use href="#i-printer"/></svg>设备</h2>
+      <span class="devices-head-sub">快造 / 拓竹，局域网直连</span>
+      <button id="devices-close" class="icon-btn" title="关闭 (Esc)"><svg class="ico"><use href="#i-close"/></svg></button>
+    </header>
+    <div id="devices-body" class="devices-body"></div>
+  </div>
+</div>
+
+<div id="filaments-panel" class="overlay filaments-overlay" hidden>
+  <div class="fil-window">
+    <header class="fil-head">
+      <h2><svg class="ico"><use href="#i-box"/></svg>耗材库</h2>
+      <span class="fil-head-sub">价格 · 颜色 · 类型，成本账本的基础</span>
+      <button id="filaments-close" class="icon-btn" title="关闭 (Esc)"><svg class="ico"><use href="#i-close"/></svg></button>
+    </header>
+    <div id="filaments-body" class="fil-body"></div>
+  </div>
+</div>
+
+<div id="drag-mask" class="drag-mask" hidden>
+  <div class="drag-mask-inner">
+    <svg class="ico"><use href="#i-upload"/></svg>
+    <strong>松开即可添加</strong>
+    <span>支持文件夹或 .3mf 文件</span>
+  </div>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

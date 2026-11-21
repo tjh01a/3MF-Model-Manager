@@ -1,0 +1,365 @@
+/* ==========================================================================
+   PrintShelf · layout.css
+   应用骨架：标题栏 / 主体三栏 / 主区 / 详情抽屉 / 状态栏 / 响应式
+   只做布局与定位，组件外观见 components.css。
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. 应用整体：三行网格
+   -------------------------------------------------------------------------- */
+#app {
+  display: grid;
+  grid-template-rows: 52px 1fr 28px;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* --------------------------------------------------------------------------
+   2. 自绘标题栏
+   -------------------------------------------------------------------------- */
+#titlebar {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 8px 0 14px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+/* 标题栏内所有可交互元素必须退出拖拽区 */
+#titlebar button,
+#titlebar input,
+#titlebar select,
+#titlebar textarea,
+#titlebar a,
+#titlebar label,
+#global-search {
+  -webkit-app-region: no-drag;
+}
+
+.tb-left  { display: flex; align-items: center; min-width: 0; }
+.tb-center { flex: 1 1 auto; min-width: 0; display: flex; justify-content: center; }
+.tb-right { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; }
+
+/* brand */
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), #7c73f0);
+  color: #fff;
+  box-shadow: var(--shadow-sm);
+}
+.brand-mark svg { width: 17px; height: 17px; stroke-width: 2; }
+.brand-text { display: flex; flex-direction: column; line-height: 1.18; white-space: nowrap; }
+.brand-text strong { font-size: 13px; font-weight: 600; color: var(--text); }
+.brand-text small { font-size: 10px; color: var(--text-mute); }
+
+/* 中间全局搜索：居中，最大宽 460px */
+#global-search { width: 100%; max-width: 460px; }
+
+/* 右侧分隔线 */
+.tb-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--border); flex: 0 0 auto; }
+
+/* --------------------------------------------------------------------------
+   3. 主体三栏：侧栏 / 主区 / 详情
+   -------------------------------------------------------------------------- */
+#body {
+  position: relative;
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: hidden;
+  /* 折叠/展开时宽度平滑过渡；只动 grid 轨道与 padding，不触发整页重绘。
+     全局 prefers-reduced-motion 规则会把时长压到 0，弱动效偏好下自动变为瞬间切换。 */
+  transition: grid-template-columns var(--t-slow) var(--ease);
+}
+
+/* --------------------------------------------------------------------------
+   4. 侧栏
+   -------------------------------------------------------------------------- */
+#sidebar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-elev);
+  border-right: 1px solid var(--border);
+}
+
+.sidebar-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 10px 8px 14px;
+  transition: padding var(--t-slow) var(--ease);
+}
+
+.sidebar-section { margin-top: 8px; }
+
+/* --------------------------------------------------------------------------
+   折叠态：宽度 56px，只留图标 / 分类色点 / 标签色点。
+   旧版用 `.nav-group > * > .nav-count` 隐藏计数，但 #nav-library 里包了一层
+   .nav-sub，智能视图的 .nav-count 不是 .nav-group 的直接孙级 —— 于是折叠后
+   8 个数字仍以 11px 显示，把 56px 的窄栏挤到横向溢出。这里改成与嵌套结构无关的
+   按类名精确隐藏，同时保留可点击的色点（标签仍可筛选）。
+   -------------------------------------------------------------------------- */
+body.sidebar-collapsed #body {
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+}
+body.sidebar-collapsed #sidebar { padding: 0; min-width: 0; }
+body.sidebar-collapsed #sidebar .sidebar-scroll { padding: 12px 6px; }
+body.sidebar-collapsed #sidebar .sidebar-section { margin-top: 4px; }
+body.sidebar-collapsed #sidebar .nav-group,
+body.sidebar-collapsed #sidebar .nav-sub { gap: 4px; }
+body.sidebar-collapsed #sidebar .nav-item,
+body.sidebar-collapsed #sidebar .nav-add {
+  justify-content: center;
+  text-align: center;
+  padding: 9px 0;
+  font-size: 0;
+}
+body.sidebar-collapsed #sidebar .tag-cloud .nav-item { padding: 7px 0; }
+body.sidebar-collapsed #sidebar .nav-item .ico { margin: 0; }
+/* 分类色点：展开态也必须画出圆点，否则「修改颜色」改完没有任何视觉反馈
+   （颜色其实一直写进 library.json 了，只是这里没渲染）。
+   容器占 16px 与 .ico 同宽，保证分类行文字和上方智能视图的图标行左对齐；
+   圆点画在 ::before 上，折叠态由下面的规则把容器放大成 11px 实心圆。 */
+#sidebar .cat-item .dot {
+  flex: 0 0 16px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+}
+#sidebar .cat-item .dot::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dot, var(--accent));
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .12);
+}
+html[data-theme="dark"] #sidebar .cat-item .dot::before {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22);
+}
+
+/* 折叠态：分类行没有图标，把色点放大到 11px 当作唯一标识。
+   这条选择器特异性更高，会覆盖上面容器的尺寸。 */
+body.sidebar-collapsed #sidebar .cat-item .dot {
+  flex: 0 0 11px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--dot, var(--accent));
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .10);
+}
+body.sidebar-collapsed .sidebar-toggle svg { transform: rotate(180deg); }
+
+/* 所有文字载体：无论嵌套几层都隐藏，避免「font-size:0 但自身又声明了字号」的漏网之鱼 */
+body.sidebar-collapsed #sidebar .nav-label,
+body.sidebar-collapsed #sidebar .nav-count,
+body.sidebar-collapsed #sidebar .nav-sub-label,
+body.sidebar-collapsed #sidebar .section-head,
+body.sidebar-collapsed #sidebar .nav-empty,
+body.sidebar-collapsed #sidebar .nav-add > span { display: none; }
+
+/* 标签折叠成一个 18px 色点：文字藏起来，但标签依旧可点、可筛选 */
+body.sidebar-collapsed #sidebar .tag-cloud { justify-content: center; gap: 5px; }
+body.sidebar-collapsed #sidebar .tag-chip {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  padding: 0;
+  font-size: 0;
+  line-height: 0;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  overflow: hidden;
+}
+body.sidebar-collapsed #sidebar .tag-chip::before {
+  width: 10px;
+  height: 10px;
+  background: var(--tag, var(--accent));
+}
+
+/* --------------------------------------------------------------------------
+   5. 主区
+   -------------------------------------------------------------------------- */
+#main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* 顶部固定区域：不随内容滚动 */
+#toolbar,
+#stats-bar,
+#monitor-bar,
+#scan-progress { flex: 0 0 auto; }
+
+#toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 20px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+}
+
+.tb-title-wrap { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+#view-title { font-size: 16px; font-weight: 600; color: var(--text); white-space: nowrap; }
+#view-subtitle { font-size: 12px; color: var(--text-mute); white-space: nowrap; }
+
+.tb-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+#stats-bar { background: var(--bg); }
+#scan-progress { background: var(--accent-soft); }
+
+/* 内容滚动区：占满剩余高度 */
+#content {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* 空状态填充满剩余空间；显示空态时让内容区让位 */
+.empty-state { flex: 1 1 auto; min-height: 0; }
+#content:empty { display: none; }
+#main:has(#empty-state:not([hidden])) #content { display: none; }
+
+/* --------------------------------------------------------------------------
+   6. 详情抽屉（右侧滑入）
+   -------------------------------------------------------------------------- */
+#detail {
+  width: 360px;
+  min-width: 320px;   /* 高 DPI 缩放下仍保证详情表单有足够宽度 */
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  animation: drawer-in var(--t-slow) var(--ease);
+}
+
+.detail-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 12px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.detail-head h2 { font-size: 15px; font-weight: 600; }
+
+/* --------------------------------------------------------------------------
+   7. 状态栏
+   -------------------------------------------------------------------------- */
+#statusbar {
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg-elev);
+  border-top: 1px solid var(--border);
+  user-select: none;
+}
+.status-left { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); flex: 0 0 auto; }
+.status-spacer { flex: 1 1 auto; }
+.status-dir {
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-mute);
+  cursor: pointer;
+}
+.status-dir:hover { color: var(--accent); }
+#statusbar > span { white-space: nowrap; }
+
+/* --------------------------------------------------------------------------
+   8. 响应式
+   -------------------------------------------------------------------------- */
+
+/* 详情在窄屏改为覆盖层 */
+@media (max-width: 1199px) {
+  #detail {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+/* 中等宽度：隐藏次要工具栏控件 */
+@media (max-width: 999px) {
+  #view-subtitle { display: none; }
+  .size-slider-wrap { display: none; }
+  #btn-select-all { display: none; }
+  #toolbar { padding: 10px 14px; gap: 10px; }
+  .tb-actions { gap: 6px; }
+  /* 统计条右侧的模型网站导航收紧一点，统计格子仍可横向滚动 */
+  .stats-links { padding-left: 8px; gap: 6px; }
+  .stats-links .web-link { padding: 0 8px; }
+  .stats-links .web-link .web-link-ext { display: none; }
+}
+
+/* 窄屏：侧栏变抽屉（靠 body.sidebar-collapsed 控制开合） */
+@media (max-width: 759px) {
+  #body,
+  body.sidebar-collapsed #body {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  #sidebar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 232px;
+    z-index: 35;
+    box-shadow: var(--shadow-lg);
+    transition: left var(--t) var(--ease);
+  }
+  body.sidebar-collapsed #sidebar { left: -232px; }
+  /* 抽屉关闭时把切换按钮钉在窗口左缘，否则它会跟着抽屉一起滑出可视区、再也点不到 */
+  body.sidebar-collapsed .sidebar-toggle {
+    position: fixed;
+    top: 12px;
+    left: 4px;
+    right: auto;
+  }
+  .sidebar-toggle { right: -13px; }
+  .brand-text small { display: none; }
+  #btn-quick-add span { display: none; }
+  #toolbar { flex-wrap: wrap; }
+  .tb-title-wrap { flex: 1 1 100%; }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "printshelf",
+  "productName": "PrintShelf",
+  "version": "1.0.0",
+  "description": "本地 3MF 模型库 —— 扫描、分类、预览、去重、一键送切片软件，数据 100% 留在本机",
+  "main": "electron/main.js",
+  "author": "PrintShelf",
+  "license": "MIT",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node launch.js",
+    "dev": "node launch.js --dev",
+    "electron:smoke": "node launch.js --smoke",
+    "capture": "node launch.js --capture=D:/AI工具workbuddy/PrintShelf/data/ui-capture.png",
+    "test": "node tests/run-tests.js",
+    "smoke": "node tests/e2e-smoke.js",
+    "selftest": "node tests/run-tests.js && node tests/e2e-smoke.js && node tests/meshopt-tests.js && node tests/u1-tests.js && node tests/printer-tests.js && node tests/camera-tests.js && node tests/robustness-tests.js && node tests/bambucloud-tests.js && node tests/classify-tests.js && node tests/source-url-tests.js && node tests/monitor-tests.js && node tests/filaments-tests.js && node tools/check-ipc-contract.js",
+    "icon": "python tools/make_icon.py",
+    "shortcut": "python tools/create_shortcut.py",
+    "test:meshopt": "node tests/meshopt-tests.js",
+    "test:u1": "node tests/u1-tests.js",
+    "test:printers": "node tests/printer-tests.js",
+    "test:robust": "node tests/robustness-tests.js",
+    "test:drag": "node tools/drag-e2e.js",
+    "test:cloud": "node tests/bambucloud-tests.js"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "chokidar": "^3.6.0"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

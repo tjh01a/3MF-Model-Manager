@@ -1,0 +1,344 @@
+/* ==========================================================================
+   PrintShelf · base.css
+   reset / 设计令牌(浅色+深色) / 排版 / 滚动条 / 图标基线 / 工具类 / 动效
+   说明：全部 CSS 变量仅在本文件定义，其余三个样式表只使用 var(--xxx)。
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. 设计令牌 · 浅色（默认，IDE light 一致）
+   -------------------------------------------------------------------------- */
+:root {
+  /* 字体 */
+  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+  --mono: "Cascadia Code", "Cascadia Mono", Consolas, "SFMono-Regular", "Microsoft YaHei UI", monospace;
+
+  /* 表面层级：bg 最底 → bg-elev 抬升面 → bg-soft 柔和填充 → surface-pop 浮层 */
+  --bg: #f5f7fa;
+  --bg-elev: #ffffff;
+  --bg-sunk: #eef1f6;   /* 比 --bg-soft 再沉一档，用于设备卡片的进度/温度底 */
+  --bg-soft: #eef1f6;
+  --surface-pop: #ffffff;
+  --hover: #eff2f8;
+  --active: #e5eaf3;
+
+  /* 文字（slate 系） */
+  --text: #1e293b;
+  --text-dim: #475569;
+  --text-mute: #94a3b8;
+
+  /* 边框与装饰 */
+  --border: #e5e9f0;
+  --border-strong: #d2d9e6;
+  --checker: rgba(100, 116, 139, .09);
+  --media-1: #fafbfd;
+  --media-2: #eaedf4;
+  --scroll-thumb: rgba(100, 116, 139, .38);
+  --scroll-thumb-hover: rgba(100, 116, 139, .66);
+
+  /* 阴影（极轻，不厚重） */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, .04);
+  --shadow: 0 8px 24px rgba(15, 23, 42, .08);
+  --shadow-lg: 0 16px 48px rgba(15, 23, 42, .16);
+
+  /* 主色 · 靛蓝 */
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-soft: #eef0ff;
+  --accent-text: #ffffff;
+  --accent-ring: rgba(79, 70, 229, .18);
+  --accent-border: #c7c9f7;
+
+  /* 语义色 */
+  --success: #10b981;
+  --success-soft: #e6f7ef;
+  --warn: #f59e0b;
+  --warn-soft: #fff3df;
+  --danger: #ef4444;
+  --danger-soft: #fdeaea;
+  --info: #3b82f6;
+  --info-soft: #e8f1ff;
+  --star: #f59e0b;
+
+  /* 打印状态徽标：柔和底色 + 文字色 */
+  --st-unprinted-bg: #eef1f5;   --st-unprinted-fg: #64748b;
+  --st-queued-bg:    #fff2dc;   --st-queued-fg:    #b45309;
+  --st-printing-bg:  #e6f0ff;   --st-printing-fg:  #1d4ed8;
+  --st-printed-bg:   #e4f7ee;   --st-printed-fg:   #047857;
+  --st-failed-bg:    #fdeaea;   --st-failed-fg:    #b91c1c;
+
+  /* 圆角 */
+  --radius: 12px;
+  --radius-lg: 14px;   /* 卡片 / 弹窗 */
+  --radius-md: 9px;    /* 按钮 */
+  --radius-sm: 6px;    /* 小元素 */
+  --radius-pill: 999px;
+
+  /* 尺寸：卡片宽度由工具栏滑块经 JS 写入 --card-w，此处为缺省值 */
+  --card-w: 220px;
+
+  /* 动效 */
+  --t-fast: 150ms;
+  --t: 180ms;
+  --t-slow: 220ms;
+  --ease: ease;
+
+  /* 新增动效专用令牌（docs/11）：既有 transition 继续读 --ease，不改动它们的手感；
+     只有 motion.css / motion.js 的新动效使用下面这些，语义化命名便于统一 A/B。 */
+  --ease-ui: cubic-bezier(.2, .7, .3, 1);
+  --dur-tap: 80ms;
+  --dur-feedback: 160ms;
+  --dur-enter: 180ms;
+  --dur-surface: 160ms;
+}
+
+/* --------------------------------------------------------------------------
+   2. 设计令牌 · 深色（完整覆盖全部变量）
+   -------------------------------------------------------------------------- */
+html[data-theme="dark"] {
+  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+  --mono: "Cascadia Code", "Cascadia Mono", Consolas, "SFMono-Regular", "Microsoft YaHei UI", monospace;
+
+  --bg: #0f1420;
+  --bg-elev: #171d2b;
+  --bg-sunk: rgba(255,255,255,.05);
+  --bg-soft: #1e2636;
+  --surface-pop: #222c3d;
+  --hover: #263245;
+  --active: #2b3446;
+
+  --text: #e7ecf6;
+  --text-dim: #a9b4c8;
+  --text-mute: #6f7d95;
+
+  --border: #2b3446;
+  --border-strong: #3a465c;
+  --checker: rgba(255, 255, 255, .035);
+  --media-1: #1e2636;
+  --media-2: #171d2b;
+  --scroll-thumb: rgba(148, 163, 184, .28);
+  --scroll-thumb-hover: rgba(148, 163, 184, .55);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow: 0 8px 24px rgba(0, 0, 0, .38);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, .55);
+
+  --accent: #818cf8;
+  --accent-hover: #a5b4fc;
+  --accent-soft: rgba(129, 140, 248, .15);
+  --accent-text: #11162a;          /* 提亮后的主色上用深色文字保证对比 */
+  --accent-ring: rgba(129, 140, 248, .24);
+  --accent-border: rgba(129, 140, 248, .45);
+
+  --success: #34d399;
+  --success-soft: rgba(16, 185, 129, .15);
+  --warn: #fbbf24;
+  --warn-soft: rgba(245, 158, 11, .15);
+  --danger: #f87171;
+  --danger-soft: rgba(239, 68, 68, .15);
+  --info: #60a5fa;
+  --info-soft: rgba(59, 130, 246, .15);
+  --star: #fbbf24;
+
+  --st-unprinted-bg: #242d40;  --st-unprinted-fg: #9aa7bd;
+  --st-queued-bg: rgba(245, 158, 11, .16);  --st-queued-fg: #fbbf24;
+  --st-printing-bg: rgba(59, 130, 246, .18); --st-printing-fg: #7db1ff;
+  --st-printed-bg: rgba(16, 185, 129, .16);  --st-printed-fg: #4ade9f;
+  --st-failed-bg: rgba(239, 68, 68, .16);    --st-failed-fg: #fca5a5;
+
+  --radius: 12px;
+  --radius-lg: 14px;
+  --radius-md: 9px;
+  --radius-sm: 6px;
+  --radius-pill: 999px;
+
+  --card-w: 220px;
+
+  --t-fast: 150ms;
+  --t: 180ms;
+  --t-slow: 220ms;
+  --ease: ease;
+
+  /* 新增动效专用令牌（docs/11）：既有 transition 继续读 --ease，不改动它们的手感；
+     只有 motion.css / motion.js 的新动效使用下面这些，语义化命名便于统一 A/B。 */
+  --ease-ui: cubic-bezier(.2, .7, .3, 1);
+  --dur-tap: 80ms;
+  --dur-feedback: 160ms;
+  --dur-enter: 180ms;
+  --dur-surface: 160ms;
+}
+
+/* --------------------------------------------------------------------------
+   3. Reset
+   -------------------------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+html, body, h1, h2, h3, h4, h5, h6, p, figure, blockquote, dl, dd, pre {
+  margin: 0;
+}
+
+ul, ol { margin: 0; padding: 0; list-style: none; }
+
+h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.35; }
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+button {
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+img, svg { display: block; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+kbd { font-family: var(--mono); }
+
+body {
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* hidden 属性必须强于组件自身的 display，保证所有浮层可被彻底关闭 */
+[hidden] { display: none !important; }
+
+/* 文本选中：主色浅底 */
+::selection { background: var(--accent-soft); color: var(--accent); }
+
+/* 统一焦点可见样式 */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* --------------------------------------------------------------------------
+   4. 排版层级
+   -------------------------------------------------------------------------- */
+h1 { font-size: 16px; }
+h2 { font-size: 15px; }
+h3 { font-size: 14px; }
+small { font-size: 11px; }
+
+/* --------------------------------------------------------------------------
+   5. 图标基线
+   说明：文档中的内联 <svg> 全部为 sprite 图标引用（插画走 <img>，sprite 容器
+   自身 display:none），因此可统一按 stroke 风格处理；fill/stroke 等继承属性会
+   经由 <use> 传入 symbol 的克隆内容。
+   -------------------------------------------------------------------------- */
+svg.ico,
+svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: middle;
+}
+
+/* 用低特异性的元素选择器（0,0,1），组件里任意 .foo svg 覆盖都能生效；
+   sprite 容器单独复位为零尺寸（其内联 display:none 亦生效）。 */
+#icon-sprite { width: 0; height: 0; }
+
+/* stroke 风格下的小圆点：仅给 r<=1.5 的圆点补实心，避免变成空心小环。
+   同时命中 <use> 上下文与 sprite 内的原始元素，兼容不同 Chromium 实现。 */
+.ico circle[r="1"],
+.ico circle[r="1.3"],
+.ico circle[r="1.4"],
+.ico circle[r="1.5"],
+#icon-sprite circle[r="1"],
+#icon-sprite circle[r="1.3"],
+#icon-sprite circle[r="1.4"],
+#icon-sprite circle[r="1.5"] {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* --------------------------------------------------------------------------
+   6. 滚动条（细、圆角、hover 变深）
+   -------------------------------------------------------------------------- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: var(--radius-pill);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* --------------------------------------------------------------------------
+   7. 通用工具类
+   -------------------------------------------------------------------------- */
+.hidden { display: none !important; }
+.muted { color: var(--text-mute); }
+.mono { font-family: var(--mono); font-size: .92em; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row { display: flex; align-items: center; gap: 8px; }
+.spacer { flex: 1 1 auto; }
+
+/* --------------------------------------------------------------------------
+   8. 关键帧
+   -------------------------------------------------------------------------- */
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(8px) scale(.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes drawer-in {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes bulkbar-in {
+  from { opacity: 0; transform: translate(-50%, 14px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* --------------------------------------------------------------------------
+   9. 尊重减少动效偏好
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  /* 2026-11-19 改：系统偏好只是建议，应用内档位优先。
+     只有「实际生效档位」不是 full（用户选了精简/关闭，或显式打开「跟随系统」）时才压时长。
+     JS 尚未写入属性时的首帧仍按系统偏好处理（:not 匹配），不会闪现大幅动画。 */
+  html:not([data-motion-effective="full"]) *,
+  html:not([data-motion-effective="full"]) *::before,
+  html:not([data-motion-effective="full"]) *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
