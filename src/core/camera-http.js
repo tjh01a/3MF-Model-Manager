@@ -10,7 +10,7 @@
  *   2) Moonraker 配置过的 webcam（/server/webcams/list 里的 snapshot_url）
  *   3) 出厂 camera 目录里的 monitor.jpg（U1 打印时自己写的实时快照）
  *
- * 第 3 条是实测确认的（2026-11-19，U1 192.168.1.50）：
+ * 第 3 条是实测确认的（2026-11-19，U1 192.168.1.100）：
  *   /server/files/list?root=camera → monitor.jpg，JPEG 58 KB；
  *   若文件 mtime 明显落后于当前时间，说明画面是旧的，用 staleSec 如实告诉界面。
  */
@@ -211,7 +211,7 @@ async function snapmakerTwo(o = {}) {
 //   /userdata/gcodes/pictures/pic_<YYYYMMDD_HHMMSS>.jpg
 // 这张文件能用 Moonraker 的 /server/files/gcodes/pictures/... 读到，读完再删掉。
 //
-// 实测（2026-11-19，U1 192.168.1.50）：
+// 实测（2026-11-19，U1 192.168.1.100）：
 //   POST /printer/gcode/script {"script":"TIMELAPSE_TAKE_FRAME DEBUG=1"} → ok
 //   约 500ms 后 pic_20261119_145747.jpg 出现，89 KB 的当帧 JPEG；DELETE 可清除。
 // 这条路径不启动延时摄影、不改打印机设置，也不会暂停当前打印。

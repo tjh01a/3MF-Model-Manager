@@ -2,7 +2,7 @@
 /**
  * 快造 U1 的 Moonraker 客户端（契约 P-2）。纯 Node，只用内置 http。
  *
- * 实测（2026-11-14，U1 @ 192.168.1.50）：
+ * 实测（2026-11-14，U1 @ 192.168.1.100）：
  *   Klipper 2.0.0.205 + Moonraker 默认端口 7125，局域网内**不需要认证**。
  *   状态读 /printer/objects/query，控制走 /printer/print/{pause,resume,cancel}。
  */

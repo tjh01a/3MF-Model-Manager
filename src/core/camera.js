@@ -3,7 +3,7 @@
  * 拓竹 A1 / A1 mini / P1P / P1S 的机内摄像头（TCP 6000，「Bambu Tunnel」协议）。
  * 纯 Node，只用内置 tls，不引入依赖。
  *
- * 协议（实测 2026-11-15，A1 系列 3DP-26A-721）：
+ * 协议（实测 2026-11-15，A1 系列 3DP-XXXX-XXX）：
  *   1. TLS 连接 6000（证书自签，rejectUnauthorized 必须关）
  *   2. 发 80 字节鉴权包：
  *        [0:4]   0x40            payload 长度 64

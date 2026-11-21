@@ -349,7 +349,7 @@ async function addManual() {
     title: '添加打印机',
     fields: [
       { key: 'kind', label: '类型（snapmaker 或 bambu）', value: 'snapmaker', ph: 'snapmaker / bambu' },
-      { key: 'ip', label: 'IP 地址', ph: '192.168.1.50' },
+      { key: 'ip', label: 'IP 地址', ph: '192.168.1.100' },
       { key: 'name', label: '名称（可留空）', ph: '快造 U1' },
       { key: 'serial', label: '序列号（拓竹必填）', ph: '见打印机屏幕/设置' },
       { key: 'accessCode', label: '访问码（拓竹必填，屏幕上的 8 位）', ph: '8 位访问码' },
@@ -386,7 +386,7 @@ async function editPrinter(id) {
       { key: 'ip', label: 'IP 地址', value: p.ip },
       { key: 'serial', label: '序列号（拓竹）', value: p.serial },
       { key: 'accessCode', label: '访问码（拓竹）', value: p.accessCode },
-      { key: 'cameraUrl', label: '摄像头地址（留空自动走机型）', value: p.cameraUrl || '', ph: 'http://192.168.1.50:8080/?action=stream' },
+      { key: 'cameraUrl', label: '摄像头地址（留空自动走机型）', value: p.cameraUrl || '', ph: 'http://192.168.1.100:8080/?action=stream' },
     ],
     confirmText: '保存',
   });

@@ -638,7 +638,7 @@ class PrinterService extends EventEmitter {
   }
 
   /**
-   * 把底层错误翻成人话。用户看到的「connect ECONNREFUSED 192.168.0.109:8883」
+   * 把底层错误翻成人话。用户看到的「connect ECONNREFUSED 192.168.1.101:8883」
    * 既不知道是什么意思，也不知道该动哪里。
    */
   _bambuErrorText(e, p, via = 'lan') {
