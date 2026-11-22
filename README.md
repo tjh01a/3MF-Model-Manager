@@ -17,8 +17,8 @@
 
 到本仓库 **Releases** 页面下载：
 
-- **安装版**：`3MF-Model-Manager-1.0.0-setup.exe`，双击按向导安装，自动建快捷方式。
-- **绿色版**：`3MF-Model-Manager-1.0.0-portable.zip`，解压后双击 `3MF模型管理器.exe` 就能用。
+- **安装版**：`3MF-Model-Manager-1.1.0-setup.exe`，双击按向导安装，自动建快捷方式。
+- **绿色版**：`3MF-Model-Manager-1.1.0-portable.zip`，解压后双击 `3MF模型管理器.exe` 就能用。
 
 首次打开只要三步：**选模型文件夹 → 选扫描深度 → 开始扫描**。以后再打开，直接进库。
 
