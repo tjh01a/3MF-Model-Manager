@@ -15,7 +15,7 @@
     "capture": "node launch.js --capture=D:/AI工具workbuddy/PrintShelf/data/ui-capture.png",
     "test": "node tests/run-tests.js",
     "smoke": "node tests/e2e-smoke.js",
-    "selftest": "node tests/run-tests.js && node tests/e2e-smoke.js && node tests/meshopt-tests.js && node tests/u1-tests.js && node tests/printer-tests.js && node tests/camera-tests.js && node tests/robustness-tests.js && node tests/bambucloud-tests.js && node tests/classify-tests.js && node tests/source-url-tests.js && node tests/monitor-tests.js && node tests/filaments-tests.js && node tools/check-ipc-contract.js",
+    "selftest": "node tests/run-tests.js && node tests/e2e-smoke.js && node tests/meshopt-tests.js && node tests/u1-tests.js && node tests/printer-tests.js && node tests/camera-tests.js && node tests/robustness-tests.js && node tests/bambucloud-tests.js && node tests/classify-tests.js && node tests/source-url-tests.js && node tests/monitor-tests.js && node tests/filaments-tests.js && node tests/weights-tests.js && node tools/check-ipc-contract.js",
     "build": "node tools/build-all.js --force",
     "setup": "node tools/build-setup.js",
     "setup:rebuild": "node tools/build-setup.js --rebuild",

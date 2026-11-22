@@ -604,6 +604,11 @@ class Services extends EventEmitter {
     this.emitToRenderer('filaments:changed', { action: 'remove', id });
     return r;
   }
+  async filamentSetDefault(id) {
+    const r = await this.filaments.setDefault(id);
+    this.emitToRenderer('filaments:changed', { action: 'default', id: r.defaultId });
+    return r;
+  }
   async filamentSetImage(id, filePath) {
     const r = await this.filaments.setImage(id, filePath);
     this.emitToRenderer('filaments:changed', { action: 'image', id });
@@ -614,7 +619,7 @@ class Services extends EventEmitter {
   modelCost(id) {
     const rec = this.library.get(id);
     if (!rec) return { total: 0, parts: [], weightG: null, source: 'none', complete: false };
-    return cost.costOf(rec, this.filaments.list());
+    return cost.costOf(rec, this.filaments.list(), { defaultFilament: this.filaments.getDefault() });
   }
   /**
    * 卡片价格用的批量成本：一次 IPC 拿全部模型的 { id -> {total, complete} }。
@@ -622,7 +627,8 @@ class Services extends EventEmitter {
    * filaments.list() 也只取一次。卡片是同步渲染的，只能读内存缓存，故由此接口供给。
    */
   modelsCosts() {
-    return cost.costOfBatch(this.store.getLibrary().models || {}, this.filaments.list());
+    return cost.costOfBatch(this.store.getLibrary().models || {}, this.filaments.list(),
+      { defaultFilament: this.filaments.getDefault() });
   }
   async modelSetFilaments(id, links, weightG) {
     const patch = { filamentLinks: Array.isArray(links) ? links : [] };
@@ -635,6 +641,12 @@ class Services extends EventEmitter {
   async receiptsClear() {
     const r = await this.receipts.clear();
     this.emitToRenderer('receipts:changed', { cleared: true });
+    return r;
+  }
+  /** 删除选中的回执（只删记录，不动模型文件和模型库） */
+  async receiptsDelete(ids) {
+    const r = await this.receipts.delete(ids);
+    this.emitToRenderer('receipts:changed', { deleted: r.deleted });
     return r;
   }
   /** 已完成打印视图：回执 + 对应模型记录，供渲染层一次拿到 */

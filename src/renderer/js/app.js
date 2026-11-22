@@ -359,6 +359,8 @@ async function showClassifyPrompt(items) {
 
 /** 把选择集裁剪到当前结果集内（不可见的条目自动取消勾选） */
 function pruneSelection(items) {
+  // 回执视图的选择集存的是回执 id（rcp-…），不能拿模型列表去裁剪
+  if (state.contentMode === 'receipts') return;
   const sel = state.selection;
   if (!sel || typeof sel.forEach !== 'function' || !sel.size) return;
   const visible = new Set((items || []).map((m) => m.id));
@@ -372,7 +374,10 @@ async function doRefresh(reason) {
   // 「已完成打印」走打印回执视图（docs/13）；重复 / 失效仍走各自特殊视图
   const mode = smart === 'printed' ? 'receipts'
     : (smart === 'duplicates' || smart === 'missing') ? smart : 'normal';
+  const prevMode = state.contentMode;
   state.contentMode = mode;
+  // 视图切换时退出长按编辑模式：回执 id 与模型 id 不能共用同一批勾选
+  if (prevMode && prevMode !== mode && state.editMode) exitEditMode();
 
   if (!hasShelf) {
     // 浏览器直接打开调试：不反复发请求，仅用空数据渲染，不白屏
@@ -465,7 +470,8 @@ function renderStats() {
     { value: s.favorites || 0, label: '收藏' },
   ];
   if (s.duplicates) list.push({ value: s.duplicates, label: '重复文件' });
-  if (s.missing) list.push({ value: s.missing, label: '失效文件' });
+  // 失效记录不再出现在主页面（含这个计数）：文件被删掉后列表里直接消失即可。
+  // 需要清理 / 重新定位时走侧栏「失效文件」维护视图。
   // 数字变了就轻弹一下：扫描/分类/删除之后，用户能立刻看到「哪一项动了」。
   // 只在 full 档给动画（CSS 侧用 data-motion-effective 短路），reduced/off 不动。
   const nextValues = {};
@@ -908,7 +914,9 @@ function bindGlobalKeys() {
 // ---------- 全局点击空白 ----------
 function isBlankClick(t) {
   if (!t || !t.closest) return false;
-  return !t.closest('.card, .bulkbar, #toolbar, #sidebar, .detail, .modal, .context-menu, .overlay, .lightbox, .toast, button, input, select, label, .chip, .badge, .nav-item, a');
+  // .rc-card 是打印回执卡片，和主页面 .card 一样属于「内容」而非空白，
+  // 否则编辑模式下点回执卡片会被当成点空白，立刻退出编辑模式。
+  return !t.closest('.card, .rc-card, .bulkbar, #toolbar, #sidebar, .detail, .modal, .context-menu, .overlay, .lightbox, .toast, button, input, select, label, .chip, .badge, .nav-item, a');
 }
 function bindWindowClicks() {
   document.addEventListener('click', (e) => {

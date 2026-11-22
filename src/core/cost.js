@@ -60,9 +60,11 @@ function estimateWeightByVolume(meta, type) {
  * 计算一个模型的成本明细。
  * @param {object} rec   模型记录（reading filamentLinks / meta / weightG）
  * @param {object|Map} filaments  耗材库 { id: filament } 或 Map
+ * @param {object} opts  可选：{ defaultFilament } —— 用户设置的默认耗材，
+ *   在模型既没有分配记录、也没有切片逐耗材用量时，按重量 × 默认耗材单价估算。
  * @returns {{total:number, parts:Array, weightG:number|null, source:string, complete:boolean}}
  */
-function costOf(rec, filaments) {
+function costOf(rec, filaments, opts) {
   const r = rec || {};
   // 兼容三种入口：Map / {id:Filament} / FilamentService.list() 的 {items:[...]}。
   // 实际主进程传的是 list() 的返回，items 是数组——按对象下标取值会静默算成 0 元。
@@ -138,11 +140,37 @@ function costOf(rec, filaments) {
   const weightG = isValidWeight(r.weightG) ? Number(r.weightG)
     : (isValidWeight(r.costWeightG) ? Number(r.costWeightG) : wsrc.weightG);
 
+  // 兜底：用户设了默认耗材时，按 重量 × 默认耗材单价 估算。
+  // 触发条件用 total <= 0 而不是「parts 为空」：常见情况是切片里写了逐耗材用量
+  // （如绿色 PLA），但耗材库里没有对应颜色/类型的耗材，price 算成 0，
+  // parts 非空却仍是一分钱都没算出来——这时也该用默认耗材给出一个估算价。
+  let source = links.length ? 'assigned' : (wsrc.source || (weightG != null ? 'manual' : 'none'));
+  const def = opts && opts.defaultFilament;
+  if (total <= 0 && def && isValidWeight(weightG)) {
+    const pg = perGram(def.pricePerKg);
+    if (pg > 0) {
+      const cost = Number(weightG) * pg;
+      total = 0;
+      parts.length = 0;      // 丢掉那些单价为 0 的占位行，避免明细里混着 ¥0.00
+      total += cost;
+      parts.push({
+        filamentId: def.id || null,
+        name: def.name || '默认耗材',
+        color: def.color || null,
+        grams: Number(weightG),
+        pricePerKg: Number(def.pricePerKg) || 0,
+        cost: Math.round(cost * 100) / 100,
+      });
+      source = 'default';
+      complete = true;   // 有默认耗材价就算完整，卡片不再显示 ¥??
+    }
+  }
+
   return {
     total: Math.round(total * 100) / 100,
     parts,
     weightG,
-    source: links.length ? 'assigned' : (wsrc.source || (weightG != null ? 'manual' : 'none')),
+    source,
     complete: complete && parts.length > 0,
   };
 }
@@ -153,18 +181,20 @@ function costOf(rec, filaments) {
  * 只算不写库；filaments 只解析一次。
  * @param {object|Array} models  {id: model} 或 model 数组
  * @param {object|Map|Array} filaments 耗材库（costOf 兼容三种格式）
+ * @param {object} opts  可选：{ defaultFilament } 默认耗材，透传给 costOf
  */
-function costOfBatch(models, filaments) {
+function costOfBatch(models, filaments, opts) {
   const out = {};
   const list = Array.isArray(models) ? models : Object.values(models || {});
   for (const rec of list) {
     if (!rec || !rec.id) continue;
     try {
-      const c = costOf(rec, filaments);
+      const c = costOf(rec, filaments, opts);
       out[rec.id] = {
         total: Number(c.total) || 0,
         complete: !!c.complete,
         weightG: c.weightG != null ? Number(c.weightG) : null,
+        source: c.source || 'none',
       };
     } catch (_) {
       out[rec.id] = { total: 0, complete: false, weightG: null };

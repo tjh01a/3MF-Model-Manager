@@ -400,6 +400,31 @@ function group(name) { console.log('\n' + name); }
     eq(lib.query({ limit: 2 }).items.length, 2, '分页');
     eq(lib.query({ limit: 2 }).total, 3, 'total 应为分页前数量');
   });
+
+  await t('失效文件从普通视图消失，仅维护视图可见', async () => {
+    // 用一份临时快照，测完还原，避免影响后续用例
+    const saved = {};
+    await store.updateLibrary((l) => {
+      for (const k of Object.keys(l.models)) saved[k] = l.models[k];
+      l.models.gone = mk('gone', { title: '已删文件', status: 'missing', missingSince: Date.now() });
+    });
+    const beforeTotal = 3;
+    // 普通视图 / 搜索都不应出现已失效记录
+    eq(lib.query({}).total, beforeTotal, '全部模型不含失效记录');
+    eq(lib.query({ keyword: '已删文件' }).total, 0, '搜索也搜不到失效记录');
+    // 维护视图仍能看到，供重新定位 / 移出索引
+    eq(lib.query({ smart: 'missing' }).total, 1, '失效文件视图仍列出');
+    eq(lib.query({ statuses: ['missing'] }).total, 1, '显式按 status 筛选仍可查');
+    // 统计：总数不含失效，但 missing 计数保留
+    const st = lib.stats();
+    eq(st.total, beforeTotal, '统计总数不含失效记录');
+    eq(st.missing, 1, 'missing 计数仍保留');
+    const counts = lib.smartCounts();
+    eq(counts.missing, 1, '侧栏失效文件徽标仍有数字');
+    eq(counts.all, beforeTotal, '侧栏全部模型计数与列表一致');
+    // 还原
+    await store.updateLibrary((l) => { l.models = saved; });
+  });
   await t('update / bulk 白名单与批量', async () => {
     await lib.update('a', { note: '已改', rating: 9, favorite: true });
     eq(lib.get('a').note, '已改');

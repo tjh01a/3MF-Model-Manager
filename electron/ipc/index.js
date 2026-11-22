@@ -288,6 +288,7 @@ function registerIpc(services, { getWindow = () => null } = {}) {
     filamentCreate: (data) => services.filamentCreate(data || {}),
     filamentUpdate: (id, patch) => services.filamentUpdate(id, patch || {}),
     filamentRemove: (id) => services.filamentRemove(id),
+    filamentSetDefault: (id) => services.filamentSetDefault(id),
     filamentPickImage: async () => {
       const r = await dialog.showOpenDialog(win(), {
         title: '选择耗材图片',
@@ -310,6 +311,7 @@ function registerIpc(services, { getWindow = () => null } = {}) {
     receiptsList: (limit) => services.receiptsList(limit),
     receiptsWithModels: (limit) => services.receiptsWithModels(limit),
     receiptsClear: () => services.receiptsClear(),
+    receiptsDelete: (ids) => services.receiptsDelete(ids),
 
     // 拓竹云账号
     bambuCloudStatus: () => services.bambuCloudStatus(),

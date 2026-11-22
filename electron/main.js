@@ -130,6 +130,7 @@ const Services = require('./services');
 const { registerIpc } = require('./ipc');
 const cpaths = require('../src/core/paths');
 const { backfillFilamentColors } = require('../src/core/colors');
+const { backfillWeights } = require('../src/core/weights');
 const classify = require('../src/core/classify');
 const { backfillSourceUrls } = require('../src/core/source-urls');
 
@@ -221,6 +222,28 @@ function scheduleColorBackfill() {
     try { Promise.resolve(backfillFilamentColors(services.store)).catch(() => {}); }
     catch (_) { /* 回填失败不影响启动 */ }
   }, 1200);
+}
+
+/**
+ * 启动后回填「切片重量」：旧版解析器入库的记录没有 meta.weightG，
+ * 而增量扫描又因为 size/mtime 未变整条跳过，导致卡片一直显示 ¥??。
+ * 只重解析没重量且没标记 checked 的记录，整批写一次库。
+ */
+function scheduleWeightBackfill() {
+  if (!services || !services.initialized || !services.store) return;
+  setTimeout(() => {
+    if (!services || !services.initialized || !services.store) return;
+    try {
+      Promise.resolve(backfillWeights(services.store))
+        .then((r) => {
+          if (r && r.updated > 0) {
+            process.stdout.write('[weights] 回填 ' + r.updated + ' 条模型重量（识别到重量的 ' +
+              (r.scanned - r.failed) + ' 条已重解析）\n');
+          }
+        })
+        .catch(() => {});
+    } catch (_) { /* 回填失败不影响启动 */ }
+  }, 1800);
 }
 
 /**
@@ -734,6 +757,7 @@ if (!gotLock) {
       await ensureSeedData();
       try { await backfillFilamentColors(services.store); } catch (_) { /* 色板失败不影响截图 */ }
       try { await backfillSourceUrls(services.store); } catch (_) { /* 来源链接失败不影响截图 */ }
+      try { await backfillWeights(services.store); } catch (_) { /* 重量失败不影响截图 */ }
     }
     bootStage('backend', 92);
     signalRendererReady();
@@ -743,6 +767,7 @@ if (!gotLock) {
     scheduleColorBackfill();
     scheduleAutoClassify();
     scheduleSourceUrlBackfill();
+    scheduleWeightBackfill();
     // 目录监视也移到后台：chokidar 的初始递归扫描不再是「进软件」的前置条件
     scheduleBackgroundWatch();
 

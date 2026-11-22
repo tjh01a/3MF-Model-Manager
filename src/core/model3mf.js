@@ -105,7 +105,9 @@ function decodeEntities(s) {
  * 只认明确的「模型详情页」路径。
  */
 const MODEL_PAGE_RULES = [
-  /^https?:\/\/(?:www\.)?makerworld\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?models\/\d+/i,
+  // MakerWorld 有国际站 .com 和国内站 .com.cn，路径形如 /zh/models/1604099-xxx
+  // 早期规则只认 .com，国内站下载的 3MF 链接全部识别不到（2026-11-22 修）。
+  /^https?:\/\/(?:www\.)?makerworld\.com(?:\.cn)?\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?models\/\d+/i,
   /^https?:\/\/(?:www\.)?printables\.com\/model\/\d+/i,
   /^https?:\/\/(?:www\.)?thingiverse\.com\/thing:\d+/i,
   /^https?:\/\/(?:www\.)?cults3d\.com\/[a-z]{2}\/3d-model\//i,
@@ -131,7 +133,23 @@ function looksBrokenUrl(url) {
 }
 
 /**
- * 从任意文本里挑第一个作品页链接。取不到返回 null。
+ * 从 MakerWorld 图片 CDN 路径反推作品页。
+ *
+ * 很多 3MF 的描述里**只有合集链接和插图**，没有作品页链接，但插图地址长这样：
+ *   https://makerworld.bblmw.cn/makerworld/model/DSM00000001604099/design/xxx.jpg
+ * 其中 DSM 后面的数字就是作品 id（1604099），可以直接拼出
+ *   https://makerworld.com.cn/zh/models/1604099
+ * 这是目前国内站 3MF 最可靠的来源线索（Bambu Studio 项目信息里的链接点开也是它）。
+ */
+function deriveMakerWorldUrl(text) {
+  if (!text) return null;
+  const m = /makerworld\.bblmw\.cn\/makerworld\/model\/DSM0*(\d{4,})/i.exec(String(text));
+  if (!m) return null;
+  return 'https://makerworld.com.cn/zh/models/' + m[1];
+}
+
+/**
+ * 从任意文本里挑第一个作品页链接；没有直接链接时用 DSM 编号反推。
  * 解码两次是因为常见「双重转义」；URL 尾巴常粘着 &amp;#34; 之类，截到第一个 & 为止。
  */
 function extractSourceUrl(text) {
@@ -148,7 +166,7 @@ function extractSourceUrl(text) {
     if (!isModelPage(url)) continue;  // 图片 CDN、社交链接、坏拼接一律跳过，继续找下一个
     return url;
   }
-  return null;
+  return deriveMakerWorldUrl(decoded);
 }
 
 /* ---------------- 路径归一化 / zip-slip 防护 ---------------- */
@@ -686,5 +704,5 @@ async function readThumbnail(filePath) {
 
 module.exports = {
   parse3mf, pickThumbnailEntry, parseRels, readThumbnail, normalizeColor,
-  extractSourceUrl, decodeEntities, isModelPage, looksBrokenUrl,
+  extractSourceUrl, deriveMakerWorldUrl, decodeEntities, isModelPage, looksBrokenUrl,
 };

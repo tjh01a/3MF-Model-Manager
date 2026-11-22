@@ -44,6 +44,42 @@ paths.setDataDir(tmp);
     ok('异常重量被过滤（>5000g）', bad.weightG == null);
     ok('人民币格式化', cost.yuan(10.855) === '¥10.86', cost.yuan(10.855));
     ok('体积估算用 PLA 密度', Math.abs(cost.estimateWeightByVolume({ volumeCm3: 100 }, 'PLA') - 124) < 0.01);
+
+    // 默认耗材：未分配耗材时按 重量 × 默认单价 估算
+    const def = { id: 'f1', name: 'Bambu PLA', pricePerKg: 120, color: '#FFFFFF' };
+    const withDef = cost.costOf({ meta: { weightG: 100, weightSource: 'slice_info' } }, fsLib,
+      { defaultFilament: def });
+    ok('默认耗材计价（100g × ¥120/kg = ¥12）', Math.abs(withDef.total - 12) < 0.01, JSON.stringify(withDef));
+    ok('默认耗材来源标记 default 且 complete', withDef.source === 'default' && withDef.complete === true,
+      JSON.stringify(withDef));
+    ok('默认耗材明细带正确克数', withDef.parts.length === 1 && withDef.parts[0].grams === 100);
+    const noWeight = cost.costOf({ meta: {} }, fsLib, { defaultFilament: def });
+    ok('无重量时默认耗材也算不出', noWeight.total === 0 && noWeight.complete === false);
+    const assigned = cost.costOf({
+      meta: { weightG: 90.39 }, filamentLinks: [{ filamentId: 'f1', weightG: 90.39 }],
+    }, fsLib, { defaultFilament: def });
+    ok('已分配耗材时不被默认覆盖', assigned.source === 'assigned' && Math.abs(assigned.total - 10.85) < 0.02);
+
+    // 有切片逐耗材用量、但耗材库里没有对应颜色/类型的耗材 → 单价 0，也要用默认耗材兜底
+    const usageNoMatch = cost.costOf({
+      meta: {
+        weightG: 34.83,
+        filamentUsages: [{ type: 'PLA', color: '#00FF80', usedG: 34.83 }],
+      },
+    }, fsLib, { defaultFilament: def });
+    ok('用量匹配不到耗材时用默认耗材兜底（34.83g × ¥120/kg ≈ ¥4.18）',
+      Math.abs(usageNoMatch.total - 4.18) < 0.02, JSON.stringify(usageNoMatch));
+    ok('兜底后明细只剩默认耗材一行（不混 ¥0.00 占位行）',
+      usageNoMatch.parts.length === 1 && usageNoMatch.parts[0].filamentId === 'f1');
+    ok('兜底来源标记 default', usageNoMatch.source === 'default');
+
+    // 部分有价、部分无价时不能被默认耗材整体覆盖
+    const partial = cost.costOf({
+      meta: { weightG: 80, filamentUsages: [] },
+      filamentLinks: [{ filamentId: 'f1', weightG: 50 }, { filamentId: 'missing', weightG: 30 }],
+    }, fsLib, { defaultFilament: def });
+    ok('已有真实价格时不被默认覆盖', partial.total === 6 && partial.source === 'assigned',
+      JSON.stringify(partial));
     // FilamentService.list() 返回的是 {items:[...]}，不是 {id:...}——曾静默算成 0 元
     const asList = cost.costOf({
       filamentLinks: [{ filamentId: 'f1', weightG: 100 }],
@@ -69,6 +105,14 @@ paths.setDataDir(tmp);
     const arrBatch = cost.costOfBatch([models.m1, models.m3], fl);
     ok('数组入参同样支持', arrBatch.m1.total === 12 && arrBatch.m3.total === 6, JSON.stringify(arrBatch));
     ok('空库不抛错', Object.keys(cost.costOfBatch(null, fl)).length === 0);
+    // 批量路径也要透传默认耗材，否则卡片仍显示 ¥??
+    const def = { id: 'f1', name: 'Bambu PLA', pricePerKg: 120 };
+    const batchDef = cost.costOfBatch({ m2: models.m2 }, fl, { defaultFilament: def });
+    ok('批量默认耗材计价：m2 从 ¥?? 变成有价',
+      batchDef.m2.total === 0 && batchDef.m2.complete === false, JSON.stringify(batchDef.m2));
+    const batchDefWeight = cost.costOfBatch({ m2: { id: 'm2', meta: { weightG: 50 } } }, fl, { defaultFilament: def });
+    ok('批量默认耗材：50g × ¥120/kg = ¥6',
+      Math.abs(batchDefWeight.m2.total - 6) < 0.01, JSON.stringify(batchDefWeight.m2));
   }
 
   section('2. 3MF 重量提取（真实样本）');
@@ -109,6 +153,17 @@ paths.setDataDir(tmp);
     ok('非法颜色被拒绝（不进 CSS）', b.color === null, String(b.color));
     ok('清单按更新时间倒序返回一条', svc.list().items.length === 1);
 
+    // 默认耗材
+    ok('初始无默认耗材', svc.list().defaultId === null && svc.getDefault() === null);
+    await svc.setDefault(a.id);
+    ok('设置默认耗材', svc.list().defaultId === a.id && svc.getDefault().id === a.id);
+    let rejected = false;
+    try { await svc.setDefault('fil-not-exist'); } catch (_) { rejected = true; }
+    ok('不存在的耗材不能设为默认', rejected);
+    await svc.setDefault(null);
+    ok('取消默认', svc.getDefault() === null);
+    await svc.setDefault(a.id);
+
     // 图片：造一个假 PNG 文件
     const imgFile = path.join(tmp, 'test.png');
     fs.writeFileSync(imgFile, Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]));
@@ -120,6 +175,7 @@ paths.setDataDir(tmp);
 
     await svc.remove(a.id);
     ok('删除后清单为空', svc.list().items.length === 0);
+    ok('删除默认耗材时清空默认指向', svc.getDefault() === null && svc.list().defaultId === null);
     ok('颜色归一化工具', normalizeColor('#ABCDEF') === '#abcdef' && normalizeColor('xyz') === null);
     ok('价格归一化（非负、两位）', normalizePrice(12.345) === 12.35 && normalizePrice(-1) === 0);
   }
@@ -151,6 +207,20 @@ paths.setDataDir(tmp);
       JSON.stringify(s));
     await svc.clear();
     ok('清空后为空', svc.list().length === 0);
+
+    // 长按编辑模式：按 id 删除选中的回执
+    const a = await svc.add({ jobName: 'a.3mf', result: 'finished', endedAt: 3000 });
+    const b = await svc.add({ jobName: 'b.3mf', result: 'finished', endedAt: 2000 });
+    const c = await svc.add({ jobName: 'c.3mf', result: 'error', endedAt: 1000 });
+    const del = await svc.delete([a.id, 'rcp-not-exist']);
+    ok('按 id 删除选中的回执', del.deleted === 1 && svc.list().length === 2, JSON.stringify(del));
+    ok('找不到的 id 记入 failed', del.failed.length === 1 && del.failed[0] === 'rcp-not-exist');
+    ok('其余回执不受影响', svc.list().some((r) => r.id === b.id) && svc.list().some((r) => r.id === c.id));
+    const s2 = svc.summary();
+    ok('汇总随删除重算（成功 1 / 异常 1）', s2.prints === 1 && s2.failures === 1, JSON.stringify(s2));
+    const del2 = await svc.delete([]);
+    ok('空 id 列表安全返回', del2.deleted === 0 && svc.list().length === 2);
+    await svc.clear();
   }
 
   section('5. monitor 终态 → 回执事件（不受通知开关影响）');

@@ -11,7 +11,7 @@ import { openMenu } from '../components/menu.js';
 import { chooseCategory } from '../components/assign.js';
 import { openMeshOpt } from '../components/meshopt.js';
 import { openModelsWithChoice } from '../components/openwith.js';
-import { enterView } from '../components/motion.js';
+import { enterView, motionEnabled } from '../components/motion.js';
 import { openLightbox } from './lightbox.js';
 
 const esc = (v) => escapeHtml(v == null ? '' : String(v));
@@ -86,6 +86,58 @@ function render(m) {
 
   const parts = [];
 
+  // 重复文件切换器：主列表已把内容相同的文件折叠成一张卡，这里在大图下方
+  // 把同组每个文件的完整路径都列出来，点一下即可切换当前查看的是哪一个文件。
+  // 用 state.items 完整列表（含被折叠隐藏的成员），不能用可见列表。
+  const dups = m.duplicateGroup
+    ? (state.items || []).filter((x) => x && x.duplicateGroup === m.duplicateGroup)
+    : [];
+  const dupIndex = dups.findIndex((x) => x.id === m.id);
+  let dupSectionHtml = '';
+  if (dups.length > 1) {
+    const rows = dups.map((d, i) => {
+      const cur = d.id === m.id;
+      const src = d.thumbnail ? esc('shelf://thumbs/' + d.thumbnail) : 'assets/placeholder.svg';
+      // 内容一样，靠这些"各自独立"的元数据区分副本 —— 否则 5 行看起来完全相同
+      const st = PRINT_STATUS[d.printStatus] || PRINT_STATUS.unprinted;
+      const bits = [
+        d.size != null ? fmtBytes(d.size) : null,
+        esc(st.label),
+        d.createdAt ? fmtRelative(d.createdAt) : null,
+      ].filter(Boolean).join(' · ');
+      const note = (d.note || '').trim().replace(/\s+/g, ' ');
+      return '<div class="detail-dup-row' + (cur ? ' is-current' : '') + '" data-dup-index="' + i + '">' +
+        '<button type="button" class="detail-dup-pick" data-act="dup-switch" data-id="' + esc(d.id) +
+          '" title="' + esc(cur ? '当前正在查看' : '点此切换查看此文件') + '">' +
+          '<img class="detail-dup-thumb" src="' + src + '" alt="">' +
+          '<span class="detail-dup-meta">' +
+            '<span class="detail-dup-name">' + esc(d.fileName || d.title || '未命名') +
+              '<span class="badge status-' + esc(d.printStatus || 'unprinted') + '" style="--badge-color:' + esc(st.color) + '">' + esc(st.label) + '</span>' +
+              (cur ? '<span class="badge badge-dup">当前</span>' : '') + '</span>' +
+            '<span class="detail-dup-path mono" title="' + esc(d.path || '') + '">' + esc(d.path || '—') + '</span>' +
+            '<span class="detail-dup-sub">' + esc(bits) + (note ? '<span class="detail-dup-note">备注：' + esc(note) + '</span>' : '') + '</span>' +
+          '</span>' +
+        '</button>' +
+        iconBtn('reveal-other', 'i-folder-open', '在资源管理器中显示', ' data-id="' + esc(d.id) + '"') +
+        '<button type="button" class="icon-btn icon-btn-danger" data-act="dup-trash" data-id="' + esc(d.id) +
+          '" title="删除这个副本（移入回收站），其他副本不受影响">' + icon('i-trash') + '</button>' +
+      '</div>';
+    }).join('');
+    dupSectionHtml =
+      '<div class="detail-section detail-dup-section">' +
+        '<h4 class="section-title">内容相同的文件 · 共 ' + dups.length + ' 个 ' +
+          '<span class="detail-dup-pos">第 ' + (dupIndex + 1) + ' / ' + dups.length + ' 个</span></h4>' +
+        '<div class="detail-dup-nav">' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-act="dup-prev" title="上一个副本 (←)"' +
+            (dupIndex <= 0 ? ' disabled' : '') + '>' + icon('i-chevron-left') + '上一个</button>' +
+          '<span class="muted">← → 键切换 · 点行也可切换</span>' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-act="dup-next" title="下一个副本 (→)"' +
+            (dupIndex >= dups.length - 1 ? ' disabled' : '') + '>下一个' + icon('i-chevron-right') + '</button>' +
+        '</div>' +
+        '<div class="detail-dup-list">' + rows + '</div>' +
+      '</div>';
+  }
+
   // 大图 + 按钮组
   parts.push(
     '<div class="detail-preview">' +
@@ -102,6 +154,7 @@ function render(m) {
       '</div>' +
     '</div>'
   );
+  if (dupSectionHtml) parts.push(dupSectionHtml);
 
   // 标题 + 打印状态徽标
   parts.push(
@@ -221,22 +274,6 @@ function render(m) {
     '</div>'
   );
 
-  // 重复模型（同组其它文件路径）
-  const dups = (state.items || []).filter((x) => x && x.id !== m.id && m.duplicateGroup && x.duplicateGroup === m.duplicateGroup);
-  if (dups.length) {
-    parts.push(
-      '<div class="detail-section">' +
-        '<h4 class="section-title">重复模型（内容完全相同）</h4>' +
-        dups.map((d) =>
-          '<div class="dup-row">' + icon('i-copy') +
-            '<span class="mono">' + esc(d.path || d.fileName || '') + '</span>' +
-            iconBtn('reveal-other', 'i-folder-open', '定位文件', ' data-id="' + esc(d.id) + '"') +
-          '</div>'
-        ).join('') +
-      '</div>'
-    );
-  }
-
   body.innerHTML = parts.join('');
   if (sameModel && keepScroll > 0) {
     // 内容高度可能变短，交给浏览器 clamp；先同步写回，避免闪一下顶部再跳回来
@@ -255,7 +292,8 @@ function render(m) {
 
 const SOURCE_LABEL = {
   slice_info: '切片文件自动提取', gcode: 'G-code 自动提取',
-  assigned: '已分配耗材', manual: '手动填写', 'volume-estimate': '体积估算', none: '未取到',
+  assigned: '已分配耗材', manual: '手动填写', 'volume-estimate': '体积估算',
+  default: '按默认耗材估算', none: '未取到',
 };
 
 /** 异步取成本明细并填进 #detail-cost；只改这个区块的 innerHTML，不重绘整个详情 */
@@ -597,6 +635,87 @@ function onChange(e) {
     .catch(toastErr);
 }
 
+// ---------- 重复文件切换（点击 / 上一个 / 下一个 / 键盘共用） ----------
+/** 同组副本列表（含当前），供导航使用；只有一项时返回空 */
+function dupSiblings(id) {
+  const m = itemById(id);
+  if (!m || !m.duplicateGroup) return [];
+  const list = (state.items || []).filter((x) => x && x.duplicateGroup === m.duplicateGroup);
+  return list.length > 1 ? list : [];
+}
+
+/** 切换到指定副本，带一个很轻的方向性淡入；direction: 'next' | 'prev' | 'jump' */
+async function switchDuplicate(id, direction = 'jump') {
+  if (!id || id === currentId) return;
+  await openDetail(id);
+  const body = el('detail-body');
+  if (body && direction !== 'jump' && motionEnabled('fade')) {
+    const dx = direction === 'next' ? 14 : -14;
+    try {
+      body.animate([
+        { opacity: 0.55, transform: 'translateX(' + dx + 'px)' },
+        { opacity: 1, transform: 'translateX(0)' },
+      ], { duration: 180, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'none' });
+    } catch (_) { /* 老浏览器不支持 WAAPI 时跳过动画，不影响切换 */ }
+  }
+  // 这里不弹 toast：连续用 ← → 切换会叠一摞提示挡住右上角，
+  // 而当前行高亮 +「第 N/M 个」+ 主图切换本身已经是即时反馈。
+}
+
+/** 相对当前位置移动 n 位（到头则不动） */
+function stepDuplicate(n) {
+  if (!currentId) return;
+  const list = dupSiblings(currentId);
+  if (!list.length) return;
+  const i = list.findIndex((x) => x.id === currentId);
+  const j = i + n;
+  if (j < 0 || j >= list.length) return;
+  Promise.resolve(switchDuplicate(list[j].id, n > 0 ? 'next' : 'prev')).catch(toastErr);
+}
+
+/** 详情打开且焦点不在输入框时，← → 切换重复副本 */
+function onDetailKey(e) {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const panel = el('detail');
+  if (!panel || panel.hidden || !currentId) return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  const list = dupSiblings(currentId);
+  if (!list.length) return;
+  e.preventDefault();
+  e.stopPropagation();
+  stepDuplicate(e.key === 'ArrowRight' ? 1 : -1);
+}
+
+/** 只把这一个副本移入回收站；其他副本及各自的备注/状态不受影响 */
+async function trashDuplicate(id) {
+  const m = itemById(id);
+  if (!m) return;
+  const ok = await confirmDialog({
+    title: '删除这个副本',
+    message: '确定只把这一个副本移入回收站吗？同组其他文件不受影响，之后可从系统回收站恢复。',
+    detail: '将被删除的文件：', items: [m.path || m.fileName || id],
+    danger: true, confirmText: '移入回收站',
+  });
+  if (!ok) return;
+  let res;
+  try { res = await api.trash([id]); } catch (e) { toastErr(e); return; }
+  const failed = (res && res.failed) || [];
+  if (failed.length) {
+    emitToast('error', (failed[0] && failed[0].error) || '删除失败');
+    return;
+  }
+  // 删的正是当前查看的副本：先切到同组剩下的一个（没有就关抽屉），
+  // 再做全局刷新，避免刷新后拿着已失效的 currentId 取数据。
+  if (id === currentId) {
+    const rest = dupSiblings(id).filter((x) => x.id !== id);
+    if (rest.length) await openDetail(rest[0].id);
+    else closeDetail();
+  }
+  emitToast('success', '已把这个副本移入回收站');
+  emitRefresh('dup-trash');
+}
+
 // ---------- 事件分发 ----------
 async function dispatch(act, node, id, m) {
   switch (act) {
@@ -618,6 +737,10 @@ async function dispatch(act, node, id, m) {
     case 'relink': return relink(id, m);
     case 'open-source': return openSource(id, m);
     case 'reveal-other': return doReveal(node.dataset.id || id);
+    case 'dup-switch': return switchDuplicate(node.dataset.id, 'jump');
+    case 'dup-prev': return stepDuplicate(-1);
+    case 'dup-next': return stepDuplicate(1);
+    case 'dup-trash': return trashDuplicate(node.dataset.id || id);
     case 'cost-assign': return assignFilaments(id, m);
     case 'cost-weight': return editCostWeight(id, m);
     default: return;
@@ -645,6 +768,8 @@ export function mountDetail() {
     body.addEventListener('input', onInput);
     body.addEventListener('change', onChange);
   }
+  // 捕获阶段：先于 app.js 的全局按键处理，避免 ← → 被别的逻辑吃掉
+  window.addEventListener('keydown', onDetailKey, true);
 }
 
 export async function openDetail(id) {

@@ -32,6 +32,31 @@ ok('支持 thingiverse', extractSourceUrl('https://www.thingiverse.com/thing:1')
 ok('纯文字返回 null', extractSourceUrl('这是一段没有链接的描述') === null);
 ok('空值返回 null', extractSourceUrl('') === null && extractSourceUrl(null) === null);
 
+console.log('\n[2b. 中国站域名 makerworld.com.cn]');
+ok('接受国服作品页',
+  isModelPage('https://makerworld.com.cn/zh/models/1604099-xing-zhi-qia-bi'),
+  'isModelPage 国服作品页');
+ok('能从国服作品页原样取出',
+  extractSourceUrl('https://makerworld.com.cn/zh/models/1604099-xing-zhi-qia-bi#profileId-1754672')
+    === 'https://makerworld.com.cn/zh/models/1604099-xing-zhi-qia-bi#profileId-1754672',
+  extractSourceUrl('https://makerworld.com.cn/zh/models/1604099-xing-zhi-qia-bi#profileId-1754672'));
+ok('国服合集页仍不算作品页',
+  extractSourceUrl('https://makerworld.com.cn/zh/collections/335702') === null);
+
+console.log('\n[2c. 从图片 CDN 的 DSM 编号反推作品页]');
+const { deriveMakerWorldUrl } = require('../src/core/model3mf');
+ok('DSM 编号去掉前导零拼出国服作品页',
+  deriveMakerWorldUrl('https://makerworld.bblmw.cn/makerworld/model/DSM00000001604099/design/2025-09-19_a.jpg')
+    === 'https://makerworld.com.cn/zh/models/1604099',
+  deriveMakerWorldUrl('https://makerworld.bblmw.cn/makerworld/model/DSM00000001604099/design/a.jpg'));
+ok('描述里只有图片+合集时也能反推',
+  extractSourceUrl('&amp;lt;img src=&amp;#34;https://makerworld.bblmw.cn/makerworld/model/DSM00000001604099/design/a.jpg&amp;#34; /&amp;gt;')
+    === 'https://makerworld.com.cn/zh/models/1604099');
+ok('没有 DSM 编号返回 null', deriveMakerWorldUrl('https://example.com/a.jpg') === null);
+ok('有直接作品页时优先用直接链接（不反推）',
+  extractSourceUrl('https://makerworld.com.cn/zh/models/42-x https://makerworld.bblmw.cn/makerworld/model/DSM00000001604099/design/a.jpg')
+    === 'https://makerworld.com.cn/zh/models/42-x');
+
 console.log('\n[3. 多链接取第一个作品页]');
 const multi = '先看 https://example.com/a 再看 https://makerworld.com/en/models/9 最后 https://printables.com/m/2';
 ok('跳过前面无关链接，命中第一个作品页',

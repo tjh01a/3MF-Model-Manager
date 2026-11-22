@@ -193,15 +193,18 @@ export function bulkClearSelection() { return clearSelection(); }
 
 export function syncBulkbar() {
   const n = state.selection ? state.selection.size : 0;
+  // 打印回执视图的 selection 存的是回执 id，绝不能显示这里的「模型批量操作」，
+  // 否则用户点该条的「删除」会去删模型文件。回执有自己的编辑模式操作条。
+  const receiptsMode = state.contentMode === 'receipts';
   const bar = document.getElementById('bulkbar');
   if (bar) {
     const count = document.getElementById('bulk-count');
     if (count) count.textContent = String(n);
-    bar.hidden = n === 0;
+    bar.hidden = n === 0 || receiptsMode;
   }
   // 顶部统计条右侧的批量删除区：勾选后浮出，取消勾选即隐藏（对应截图里的空白位）
   const actions = document.getElementById('stats-actions');
-  if (actions) actions.hidden = n === 0;
+  if (actions) actions.hidden = n === 0 || receiptsMode;
   const picked = document.getElementById('stats-selected');
   if (picked) picked.textContent = String(n);
   const del = document.getElementById('btn-bulk-delete');

@@ -415,6 +415,51 @@ img.detail-hero {
 .detail-body .detail-section > h4 { font-size: 12px; font-weight: 600; color: var(--text-mute); letter-spacing: .03em; }
 .detail-body .detail-path { font-family: var(--mono); font-size: 11px; line-height: 1.6; color: var(--text-mute); word-break: break-all; }
 
+/* 重复文件切换器：同 duplicateGroup 的每个副本一行，点行即切换当前查看的文件 */
+.detail-dup-section { gap: 8px; }
+.detail-dup-section .section-title {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.detail-dup-section .section-title .muted { font-weight: 400; }
+.detail-dup-pos {
+  margin-left: auto; padding: 1px 8px; font-size: 11px; font-weight: 500;
+  color: var(--accent); background: var(--accent-soft); border-radius: var(--radius-pill);
+}
+.detail-dup-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.detail-dup-nav .muted { font-size: 11px; }
+.detail-dup-list { display: flex; flex-direction: column; gap: 6px; }
+.detail-dup-row {
+  display: flex; align-items: center; gap: 4px; min-width: 0;
+  padding: 4px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-soft);
+  transition: border-color var(--t) var(--ease), background var(--t) var(--ease);
+}
+.detail-dup-row:hover { border-color: var(--accent-border); }
+.detail-dup-row.is-current { border-color: var(--accent); background: var(--accent-soft); }
+.detail-dup-pick {
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 9px;
+  padding: 0; border: 0; background: transparent; color: var(--text);
+  text-align: left; cursor: pointer; font: inherit;
+}
+.detail-dup-thumb {
+  flex: 0 0 auto; width: 46px; height: 38px; object-fit: contain;
+  background: linear-gradient(135deg, var(--media-1), var(--media-2));
+  border-radius: var(--radius-sm);
+}
+.detail-dup-meta { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.detail-dup-name { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detail-dup-name > span:first-child:not(.badge) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detail-dup-path { font-size: 10.5px; color: var(--text-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detail-dup-sub { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 10px; color: var(--text-dim); }
+.detail-dup-note {
+  min-width: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding-left: 8px; border-left: 1px solid var(--border);
+}
+.detail-body .badge.badge-dup { flex: 0 0 auto; }
+.detail-dup-row .icon-btn { flex: 0 0 auto; }
+/* 副本行的删除按钮：hover 变红提示这是危险操作，但常态不喧宾夺主 */
+.detail-dup-row .icon-btn-danger:hover { color: var(--danger); background: var(--danger-soft); }
+
 /* ==========================================================================
    E. 关于 · 快捷键两列表格
    ========================================================================== */

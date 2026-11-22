@@ -148,6 +148,25 @@ class ReceiptService {
     await this._mutate((d) => { d.items = []; });
     return { ok: true };
   }
+
+  /**
+   * 按回执 id 删除选中的几条（长按编辑模式用）。
+   * 只动回执记录，不碰模型库和磁盘文件；找不到的 id 记入 failed，不报错。
+   */
+  async delete(ids) {
+    const wanted = (Array.isArray(ids) ? ids : [ids]).filter(Boolean).map(String);
+    if (!wanted.length) return { ok: true, deleted: 0, failed: [] };
+    const set = new Set(wanted);
+    const missing = new Set(wanted);
+    await this._mutate((d) => {
+      d.items = d.items.filter((r) => {
+        if (!set.has(String(r.id))) return true;
+        missing.delete(String(r.id));
+        return false;
+      });
+    });
+    return { ok: true, deleted: wanted.length - missing.size, failed: Array.from(missing) };
+  }
 }
 
 module.exports = { ReceiptService, normalizeJobName, matchModel, emptyData, MAX_ITEMS };

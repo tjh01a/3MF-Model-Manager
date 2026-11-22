@@ -34,7 +34,40 @@ let mounted = false;
  * 而且滚动位置会掉回顶部。现在只对指纹变化的卡片做 replaceChild。
  */
 let lastRender = { cls: '', items: [], sig: [] };
-
+/**
+ * 普通视图里「内容完全相同」的重复模型只显示一张卡（折叠），避免 P55_Logo 这类
+ * 一次导入产生 4 张外观一样的卡把列表淹没。
+ * 折叠只作用在当前查询返回的 items 上：组内的代表取第一张（遵循当前排序），
+ * 其余成员隐藏但仍留在 state.items 里 —— 重复文件特殊视图、详情里的「切换文件」
+ * 都靠完整列表工作。state.items / selection / stats 一律不改。
+ * 首页不提供「展开副本」入口（用户要求）：要查看同组其他文件，点开卡片在详情里切。
+ */
+let visibleCache = { source: null, items: [] };
+function visibleItems() {
+  const src = state.items || [];
+  if (visibleCache.source !== src) {
+    const seen = new Set();
+    const out = [];
+    for (const m of src) {
+      if (!m) continue;
+      const g = m.duplicateGroup;
+      if (g && typeof g === 'string') {
+        if (seen.has(g)) continue;
+        seen.add(g);
+      }
+      out.push(m);
+    }
+    visibleCache = { source: src, items: out };
+  }
+  return visibleCache.items;
+}
+/** 同 duplicateGroup 的可见成员数（含代表本身），用于卡片角标「重复 ×N」 */
+function dupGroupSize(m) {
+  if (!m || !m.duplicateGroup) return 0;
+  let n = 0;
+  for (const x of (state.items || [])) if (x && x.duplicateGroup === m.duplicateGroup) n++;
+  return n;
+}
 function nextStatus(cur) {
   const i = STATUS_CYCLE.indexOf(cur);
   return i < 0 ? 'unprinted' : STATUS_CYCLE[(i + 1) % STATUS_CYCLE.length];
@@ -90,13 +123,23 @@ function priceHtml(m) {
   const c = (state.costs || {})[m.id];
   const total = c && Number(c.total);
   const known = !!c && Number.isFinite(total) && total > 0;
+  const weightG = c && Number(c.weightG);
   let text = '¥??';
   if (known) text = '¥' + (Number.isInteger(total) ? String(total) : total.toFixed(2));
+  // 算不出价钱但知道重量时，直接显示重量：让用户看得出「重量已识别，只是缺单价」，
+  // 比一个光秃秃的 ¥?? 更有信息量（例如还没设默认耗材）。
+  const knownWeight = !known && Number.isFinite(weightG) && weightG > 0;
+  if (knownWeight) text = (weightG >= 100 ? Math.round(weightG) : weightG.toFixed(1)) + ' g';
+  const costSource = c && c.source;
+  const how = costSource === 'default' ? '按默认耗材单价 × 模型重量估算'
+    : (c && c.complete ? '按已分配耗材与用量计算的估算成本' : '按切片重量与耗材单价估算的成本');
   const title = known
-    ? (c.complete ? '按已分配耗材与用量计算的估算成本' : '按切片重量与耗材单价估算的成本') + '：' + text + '（点进详情看明细）'
-    : '还没有重量或耗材单价，算不出成本。点进详情可填重量 / 分配耗材。';
+    ? how + '：' + text + '（点进详情看明细）'
+    : (knownWeight
+      ? '已识别切片重量 ' + weightG.toFixed(2) + ' g，但还没有可用单价：去耗材库设一个默认耗材或给模型分配耗材即可算价'
+      : '这个文件里没有切片重量（未切片的 3MF 很常见）。点进详情可手填重量，或去耗材库设默认耗材后按重量估算。');
   return '<span class="card-price' + (known ? '' : ' is-unknown') + '" data-price="' +
-    (known ? String(total) : '??') + '" title="' + escapeHtml(title) + '">' + text + '</span>';
+    (known ? String(total) : (knownWeight ? 'w' + weightG : '??')) + '" title="' + escapeHtml(title) + '">' + text + '</span>';
 }
 
 function cardHtml(m) {
@@ -117,12 +160,19 @@ function cardHtml(m) {
   // 来源网页：只接受 http(s)，避免把奇怪协议塞进 data-url；没有就留空，点了无反应
   const srcUrl = (typeof m.sourceUrl === 'string' && /^https?:\/\//i.test(m.sourceUrl.trim()))
     ? m.sourceUrl.trim() : '';
+  // 有来源才给地球按钮加绿底 class；没来源保持原有灰色，视觉上就能区分是否可跳转
+  const sourceClass = srcUrl ? ' class="has-source"' : '';
+  const sourceUrlAttr = srcUrl ? ' data-url="' + escapeHtml(srcUrl) + '"' : '';
 
   const badges = ['<span class="badge status-' + st + '" data-act="status" title="点击切换打印状态">' +
     PRINT_STATUS[st].label + '</span>'];
-  if (m.status === 'missing') badges.push('<span class="badge badge-warn">失效</span>');
+  // 失效记录不会出现在普通视图（见 library.query），所以这里不再画「失效」徽标
   if (m.status === 'error') badges.push('<span class="badge badge-warn">解析失败</span>');
-  if (m.duplicateGroup) badges.push('<span class="badge">重复</span>');
+  if (m.duplicateGroup) {
+    const dn = dupGroupSize(m);
+    badges.push('<span class="badge badge-dup" title="内容完全相同，点开详情可在文件间切换">' +
+      '重复' + (dn > 1 ? ' ×' + dn : '') + '</span>');
+  }
 
   // 勾选态不写进 HTML：由 syncSelectionDom() 统一刷，这样勾一张卡不会让所有卡片重建
   return '<article class="card"' + catStyle + ' data-id="' + id + '" tabindex="0" draggable="true">' +
@@ -138,7 +188,7 @@ function cardHtml(m) {
           '<button data-act="open" class="q-open" title="用切片软件打开（悬停可选拓竹 / Orca）">' + icon('i-printer') + '</button>' +
         '</span>' +
         // 浏览器图标：有来源链接就打开原网页；没有就静默无反应（不做假动作）
-        '<button data-act="source"' + (srcUrl ? ' data-url="' + escapeHtml(srcUrl) + '"' : '') +
+        '<button data-act="source"' + sourceClass + sourceUrlAttr +
           ' title="' + (srcUrl ? '在浏览器打开来源网页' : '没有来源链接') + '">' + icon('i-globe') + '</button>' +
         '<button data-act="reveal" title="在资源管理器中显示">' + icon('i-folder-open') + '</button>' +
         '<button data-act="trash" class="q-del" title="删除（移入系统回收站）">' + icon('i-trash') + '</button>' +
@@ -167,7 +217,7 @@ function cardSig(m) {
     cat ? cat.name : '', cat ? (cat.color || '') : '',
     // 来源链接也要进指纹：填了/改了 URL，卡片上的浏览器按钮才会更新 data-url
     m.sourceUrl || '',
-    m.favorite ? 1 : 0, m.rating || 0, m.createdAt,
+    m.favorite ? 1 : 0, m.rating || 0, m.createdAt, dupGroupSize(m),
     meta.objectCount || 0, meta.plateCount || 0,
     colors, colorTypes, meta.colorSource || '',
     // 价格是派生值但会显示：改耗材单价 / 分配耗材后必须重画这张卡（docs/14）
@@ -210,7 +260,7 @@ if (typeof window !== 'undefined') {
   // 走查用：卡片上的眼睛按钮已改成「打开来源网页」，--ui=lightbox 场景改从这里开大图。
   // 产品逻辑不依赖它，键盘 Space 与右键菜单「大图预览」才是正式入口。
   window.__printshelfPreviewFirst = () => {
-    const ids = (state.items || []).map((x) => x.id);
+    const ids = visibleItems().map((x) => x.id);
     if (ids.length) openLightbox(ids, 0);
   };
 }
@@ -223,7 +273,7 @@ export function renderGrid() {
   const prev = lastRender;
   document.documentElement.style.setProperty('--card-w', state.cardSize + 'px');
 
-  const items = state.items || [];
+  const items = visibleItems();
   const sig = items.map(cardSig);
   const cards = qsa('.card', content);
   const canPatch = prev.cls === cls && cards.length === items.length && items.length > 0;
@@ -289,7 +339,7 @@ function toggleSelect(id) {
   applySelection();
 }
 function rangeSelect(a, b) {
-  const items = state.items || [];
+  const items = visibleItems();
   const ia = items.findIndex((m) => m && m.id === a);
   const ib = items.findIndex((m) => m && m.id === b);
   if (ia < 0 || ib < 0) { toggleSelect(b); return; }
@@ -352,7 +402,7 @@ async function trashModels(ids) {
 
 function menuItemsFor(ids) {
   const one = ids.length === 1 ? findItem(ids[0]) : null;
-  const allIds = (state.items || []).map((m) => m.id);
+  const allIds = visibleItems().map((m) => m.id);
   return [
     { label: '用切片软件打开', icon: 'i-printer', action: () => openModels(ids) },
     { label: '用拓竹打开', icon: 'i-box', action: () => openModels(ids, 'bambu') },
@@ -610,12 +660,14 @@ export function mountGrid() {
   window.addEventListener('shelf:editpick', () => applySelection());
   // 全选 / 清空选择：由 toolbar、app.js 通过 window 事件触发
   window.addEventListener('shelf:selectall', () => {
+    // 回执视图用同一个选择集存回执 id，不能由网格来填模型 id
+    if (state.contentMode !== 'normal') return;
     state.selection.clear();
-    for (const m of (state.items || [])) state.selection.add(m.id);
+    for (const m of visibleItems()) state.selection.add(m.id);
     applySelection();
   });
   window.addEventListener('shelf:selectionclear', () => {
-    if (!state.selection.size) return;
+    if (state.contentMode !== 'normal' || !state.selection.size) return;
     state.selection.clear();
     applySelection();
   });

@@ -95,7 +95,7 @@ const PRESETS = [
 ];
 
 function emptyData() {
-  return { schemaVersion: 1, updatedAt: Date.now(), items: {} };
+  return { schemaVersion: 2, updatedAt: Date.now(), items: {}, defaultId: null };
 }
 
 function normalizeColor(c) {
@@ -180,11 +180,25 @@ class FilamentService {
       presets: PRESETS,
       brands: BRANDS,
       types: TYPES,
+      defaultId: (this._data && this._data.defaultId) || null,
     };
   }
 
   get(id) {
     return ((this._data && this._data.items) || {})[id] || null;
+  }
+
+  /** 默认耗材：未分配耗材的模型按它的单价估算成本。传 null 取消默认。 */
+  async setDefault(id) {
+    if (id != null && id !== '' && !this.get(id)) throw new Error('找不到这个耗材');
+    const value = (id == null || id === '') ? null : String(id);
+    await this._mutate((d) => { d.defaultId = value; });
+    return { ok: true, defaultId: value };
+  }
+
+  getDefault() {
+    const id = (this._data && this._data.defaultId) || null;
+    return id ? (this.get(id) || null) : null;
   }
 
   async create(data) {
@@ -229,7 +243,11 @@ class FilamentService {
   }
 
   async remove(id) {
-    await this._mutate((d) => { delete d.items[id]; });
+    await this._mutate((d) => {
+      delete d.items[id];
+      // 删掉的是默认耗材时，默认指向一并清空，避免悬空 id
+      if (d.defaultId === id) d.defaultId = null;
+    });
     // 图片不立即删：可能有其它耗材引用同一哈希；留给 data 管理页统一清理
     return { ok: true };
   }

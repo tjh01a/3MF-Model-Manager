@@ -7,7 +7,7 @@
  */
 import { api, emitToast, emitRefresh } from '../api.js';
 import { escapeHtml, icon } from '../utils.js';
-import { confirmDialog, selectDialog, promptDialog } from '../components/modal.js';
+import { confirmDialog, promptDialog } from '../components/modal.js';
 
 const esc = (v) => escapeHtml(v == null ? '' : String(v));
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -18,12 +18,12 @@ let open = false;
 let loading = false;
 const st = {
   items: [],
-  presets: [],
   brands: [],
   types: [],
   selectedId: null,
   keyword: '',
   filterType: '',
+  defaultId: null,
 };
 
 // ------------------------------------------------------------------ 工具
@@ -76,8 +76,10 @@ function filtered() {
 
 function cardHtml(f) {
   const sel = f.id === st.selectedId ? ' is-selected' : '';
-  return '<button type="button" class="fil-card' + sel + '" data-id="' + esc(f.id) + '" title="' + esc(f.name) + '">' +
-    '<span class="fil-card-media"><img class="fil-card-img" src="' + thumbSrc(f) + '" alt=""></span>' +
+  const isDefault = f.id === st.defaultId;
+  return '<button type="button" class="fil-card' + sel + (isDefault ? ' is-default' : '') + '" data-id="' + esc(f.id) + '" title="' + esc(f.name) + '">' +
+    '<span class="fil-card-media"><img class="fil-card-img" src="' + thumbSrc(f) + '" alt="">' +
+      (isDefault ? '<span class="fil-default-tag">默认</span>' : '') + '</span>' +
     '<span class="fil-card-body">' +
       '<span class="fil-card-name">' + esc(f.name) + '</span>' +
       '<span class="fil-card-meta">' +
@@ -101,6 +103,9 @@ function detailHtml(f) {
       '<div class="fil-detail-hero"><img src="' + thumbSrc(f) + '" alt=""></div>' +
       '<div class="fil-detail-actions">' +
         '<button type="button" class="btn btn-sm btn-primary" data-act="save">' + icon('i-check') + '保存</button>' +
+        '<button type="button" class="btn btn-sm btn-ghost' + (f.id === st.defaultId ? ' is-default' : '') + '" data-act="set-default" title="' +
+          (f.id === st.defaultId ? '已设为默认耗材，模型没分配耗材时按它的单价估算' : '设为默认：模型没分配耗材时按它的单价估算成本') + '">' +
+          icon('i-star') + (f.id === st.defaultId ? '已是默认' : '设为默认') + '</button>' +
         '<button type="button" class="btn btn-sm btn-ghost" data-act="upload">' + icon('i-image') + '换图片</button>' +
         '<button type="button" class="icon-btn" data-act="delete" title="删除耗材">' + icon('i-trash') + '</button>' +
       '</div>' +
@@ -130,7 +135,6 @@ function render() {
     '<div class="fil-toolbar">' +
       '<div class="fil-toolbar-left">' +
         '<button type="button" class="btn btn-sm btn-primary" data-act="new">' + icon('i-plus') + '新建耗材</button>' +
-        '<button type="button" class="btn btn-sm btn-ghost" data-act="from-preset">' + icon('i-sparkle') + '从预设添加</button>' +
         '<select class="fil-filter" data-act-filter="type" aria-label="按类型筛选">' +
           '<option value="">全部类型</option>' +
           st.types.map((t) => '<option value="' + esc(t) + '"' + (st.filterType === t ? ' selected' : '') + '>' + esc(t) + '</option>').join('') +
@@ -144,7 +148,7 @@ function render() {
     '<div class="fil-main">' +
       '<div class="fil-grid-wrap">' +
         '<div class="fil-grid">' + (list.length ? list.map(cardHtml).join('') :
-          '<div class="fil-empty">没有耗材，点「新建耗材」或从预设添加一个</div>') + '</div>' +
+          '<div class="fil-empty">还没有耗材，点「新建耗材」添加一个</div>') + '</div>' +
         '<div class="fil-count">共 ' + list.length + ' 种耗材</div>' +
       '</div>' +
       '<aside class="fil-detail" id="fil-detail">' + detailHtml(sel) + '</aside>' +
@@ -157,8 +161,8 @@ async function refresh() {
   try {
     const r = await api.filamentsList();
     st.items = (r && r.items) || [];
-    st.presets = (r && r.presets) || [];
     st.brands = (r && r.brands) || [];
+    st.defaultId = (r && r.defaultId) || null;
     st.types = (r && r.types) || ['PLA', 'PETG', 'ABS', 'TPU', '其他'];
     if (st.selectedId && !st.items.find((f) => f.id === st.selectedId)) st.selectedId = null;
     if (!st.selectedId && st.items.length) st.selectedId = st.items[0].id;
@@ -195,40 +199,25 @@ async function save() {
   } catch (_) { /* 已 toast */ }
 }
 
-async function createWithName(name, preset) {
+async function createWithName(name) {
   try {
-    const f = await api.filamentCreate({
-      name,
-      brand: preset ? preset.brand : '其他 / 自定义',
-      type: preset ? preset.type : 'PLA',
-      color: preset ? preset.color : null,
-      isPreset: !!preset,
-    });
+    const f = await api.filamentCreate({ name });
     st.selectedId = f.id;
     emitToast('success', '已添加耗材「' + name + '」，记得填单价');
     await refresh();
   } catch (_) { /* 已 toast */ }
 }
 
-async function fromPreset() {
-  const groups = {};
-  for (const p of st.presets) (groups[p.brand] || (groups[p.brand] = [])).push(p);
-  const options = [];
-  for (const brand of Object.keys(groups)) {
-    options.push({ value: '__brand__' + brand, label: '── ' + brand + ' ──', disabled: true });
-    for (const p of groups[brand]) options.push({ value: p.name, label: p.name + '（' + p.type + '）' });
-  }
-  let picked;
+async function setDefault(f) {
+  if (!f) return;
+  const cancel = f.id === st.defaultId;
   try {
-    picked = await selectDialog({
-      title: '从预设添加耗材',
-      message: '只收录主流品牌的常见系列；选好后可以改名字、颜色和单价。',
-      options, mode: 'single', confirmText: '添加',
-    });
-  } catch (_) { return; }
-  if (!picked || typeof picked !== 'string') return;
-  const preset = st.presets.find((p) => p.name === picked);
-  await createWithName(picked, preset || null);
+    const r = await api.filamentSetDefault(cancel ? null : f.id);
+    st.defaultId = r && r.defaultId;
+    emitToast('success', cancel ? '已取消默认耗材' : '已设为默认：未分配耗材的模型按它的单价估算');
+    emitRefresh('filaments');   // 卡片价格要按新默认耗材重算
+    await refresh();
+  } catch (_) { /* 已 toast */ }
 }
 
 async function onClick(e) {
@@ -238,8 +227,9 @@ async function onClick(e) {
   const card = t.closest('.fil-card');
   if (card) { st.selectedId = card.dataset.id; render(); return; }
 
-  const filter = t.closest('[data-act-filter]');
-  if (filter) { st.filterType = filter.value; render(); return; }
+  // 筛选下拉框不能在 click 阶段处理：原生 select 的下拉刚弹出，
+  // 这里一 render() 就把整个面板 innerHTML 换掉，下拉框瞬间消失。
+  // 交给 change 事件（选中之后才触发），见 onChange。
 
   const act = (t.closest('[data-act]') || {}).dataset;
   if (!act) return;
@@ -248,10 +238,14 @@ async function onClick(e) {
       let name;
       try { name = await promptDialog({ title: '新建耗材', label: '耗材名称', placeholder: '例如：拓竹 PLA Basic 白色', confirmText: '创建' }); }
       catch (_) { return; }
-      if (name && name.trim()) await createWithName(name.trim(), null);
+      if (name && name.trim()) await createWithName(name.trim());
       break;
     }
-    case 'from-preset': await fromPreset(); break;
+    case 'set-default': {
+      const f = st.items.find((x) => x.id === st.selectedId);
+      await setDefault(f);
+      break;
+    }
     case 'save': await save(); break;
     case 'upload': {
       let p;
@@ -293,6 +287,14 @@ async function onClick(e) {
   }
 }
 
+function onChange(e) {
+  const t = e.target;
+  if (t && t.matches && t.matches('[data-act-filter="type"]')) {
+    st.filterType = t.value || '';
+    render();
+  }
+}
+
 function onInput(e) {
   const t = e.target;
   if (t && t.matches && t.matches('[data-act-input="keyword"]')) {
@@ -328,6 +330,7 @@ export function mountFilaments() {
   const panel = document.getElementById('filaments-panel');
   if (panel) {
     panel.addEventListener('click', onClick);
+    panel.addEventListener('change', onChange);
     panel.addEventListener('input', onInput);
   }
   const close = document.getElementById('filaments-close');

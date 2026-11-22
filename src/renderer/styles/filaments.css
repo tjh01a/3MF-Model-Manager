@@ -101,6 +101,15 @@
   overflow: hidden;
 }
 .fil-card-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* 默认耗材：金色描边 + 左上角「默认」角标，和选中态（紫色）区分开 */
+.fil-card.is-default { border-color: var(--star, #f59e0b); }
+.fil-default-tag {
+  position: absolute; top: 6px; left: 6px; z-index: 1;
+  padding: 1px 7px; font-size: 10px; font-weight: 600; line-height: 1.6;
+  color: #fff; background: var(--star, #f59e0b); border-radius: var(--radius-pill, 999px);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .18);
+}
+.fil-card-media { position: relative; }
 .fil-card-body { display: flex; flex-direction: column; gap: 6px; padding: 9px 10px 11px; }
 .fil-card-name { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fil-card-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-dim); }
@@ -139,8 +148,9 @@
   background: var(--bg-soft, #f8fafc);
 }
 .fil-detail-hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.fil-detail-actions { display: flex; align-items: center; gap: 8px; }
+.fil-detail-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .fil-detail-actions .btn-primary { flex: 1; }
+.fil-detail-actions .btn.is-default { color: var(--star, #f59e0b); border-color: var(--star, #f59e0b); }
 
 .fil-detail-fields { display: flex; flex-direction: column; gap: 13px; }
 .fil-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
@@ -202,6 +212,20 @@ html[data-theme="dark"] .fil-dot { border-color: rgba(255,255,255,.2); }
   transition: box-shadow .12s ease, transform .12s ease;
 }
 .rc-card:hover { box-shadow: var(--shadow); transform: translateY(-2px); }
+/* 长按编辑模式：勾选框与选中态跟主页面卡片保持同一套视觉语言 */
+.rc-card { position: relative; cursor: default; }
+.rc-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rc-check {
+  display: none; position: absolute; z-index: 2; top: 7px; left: 7px;
+  width: 19px; height: 19px; align-items: center; justify-content: center;
+  border-radius: 5px; background: var(--bg-elev); border: 1px solid var(--border);
+  cursor: pointer; box-shadow: var(--shadow);
+}
+body.edit-mode .rc-check { display: inline-flex; }
+.rc-check input { width: 13px; height: 13px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.rc-card.is-selected { border-color: var(--accent); background: var(--accent-soft); }
+body.edit-mode .rc-card { cursor: pointer; }
+body.edit-mode .rc-card:hover { transform: none; }
 .rc-media { width: 92px; flex: 0 0 92px; background: var(--bg-soft); }
 .rc-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .rc-body { flex: 1; min-width: 0; padding: 11px 12px; display: flex; flex-direction: column; gap: 7px; }

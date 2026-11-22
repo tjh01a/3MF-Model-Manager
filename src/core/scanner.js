@@ -350,6 +350,9 @@ class Scanner extends EventEmitter {
             meta: parseResult.meta,
             thumbSource: parseResult.thumbnail ? parseResult.thumbnail.entry : null,
           };
+          // 这次已经用当前解析器完整读过一遍：没重量就打标记，
+          // 重量回填（src/core/weights.js）以后不必再为它重复解析。
+          if (record.meta && record.meta.weightG == null) record.meta.weightChecked = true;
           const defaultTitle = utils.baseName(fileName);
           if (!prev || record.title == null || record.title === '') record.title = defaultTitle;
           // 新增记录的默认字段兜底

@@ -735,6 +735,15 @@
 .card-quick button svg { width: 15px; height: 15px; }
 /* 删除：唯一的危险动作用红色区分，避免和「更多」混淆 */
 .card-quick button.q-del:hover { background: rgba(239, 68, 68, .88); border-color: rgba(239, 68, 68, .95); }
+/* 来源网页：有链接的地球按钮用语义绿底，白图标保证深浅主题都看得清；无链接保持原灰色 */
+.card-quick [data-act="source"].has-source {
+  color: #fff;
+  background: var(--success);
+  border-color: transparent;
+}
+.card-quick [data-act="source"].has-source:hover {
+  background: color-mix(in srgb, var(--success) 82%, #fff);
+}
 
 /* 卡片信息：三行，全部省略号 */
 .card-info {

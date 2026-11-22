@@ -128,8 +128,14 @@ class LibraryService {
     const statuses = Array.isArray(Q.statuses) ? Q.statuses : [];
     const ratingMin = Number(Q.ratingMin) || 0;
 
+    // 文件被手动删掉的记录默认不再出现在任何普通视图里（用户要求「直接消失」），
+    // 只有「失效文件」维护视图（smart=missing）或显式按 status=missing 筛选时才列出来，
+    // 这样用户仍能找回误移走的文件、做重新定位或移出索引。
+    const wantMissing = Q.smart === 'missing' || statuses.includes('missing');
+
     const filtered = [];
     for (const rec of this._all()) {
+      if (!wantMissing && rec.status === 'missing') continue;
       if (Q.smart && !matchSmart(rec, Q.smart, now)) continue;
       if (statuses.length && !statuses.includes(rec.status)) continue;
       if (Q.folderId && rec.folderId !== Q.folderId) continue;
@@ -665,6 +671,13 @@ class LibraryService {
     };
     const bump = (obj, k) => { obj[k] = (obj[k] || 0) + 1; };
     for (const r of this._all()) {
+      // 失效记录只用于「失效文件」维护视图的计数，不进入模型总数 / 占用空间 /
+      // 分类计数，否则页头写 184、列表只有 161，看起来像 bug。
+      if (r.status === 'missing') {
+        s.missing++;
+        bump(s.byStatus, 'missing');
+        continue;
+      }
       s.total++;
       s.totalSize += Number(r.size) || 0;
       bump(s.byPrintStatus, r.printStatus || 'unprinted');
@@ -674,7 +687,6 @@ class LibraryService {
       if (r.favorite) s.favorites++;
       if (r.printStatus === 'printed') s.printed++;
       if (r.printStatus === 'unprinted') s.unprinted++;
-      if (r.status === 'missing') s.missing++;
       if (r.duplicateGroup || r.duplicateOf) s.duplicates++;
       if (r.createdAt && (now - r.createdAt) <= DAY7) s.recentAdded++;
       if (r.lastOpenedAt && (now - r.lastOpenedAt) <= DAY7) s.recentOpened++;
@@ -688,7 +700,12 @@ class LibraryService {
     for (const k of SMART_KEYS) out[k] = 0;
     const now = U.now();
     for (const r of this._all()) {
-      for (const k of SMART_KEYS) if (matchSmart(r, k, now)) out[k]++;
+      // 与 query 保持一致：失效记录只计入 missing 视图，其它徽标不能比列表多
+      const isMissing = r.status === 'missing';
+      for (const k of SMART_KEYS) {
+        if (isMissing && k !== 'missing') continue;
+        if (matchSmart(r, k, now)) out[k]++;
+      }
     }
     return out;
   }
