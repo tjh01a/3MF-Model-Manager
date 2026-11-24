@@ -156,15 +156,25 @@ paths.setDataDir(tmp);
       String(list0.presets.length));
     ok('品牌/类型表齐备', list0.brands.length >= 6 && list0.types.includes('PLA') && list0.types.includes('PETG'));
 
+    // 随程序分发的通用耗材：首次启动自动入库，图片也复制到用户数据目录
+    const builtinNames = list0.items.map((x) => x.name);
+    ok('首次启动自带 3 条通用耗材',
+      list0.items.length === 3
+      && ['遇果PETG', 'R3D透明', '大简PETGHF'].every((n) => builtinNames.includes(n)),
+      JSON.stringify(builtinNames));
+    ok('内置耗材图片已复制',
+      list0.items.every((x) => x.image && fs.existsSync(path.join(paths.getFilamentImagesDir(), x.image))));
+
     const a = await svc.create({ name: '我的 PLA', type: 'PLA', color: '#FF0099', pricePerKg: 88.8 });
     ok('新建耗材', !!a.id && a.pricePerKg === 88.8);
     const b = await svc.update(a.id, { name: '我的 PLA 改', pricePerKg: 99, color: 'red' });
     ok('更新名称与价格', b.name === '我的 PLA 改' && b.pricePerKg === 99);
     ok('非法颜色被拒绝（不进 CSS）', b.color === null, String(b.color));
-    ok('清单按更新时间倒序返回一条', svc.list().items.length === 1);
+    ok('清单按更新时间倒序返回', svc.list().items.length === 4 && svc.list().items[0].id === a.id);
 
-    // 默认耗材
-    ok('初始无默认耗材', svc.list().defaultId === null && svc.getDefault() === null);
+    // 默认耗材：内置库自带一个默认，不为老的“无默认”逻辑留空窗
+    ok('初始默认耗材来自内置库',
+      svc.list().defaultId === 'builtin-yuguo-petg' && svc.getDefault().name === '遇果PETG');
     await svc.setDefault(a.id);
     ok('设置默认耗材', svc.list().defaultId === a.id && svc.getDefault().id === a.id);
     let rejected = false;
@@ -196,8 +206,12 @@ paths.setDataDir(tmp);
     ok('按文件头决定扩展名（JPEG）', /^[0-9a-f]{24}\.jpg$/.test(rj.image), rj.image);
 
     await svc.remove(a.id);
-    ok('删除后清单为空', svc.list().items.length === 0);
+    ok('删除自定义耗材后仍保留 3 条内置耗材', svc.list().items.length === 3);
     ok('删除默认耗材时清空默认指向', svc.getDefault() === null && svc.list().defaultId === null);
+
+    const restarted = await new FilamentService().init();
+    ok('重启不会重复塞内置耗材', restarted.list().items.length === 3);
+
     ok('颜色归一化工具', normalizeColor('#ABCDEF') === '#abcdef' && normalizeColor('xyz') === null);
     ok('价格归一化（非负、两位）', normalizePrice(12.345) === 12.35 && normalizePrice(-1) === 0);
   }

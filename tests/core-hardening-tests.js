@@ -80,7 +80,8 @@ async function testDataFiles() {
   ok('filaments 损坏状态可观察', fs1.recovery && fs1.recovery.kind === 'corrupt');
   ok('filaments 原文件字节已另存 .corrupt-*',
     fs1.recovery.backup.indexOf('.corrupt-') > 0 && fs.readFileSync(fs1.recovery.backup, 'utf8') === broken);
-  ok('filaments 从空库启动', fs1.list().items.length === 0);
+  ok('filaments 损坏后从内置耗材启动', fs1.list().items.length === 3,
+    JSON.stringify(fs1.list().items.map((x) => x.name)));
   const backupName = corruptBackupPath(fFile);
   ok('备份名生成函数可用', /\.corrupt-\d{8}-\d{6}-\d{3}$/.test(backupName), backupName);
 

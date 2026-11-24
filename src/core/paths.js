@@ -32,6 +32,8 @@ function getLogDir() { return path.join(getDataDir(), 'logs'); }
 // 耗材库 / 打印回执：独立文件，用户确认不进现有 library 备份机制（2026-11-16）
 function getFilamentsPath() { return path.join(getDataDir(), 'filaments.json'); }
 function getFilamentImagesDir() { return path.join(getDataDir(), 'filament-img'); }
+// 随程序分发的通用耗材（JSON + 图片），打包时在 resources/app/resources/builtin-filaments/
+function getBuiltinFilamentsDir() { return path.join(getProjectRoot(), 'resources', 'builtin-filaments'); }
 function getReceiptsPath() { return path.join(getDataDir(), 'receipts.json'); }
 
 function ensureDirs() {
@@ -43,5 +45,5 @@ function ensureDirs() {
 module.exports = {
   getProjectRoot, getDataDir, setDataDir, ensureDirs,
   getLibraryPath, getSettingsPath, getThumbsDir, getBackupDir, getLogDir,
-  getFilamentsPath, getFilamentImagesDir, getReceiptsPath,
+  getFilamentsPath, getFilamentImagesDir, getBuiltinFilamentsDir, getReceiptsPath,
 };

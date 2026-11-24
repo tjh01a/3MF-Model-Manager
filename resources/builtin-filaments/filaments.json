@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "description": "随程序分发的通用耗材库；首次启动写入用户 data/filaments.json，已存在同名耗材时跳过。",
+  "defaultId": "builtin-yuguo-petg",
+  "items": [
+    {
+      "id": "builtin-yuguo-petg",
+      "name": "遇果PETG",
+      "brand": "YUE",
+      "type": "PETG",
+      "color": "#94a3b8",
+      "pricePerKg": 13,
+      "image": "81e3fc8acdff3135e7f9dac9.jpg",
+      "note": "支付宝——天天秒杀——搜索灰色petg",
+      "params": "拓竹默认参数",
+      "isPreset": true
+    },
+    {
+      "id": "builtin-r3d-transparent",
+      "name": "R3D透明",
+      "brand": "R3D",
+      "type": "PETG",
+      "color": "#94a3b8",
+      "pricePerKg": 14,
+      "image": "1e538e9ec65217dd9de44e92.jpg",
+      "note": "支付宝——天天秒杀——搜索透明petg\n14-16元",
+      "params": "拓竹默认参数",
+      "isPreset": true
+    },
+    {
+      "id": "builtin-dajian-petghf",
+      "name": "大简PETGHF",
+      "brand": "大简",
+      "type": "PETG",
+      "color": "#94a3b8",
+      "pricePerKg": 0,
+      "image": "772b6f604678699cab0a98f6.jpg",
+      "note": "淘宝-红包签到-当前页面搜索PETG\n14-18元",
+      "params": "拓竹默认参数",
+      "isPreset": true
+    }
+  ]
+}

@@ -95,7 +95,28 @@ const PRESETS = [
 ];
 
 function emptyData() {
-  return { schemaVersion: 2, updatedAt: Date.now(), items: {}, defaultId: null };
+  return { schemaVersion: 2, updatedAt: Date.now(), items: {}, defaultId: null, builtinSeeded: false };
+}
+
+/** 同名+同品牌+同类型视为同一条内置耗材，避免给老用户重复塞一份。 */
+function filamentSignature(rec) {
+  const s = (v) => String(v == null ? '' : v).trim().toLowerCase();
+  return [s(rec && rec.brand), s(rec && rec.name), s(rec && rec.type)].join('|');
+}
+
+/** 读取随程序分发的通用耗材；资源缺失或损坏时静默跳过，不影响启动。 */
+function loadBuiltinFilaments() {
+  const file = path.join(paths.getBuiltinFilamentsDir(), 'filaments.json');
+  try {
+    // 启动阶段只读一次，同步足够；资源缺失/损坏都不该挡住程序启动。
+    const j = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return {
+      items: Array.isArray(j && j.items) ? j.items : [],
+      defaultId: (j && j.defaultId) || null,
+    };
+  } catch (_) {
+    return { items: [], defaultId: null };
+  }
 }
 
 /** 旧版本写入的记录可能缺字段；list/get 统一补齐，避免渲染层读到 undefined。 */
@@ -195,6 +216,7 @@ class FilamentService {
         this.recovery = { kind: 'missing', file };
         this._data = emptyData();
         await this._flush();
+        await this._seedBuiltinFilaments();
         return this;
       }
       this.recovery = { kind: 'unreadable', file, code: (e && e.code) || 'EUNKNOWN' };
@@ -212,6 +234,7 @@ class FilamentService {
       this.recovery = { kind: 'corrupt', file, backup };
       this._data = emptyData();
       await this._flush();
+      await this._seedBuiltinFilaments();
       return this;
     }
     if (j && j.items && typeof j.items === 'object' && !Array.isArray(j.items)) {
@@ -229,12 +252,67 @@ class FilamentService {
       this._data = emptyData();
       await this._flush();
     }
+    await this._seedBuiltinFilaments();
     return this;
   }
 
   async _flush() {
     this._data.updatedAt = Date.now();
     await atomicWrite(this._file(), JSON.stringify(this._data, null, 2));
+  }
+
+  /**
+   * 首次启动写入随程序分发的通用耗材。
+   * 老用户按「品牌+名称+类型」去重，绝不覆盖已有记录、价格或备注；
+   * 只有真正新增了条目才额外落盘一次。
+   */
+  async _seedBuiltinFilaments() {
+    const builtin = loadBuiltinFilaments();
+    if (!builtin.items.length) return 0;
+
+    const d = this._data || emptyData();
+    if (!d.items || typeof d.items !== 'object' || Array.isArray(d.items)) d.items = {};
+    this._data = d;
+
+    const seen = new Set(Object.values(d.items).map(filamentSignature).filter(Boolean));
+    const now = Date.now();
+    let added = 0;
+
+    for (const raw of builtin.items) {
+      const rec = normalizeFilament(raw);
+      if (!rec.id || !rec.name) continue;
+      const sig = filamentSignature(rec);
+      if (!sig || seen.has(sig)) continue;
+      seen.add(sig);
+
+      // 图片随包放在 resources/builtin-filaments/，复制一份到用户数据目录；
+      // 文件名沿用内容哈希，和手动导入的图片共用同一套缓存规则。
+      if (rec.image && /^[0-9a-f]{24}\.(png|jpe?g)$/i.test(rec.image)) {
+        try {
+          const base = path.basename(rec.image);
+          const src = path.join(paths.getBuiltinFilamentsDir(), base);
+          const dst = path.join(this._imgDir(), base);
+          if (!fs.existsSync(dst) && fs.existsSync(src)) {
+            await atomicWrite(dst, await fsp.readFile(src));
+          }
+        } catch (_) { /* 图片缺失不阻断耗材库启动 */ }
+      }
+
+      rec.createdAt = now + added;
+      rec.updatedAt = now + added;
+      d.items[rec.id] = rec;
+      added++;
+    }
+
+    if (added > 0 && !d.defaultId && builtin.defaultId && d.items[builtin.defaultId]) {
+      d.defaultId = builtin.defaultId;
+    }
+    if (!d.builtinSeeded || added > 0) {
+      d.builtinSeeded = true;
+      d.schemaVersion = Math.max(Number(d.schemaVersion) || 0, 2);
+      await this._flush();
+    }
+    return added;
   }
 
   _mutate(fn) {
