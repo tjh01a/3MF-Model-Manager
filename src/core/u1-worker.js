@@ -84,10 +84,11 @@ async function run() {
   fs.writeFileSync(tmp, patched.buffer);
   fs.renameSync(tmp, outPath);
 
-  // 床位再居中：上游只补了 printable_area 原点差，没补「床变大」的尺寸差。
-  // A1 mini（180）→ U1（270）时每轴差 45 mm，不补就整盘贴在左下角（2026-11-24 实测）。
-  send({ stage: 'recenter', message: '按新床尺寸居中…' });
-  const { applyBedRecenter } = require('../../src/core/u1bedshift');
+  // 多盘坐标重排：源文件的跨盘画布格距是「源床宽+51」，U1 是「270+51」。
+  // 不重排的话每往右/往下一盘就累积偏 90 mm（A1 mini 180 → 321），看起来就是整片错位。
+  // 重排后按盘把内容居中，和拓竹自己换机保存的效果一致（2026-11-24 实测）。
+  send({ stage: 'recenter', message: '按新机型重排盘位…' });
+  const { applyPlateRetile } = require('../../src/core/u1retile');
   const { readProjectConfigFromFile } = require('../../src/core/u1patch');
   let recenter = { applied: false, reason: '跳过' };
   try {
@@ -97,7 +98,7 @@ async function run() {
         .find((e) => /project_settings\.config$/i.test(e.entryName)).getData().toString('utf8')); }
       catch (_) { return {}; }
     })();
-    const shifted = applyBedRecenter(patched.buffer, {
+    const shifted = applyPlateRetile(patched.buffer, {
       srcArea: srcCfg.printable_area,
       dstArea: dstCfg.printable_area,
     });

@@ -94,40 +94,44 @@ function readCfg(p) {
   return JSON.parse(e.getData().toString('utf8'));
 }
 
-// ============================================================ [6] 床居中补偿
-function testRecenter() {
-  console.log('\n[6] 床居中补偿（A1 mini 180 → U1 270）');
-  const { applyBedRecenter, recenterDelta } = require('../src/core/u1bedshift');
+// ============================================================ [6] 多盘重排
+function testRetile() {
+  console.log('\n[6] 多盘坐标重排（A1 mini 180 → U1 270）');
+  const { applyPlateRetile, solveOrigin } = require('../src/core/u1retile');
   const A1M = ['0x0', '180x0', '180x180', '0x180'];
   const U1 = ['0.5x1', '270.5x1', '270.5x271', '0.5x271'];
 
-  const d = recenterDelta(A1M, U1);
-  // 方向由拓竹实测确定：A1 mini→A1（180→256）是 −38，正好 (180−256)/2
-  ok('每轴 −45 mm（与拓竹换机同向）', d.dx === -45 && d.dy === -45, JSON.stringify(d));
-  ok('A1 mini→A1 复现拓竹的 −38', recenterDelta(A1M, ['0x0', '256x0', '256x256', '0x256']).dx === -38);
-  ok('同尺寸床不补', recenterDelta(U1, U1).dx === 0 && recenterDelta(U1, U1).dy === 0);
+  ok('格距取唯一解', solveOrigin(727.8, 727.8, 231, 180) === 693, String(solveOrigin(727.8, 727.8, 231, 180)));
 
-  const src = path.join(tmp, 'recenter-in.3mf');
+  // 两盘：盘1 对象在 (100,90)，盘2 在画布 (100+231, 90)
+  const src = path.join(tmp, 'retile-in.3mf');
   const zip = new AdmZip();
   zip.addFile('3D/3dmodel.model', Buffer.from(
-    '<?xml version="1.0"?><model><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 60.5 100 -2"/></build></model>', 'utf8'));
+    '<?xml version="1.0"?><model><build>' +
+    '<item objectid="1" transform="1 0 0 0 1 0 0 0 1 100 90 5"/>' +
+    '<item objectid="2" transform="1 0 0 0 1 0 0 0 1 331 90 5"/>' +
+    '</build></model>', 'utf8'));
   zip.addFile('Metadata/model_settings.config', Buffer.from(
-    '<?xml version="1.0"?><config><assemble><assemble_item object_id="1" instance_id="0" ' +
-    'transform="1 0 0 0 1 0 0 0 1 60.5 100 -2" offset="0 0 0"/></assemble></config>', 'utf8'));
+    '<?xml version="1.0"?><config><plate><metadata key="plater_id" value="1"/>' +
+    '<model_instance><metadata key="object_id" value="1"/></model_instance></plate>' +
+    '<plate><metadata key="plater_id" value="2"/>' +
+    '<model_instance><metadata key="object_id" value="2"/></model_instance></plate></config>', 'utf8'));
   zip.addFile('Metadata/project_settings.config', Buffer.from(JSON.stringify({ printable_area: U1 }), 'utf8'));
   zip.writeZip(src);
 
-  const r = applyBedRecenter(fs.readFileSync(src), { srcArea: A1M, dstArea: U1 });
-  ok('两个坐标源都改', r.report.applied && r.report.models === 2, JSON.stringify(r.report));
-  const z2 = new AdmZip(r.buffer);
-  const model = z2.readAsText('3D/3dmodel.model');
-  const ms = z2.readAsText('Metadata/model_settings.config');
-  ok('build item 平移 −45', model.includes('15.5 55 -2'), model.match(/transform="([^"]*)"/)[1]);
-  ok('assemble 平移 −45', ms.includes('15.5 55 -2'), ms.match(/transform="([^"]*)"/)[1]);
-  ok('z 轴不动', model.includes('-2') && !model.includes('43'));
+  const r = applyPlateRetile(fs.readFileSync(src), { srcArea: A1M, dstArea: U1 });
+  ok('重排生效', r.report.applied && r.report.centered, JSON.stringify(r.report));
+  ok('格距 231 → 321', r.report.srcStride === 231 && r.report.dstStride === 321);
 
-  const same = applyBedRecenter(fs.readFileSync(src), { srcArea: U1, dstArea: U1 });
-  ok('同尺寸床原样返回', same.report.applied === false && same.buffer.equals(fs.readFileSync(src)));
+  const xml = new AdmZip(r.buffer).readAsText('3D/3dmodel.model');
+  const pos = [...xml.matchAll(/transform="([^"]*)"/g)].map((m) => m[1].split(/\s+/).map(Number));
+  // 每盘各自居中到 (135.5, 136)，两盘间距正好是目标格距 321
+  ok('盘1 居中到盘中心', Math.abs(pos[0][9] - 135.5) < 1 && Math.abs(pos[0][10] - 136) < 1, JSON.stringify(pos[0].slice(9)));
+  ok('盘2 居中且保持 321 间距', Math.abs((pos[1][9] - pos[0][9]) - 321) < 1, String(pos[1][9] - pos[0][9]));
+  ok('z 与缩放不动', pos[0][0] === 1 && pos[0][11] === 5 && pos[1][11] === 5);
+
+  const same = applyPlateRetile(fs.readFileSync(src), { srcArea: U1, dstArea: U1 });
+  ok('同尺寸床不重排', same.report.applied === false && same.buffer.equals(fs.readFileSync(src)));
 }
 
 // ============================================================ [1] 配置后处理
@@ -566,7 +570,7 @@ async function testOpenPath() {
   corePaths.setDataDir(path.join(tmp, 'data'));
   try {
     testPatch();
-    testRecenter();
+    testRetile();
     testColorPolicy();
     testPresets();
     await testReal();
