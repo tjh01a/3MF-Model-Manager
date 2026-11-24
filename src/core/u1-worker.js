@@ -10,6 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parentPort, workerData } = require('worker_threads');
+const AdmZip = require('adm-zip');
 
 // BedReady 的两个上限原本是给浏览器标签页的防 zip 炸弹护栏（200MB/800MB）。
 // 用户库里 180MB 级的 3MF 解压后普遍 850MB~1.2GB，原值会直接判失败。
@@ -77,6 +78,32 @@ async function run() {
   fs.writeFileSync(tmp, patched.buffer);
   fs.renameSync(tmp, outPath);
 
+  // 床位再居中：上游只补了 printable_area 原点差，没补「床变大」的尺寸差。
+  // A1 mini（180）→ U1（270）时每轴差 45 mm，不补就整盘贴在左下角（2026-11-24 实测）。
+  send({ stage: 'recenter', message: '按新床尺寸居中…' });
+  const { applyBedRecenter } = require('../../src/core/u1bedshift');
+  const { readProjectConfigFromFile } = require('../../src/core/u1patch');
+  let recenter = { applied: false, reason: '跳过' };
+  try {
+    const srcCfg = readProjectConfigFromFile(srcPath) || {};
+    const dstCfg = (() => {
+      try { return JSON.parse(new AdmZip(patched.buffer).getEntries()
+        .find((e) => /project_settings\.config$/i.test(e.entryName)).getData().toString('utf8')); }
+      catch (_) { return {}; }
+    })();
+    const shifted = applyBedRecenter(patched.buffer, {
+      srcArea: srcCfg.printable_area,
+      dstArea: dstCfg.printable_area,
+    });
+    recenter = shifted.report;
+    if (shifted.report.applied) {
+      fs.writeFileSync(tmp, shifted.buffer);
+      fs.renameSync(tmp, outPath);
+    }
+  } catch (e) {
+    recenter = { applied: false, reason: (e && e.message) || String(e) };
+  }
+
   const d = result.diff || {};
   send({
     ok: true,
@@ -96,6 +123,7 @@ async function run() {
       printerFrom: d.printerFrom || null,
       printerTo: d.printerTo || null,
       bedShift: d.bedShift || null,
+      recenter,
       patch: patched.report,
     },
   });

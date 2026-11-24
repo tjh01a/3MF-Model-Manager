@@ -94,6 +94,40 @@ function readCfg(p) {
   return JSON.parse(e.getData().toString('utf8'));
 }
 
+// ============================================================ [6] 床居中补偿
+function testRecenter() {
+  console.log('\n[6] 床居中补偿（A1 mini 180 → U1 270）');
+  const { applyBedRecenter, recenterDelta } = require('../src/core/u1bedshift');
+  const A1M = ['0x0', '180x0', '180x180', '0x180'];
+  const U1 = ['0.5x1', '270.5x1', '270.5x271', '0.5x271'];
+
+  const d = recenterDelta(A1M, U1);
+  ok('每轴补 45 mm', d.dx === 45 && d.dy === 45, JSON.stringify(d));
+  ok('同尺寸床不补', recenterDelta(U1, U1).dx === 0 && recenterDelta(U1, U1).dy === 0);
+
+  const src = path.join(tmp, 'recenter-in.3mf');
+  const zip = new AdmZip();
+  zip.addFile('3D/3dmodel.model', Buffer.from(
+    '<?xml version="1.0"?><model><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 60.5 100 -2"/></build></model>', 'utf8'));
+  zip.addFile('Metadata/model_settings.config', Buffer.from(
+    '<?xml version="1.0"?><config><assemble><assemble_item object_id="1" instance_id="0" ' +
+    'transform="1 0 0 0 1 0 0 0 1 60.5 100 -2" offset="0 0 0"/></assemble></config>', 'utf8'));
+  zip.addFile('Metadata/project_settings.config', Buffer.from(JSON.stringify({ printable_area: U1 }), 'utf8'));
+  zip.writeZip(src);
+
+  const r = applyBedRecenter(fs.readFileSync(src), { srcArea: A1M, dstArea: U1 });
+  ok('两个坐标源都改', r.report.applied && r.report.models === 2, JSON.stringify(r.report));
+  const z2 = new AdmZip(r.buffer);
+  const model = z2.readAsText('3D/3dmodel.model');
+  const ms = z2.readAsText('Metadata/model_settings.config');
+  ok('build item 平移 +45', model.includes('105.5 145 -2'), model.match(/transform="([^"]*)"/)[1]);
+  ok('assemble 平移 +45', ms.includes('105.5 145 -2'), ms.match(/transform="([^"]*)"/)[1]);
+  ok('z 轴不动', model.includes('-2') && !model.includes('43'));
+
+  const same = applyBedRecenter(fs.readFileSync(src), { srcArea: U1, dstArea: U1 });
+  ok('同尺寸床原样返回', same.report.applied === false && same.buffer.equals(fs.readFileSync(src)));
+}
+
 // ============================================================ [1] 配置后处理
 function testPatch() {
   console.log('\n[1] 配置后处理');
@@ -511,6 +545,7 @@ async function testOpenPath() {
   corePaths.setDataDir(path.join(tmp, 'data'));
   try {
     testPatch();
+    testRecenter();
     testPresets();
     await testReal();
     await testOpenPath();
