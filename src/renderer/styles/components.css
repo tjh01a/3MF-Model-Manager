@@ -2264,3 +2264,71 @@ html[data-theme="dark"] .dev-cam-note { background: #3a2a14; color: #fbbf24; }
 /* 菜单项长名称不该把快捷键列挤出去 */
 .menu-item .menu-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-item .menu-hint { flex: 0 0 auto; }
+
+/* ---------- 图片导入编辑器（耗材图片裁切 / 缩放） ---------- */
+.imged { display: flex; gap: 14px; align-items: flex-start; }
+.imged-stage {
+  position: relative; flex: 1 1 auto; min-width: 0; height: 360px;
+  /* 舞台用纯色：棋盘格只铺在图片底下，否则用户会以为空白区也是可裁的图 */
+  background: var(--bg-sunk); border: 1px solid var(--border); border-radius: 10px;
+  overflow: hidden; touch-action: none; cursor: crosshair;
+}
+.imged-canvas {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  /* 透明 PNG 垫棋盘格，能看出哪里是透明 */
+  background-image:
+    linear-gradient(45deg, rgba(148,163,184,.22) 25%, transparent 25%, transparent 75%, rgba(148,163,184,.22) 75%),
+    linear-gradient(45deg, rgba(148,163,184,.22) 25%, transparent 25%, transparent 75%, rgba(148,163,184,.22) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}
+.imged-canvas img {
+  display: block; width: 100%; height: 100%;
+  user-select: none; -webkit-user-drag: none; pointer-events: none;
+}
+.imged-sel {
+  position: absolute; border: 2px solid var(--accent);
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, .38);
+  cursor: move; border-radius: 2px;
+}
+.imged-sel [data-dir] {
+  position: absolute; width: 12px; height: 12px; background: #fff;
+  border: 2px solid var(--accent); border-radius: 3px; box-shadow: 0 1px 2px rgba(15,23,42,.25);
+}
+.imged-sel [data-dir="nw"] { left: -7px; top: -7px; cursor: nwse-resize; }
+.imged-sel [data-dir="n"]  { left: 50%; top: -7px; margin-left: -6px; cursor: ns-resize; }
+.imged-sel [data-dir="ne"] { right: -7px; top: -7px; cursor: nesw-resize; }
+.imged-sel [data-dir="e"]  { right: -7px; top: 50%; margin-top: -6px; cursor: ew-resize; }
+.imged-sel [data-dir="se"] { right: -7px; bottom: -7px; cursor: nwse-resize; }
+.imged-sel [data-dir="s"]  { left: 50%; bottom: -7px; margin-left: -6px; cursor: ns-resize; }
+.imged-sel [data-dir="sw"] { left: -7px; bottom: -7px; cursor: nesw-resize; }
+.imged-sel [data-dir="w"]  { left: -7px; top: 50%; margin-top: -6px; cursor: ew-resize; }
+
+.imged-side { flex: 0 0 208px; display: flex; flex-direction: column; gap: 14px; }
+.imged-group { display: flex; flex-direction: column; gap: 7px; }
+.imged-label { font-size: 12px; font-weight: 600; color: var(--text-dim); }
+.imged-ratios { display: flex; flex-wrap: wrap; gap: 6px; }
+.imged-ratios button {
+  padding: 5px 9px; font-size: 12px; line-height: 1; color: var(--text-dim);
+  background: var(--bg-soft); border: 1px solid var(--border); border-radius: 7px; cursor: pointer;
+}
+.imged-ratios button:hover { border-color: var(--border-strong); color: var(--text); }
+.imged-ratios button.is-on {
+  color: var(--accent); border-color: var(--accent); background: var(--accent-soft); font-weight: 600;
+}
+.imged-size { display: flex; align-items: center; gap: 6px; }
+.imged-size input {
+  width: 68px; padding: 6px 8px; font-size: 12px; text-align: center;
+  color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 7px;
+}
+.imged-size input:disabled { color: var(--text-mute); background: var(--bg-soft); cursor: not-allowed; }
+.imged-x, .imged-unit { font-size: 12px; color: var(--text-mute); }
+.imged-lock { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); cursor: pointer; }
+.imged-info { margin: 0; font-size: 12px; line-height: 1.6; color: var(--text-dim); }
+.imged-tip { margin: 0; font-size: 11px; line-height: 1.6; color: var(--text-mute); }
+
+@media (max-width: 720px) {
+  .imged { flex-direction: column; }
+  .imged-stage { width: 100%; height: 280px; }
+  .imged-side { flex: 0 0 auto; width: 100%; }
+}

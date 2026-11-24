@@ -279,9 +279,10 @@ function group(name) { console.log('\n' + name); }
     eq(merged.hasMultiColor, true, '成功解析要校准多色标记');
     eq(JSON.stringify(merged.filamentColors), JSON.stringify(['#FFFFFF', '#FF0000']));
     const failed = Colors.colorPatch(old, null);
-    eq(JSON.stringify(failed.filamentColors), '[]');
-    eq(failed.colorSource, 'none');
-    eq(failed.hasMultiColor, false, '解析失败不改写旧判断');
+    // 解析失败不能再写「已确认无颜色」终态，否则文件恢复后也会永久跳过回填。
+    eq(failed.filamentColors, undefined, '解析失败不写空色板');
+    eq(failed.colorSource, undefined, '解析失败不写 colorSource=none');
+    eq(failed.hasMultiColor, false, '解析失败保留旧判断');
   });
   await t('backfillFilamentColors 只补缺字段、幂等且只写一次库', async () => {
     const f = makeColorSample(path.join(tmp, 'colors'), 'backfill.3mf', {
@@ -327,7 +328,9 @@ function group(name) { console.log('\n' + name); }
     ok(store.getLibrary().categories.length >= 4, '默认分类未生成');
   });
   await t('updateLibrary 原子写入并落盘', async () => {
-    await store.updateLibrary((l) => { l.models.x1 = { id: 'x1', title: '测试' }; });
+    await store.updateLibrary((l) => {
+      l.models.x1 = { id: 'x1', title: '测试', path: path.join(tmp, 'x1.3mf'), status: 'ok' };
+    });
     const raw = JSON.parse(fs.readFileSync(paths.getLibraryPath(), 'utf8'));
     eq(raw.models.x1.title, '测试');
   });
@@ -491,6 +494,25 @@ function group(name) { console.log('\n' + name); }
   await t('findSimilar 识别改名副本', () => {
     const r = D.findSimilar([mk('模型'), mk('模型_1')]);
     ok(Array.isArray(r) && r.length >= 1, '应找到疑似重复');
+  });
+
+  // 一键清除后，留下的那份仍带旧 duplicateGroup；只按「有标记」计数会让徽标一直虚高。
+  await t('重复计数只认「组内 ≥2」，清理后不再计入', async () => {
+    const saved = {};
+    await store.updateLibrary((l) => {
+      for (const k of Object.keys(l.models)) saved[k] = l.models[k];
+      l.models = {
+        p1: mk('p1', { duplicateGroup: 'g1' }),
+        p2: mk('p2', { duplicateGroup: 'g1' }),
+        p3: mk('p3', { duplicateGroup: 'g2' }),   // 组内只剩自己，不算重复
+      };
+    });
+    eq(lib.stats().duplicates, 2, '组内 2 个才算重复');
+    eq(lib.smartCounts().duplicates, 2);
+    await store.updateLibrary((l) => { delete l.models.p2; });
+    eq(lib.stats().duplicates, 0, '清理后残留标记不应再计入');
+    eq(lib.smartCounts().duplicates, 0);
+    await store.updateLibrary((l) => { l.models = saved; });
   });
 
   // ---------------------------------------------------------------- 缩略图

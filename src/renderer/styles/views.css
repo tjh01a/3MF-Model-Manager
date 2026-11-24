@@ -171,6 +171,14 @@
   padding: 20px 24px 48px;
   animation: fade-in var(--t) var(--ease);
 }
+.content-special .special-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.content-special .special-head-main { min-width: 0; }
 .content-special .special-head h2 { font-size: 16px; font-weight: 600; }
 .content-special .special-head p { margin-top: 4px; font-size: 12px; color: var(--text-mute); }
 

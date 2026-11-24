@@ -70,11 +70,13 @@ function httpFrame(url, timeout = 8000) {
       const chunks = [];
       let size = 0;
       let finished = false;
+      let lastByte = -1;   // 跨 chunk 的 FFD9 兜底，避免 MJPEG 等到超时
 
       const finish = () => {
         if (finished) return;
         finished = true;
-        const all = Buffer.concat(chunks);
+        // 只在收尾时 concat 一次：以前每个 chunk 都 concat，MJPEG 流会退化成 O(n²)。
+        const all = Buffer.concat(chunks, size);
         const jpg = isMjpeg ? firstJpeg(all) : (firstJpeg(all) || null);
         try { req.destroy(); } catch (_) { /* 已断开 */ }
         if (!jpg) return done({ ok: false, error: '这个地址返回的不是 JPEG 画面' });
@@ -82,10 +84,14 @@ function httpFrame(url, timeout = 8000) {
       };
 
       res.on('data', (c) => {
-        chunks.push(c);
-        size += c.length;
+        const buf = Buffer.isBuffer(c) ? c : Buffer.from(c);
+        chunks.push(buf);
+        size += buf.length;
         if (size > MAX_SNAPSHOT) { finish(); return; }
-        if (isMjpeg && Buffer.concat(chunks).indexOf(JPEG_EOI) > 2) finish();
+        // MJPEG：逐 chunk 查尾标记即可，不必把已收字节反复 concat。
+        // 跨 chunk 的 FFD9 由 end/finish 时的整包 firstJpeg 兜住。
+        if (isMjpeg && (buf.indexOf(JPEG_EOI) >= 0 || (lastByte === 0xff && buf[0] === 0xd9))) finish();
+        if (buf.length) lastByte = buf[buf.length - 1];
       });
       res.on('end', finish);
       res.on('error', () => done({ ok: false, error: '摄像头连接中断' }));
@@ -125,6 +131,7 @@ async function snapmakerFrame(o = {}) {
 
   const Moonraker = require('./moonraker');
   const mk = new Moonraker({ host, port });
+  const safeCameraPath = Moonraker.safeCameraPath;
 
   // 2) Moonraker 里配置过的 webcam（同时认 snapshot_url 与 stream_url）
   try {
@@ -153,10 +160,16 @@ async function snapmakerFrame(o = {}) {
 
   // 4) camera/monitor.jpg（U1 写的静态快照，可能停更）
   try {
-    const files = (await mk.cameraFiles()).filter((f) => /\.jpe?g$/i.test(String(f.path || '')));
+    const files = (await mk.cameraFiles()).filter((f) => {
+      const p = safeCameraPath(f && f.path);
+      return p && /\.jpe?g$/i.test(p);
+    });
     if (!files.length) return { ok: false, error: '打印机上没有找到摄像头画面（camera 目录为空）' };
     const preferred = files.find((f) => /monitor\.jpg$/i.test(f.path)) || files[0];
-    const r = await mk.fileBuffer(preferred.path);
+    // 再用规范化的相对路径取文件：设备返回的 .. / 绝对路径一律拒绝。
+    const rel = safeCameraPath(preferred.path);
+    if (!rel) return { ok: false, error: '摄像头文件路径不合法，已拒绝访问' };
+    const r = await mk.fileBuffer(rel);
     const jpg = firstJpeg(r.buffer);
     if (!jpg) return { ok: false, error: '取到的文件不是 JPEG 画面' };
 
@@ -181,7 +194,7 @@ async function snapmakerFrame(o = {}) {
     const ageSec = Math.max(0, Math.round((now - lastAt) / 1000));
     return {
       ok: true, frames: [jpg], source: 'moonraker-camera',
-      staleSec: ageSec, static: true, path: preferred.path,
+      staleSec: ageSec, static: true, path: rel,
     };
   } catch (e) {
     return { ok: false, error: '取摄像头画面失败：' + ((e && e.message) || String(e)) };

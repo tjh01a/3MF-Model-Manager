@@ -16,6 +16,11 @@
 const tls = require('tls');
 const { EventEmitter } = require('events');
 
+// 报文保护：设备固件如果发来畸形「剩余长度」，老代码会一直往 _buf 里堆字节直到 OOM。
+const MAX_BUFFER_BYTES = 1024 * 1024;   // 未处理字节总量上限
+const MAX_PACKET_BYTES = 4 * 1024 * 1024; // 单包长度上限（状态上报远小于此）
+const MAX_LENGTH_BYTES = 4;            // MQTT 剩余长度最多 4 字节
+
 class BambuMqtt extends EventEmitter {
   constructor({ host, serial, accessCode, username, password, clientId, timeout = 6000 } = {}) {
     super();
@@ -47,7 +52,7 @@ class BambuMqtt extends EventEmitter {
       this._write(this._connectPacket());
     });
     this._sock = sock;
-    sock.on('data', (c) => { this._buf = Buffer.concat([this._buf, c]); this._drain(); });
+    sock.on('data', (c) => this._onData(c));
     sock.on('close', () => {
       this.connected = false;
       this._stopKeepAlive();
@@ -149,29 +154,64 @@ class BambuMqtt extends EventEmitter {
     return Buffer.from(out);
   }
 
-  /** 从缓冲区里逐包取出并分发 */
-  _drain() {
-    for (;;) {
-      if (this._buf.length < 2) return;
-      const type = this._buf[0] >> 4;
-      let mul = 1, len = 0, p = 1;
-      for (;;) {
-        if (p >= this._buf.length) return;         // 半包头
-        const d = this._buf[p++];
-        len += (d & 0x7f) * mul;
-        mul *= 128;
-        if (!(d & 0x80)) break;
-      }
-      if (p + len > this._buf.length) return;      // 半包体，等下一次
-      const body = this._buf.slice(p, p + len);
-      this._buf = this._buf.slice(p + len);
+  /** EventEmitter 无 error 监听时会抛，这里统一安全上报 */
+  _emitError(e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    if (this.listenerCount('error') > 0) {
+      try { this.emit('error', err); } catch (_) { /* 监听回调自身出错也不能打断报文循环 */ }
+    }
+  }
 
-      // 单包解析失败只影响这一包：绝不能让异常冒到 socket 'data' 回调里打崩主进程
-      try {
-        this._dispatch(type, body);
-      } catch (e) {
-        this.emit('error', new Error('打印机报文解析失败：' + (e && e.message ? e.message : String(e))));
+  /** socket 数据入口：先卡总量，再把整个 _drain 包在 try/catch 里 */
+  _onData(chunk) {
+    const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk || []);
+    if (this._buf.length + data.length > MAX_BUFFER_BYTES) {
+      this._buf = Buffer.alloc(0);   // 丢弃脏缓冲，避免畸形长度造成无限等待
+      this._emitError(new Error('打印机报文缓冲区超过上限，已丢弃本次数据'));
+      return;
+    }
+    this._buf = Buffer.concat([this._buf, data]);
+    try {
+      this._drain();
+    } catch (e) {
+      this._buf = Buffer.alloc(0);
+      this._emitError(new Error('打印机报文处理失败：' + (e && e.message ? e.message : String(e))));
+    }
+  }
+
+  /** 从缓冲区里逐包取出并分发；整段异常统一收敛，绝不冒到 socket 回调 */
+  _drain() {
+    try {
+      for (;;) {
+        if (this._buf.length < 2) return;
+        const type = this._buf[0] >> 4;
+        let mul = 1, len = 0, p = 1;
+        let n = 0;
+        for (;;) {
+          if (p >= this._buf.length) return;         // 半包头
+          const d = this._buf[p++];
+          if (++n > MAX_LENGTH_BYTES) throw new Error('报文剩余长度字段非法');
+          len += (d & 0x7f) * mul;
+          mul *= 128;
+          if (!Number.isFinite(len) || len < 0 || len > MAX_PACKET_BYTES) {
+            throw new Error('报文剩余长度非法：' + len);
+          }
+          if (!(d & 0x80)) break;
+        }
+        if (p + len > this._buf.length) return;      // 半包体，等下一次
+        const body = this._buf.slice(p, p + len);
+        this._buf = this._buf.slice(p + len);
+
+        // 单包解析失败只影响这一包：绝不能让异常冒到 socket 'data' 回调里打崩主进程
+        try {
+          this._dispatch(type, body);
+        } catch (e) {
+          this._emitError(new Error('打印机报文解析失败：' + (e && e.message ? e.message : String(e))));
+        }
       }
+    } catch (e) {
+      this._buf = Buffer.alloc(0);
+      this._emitError(e);
     }
   }
 
@@ -219,3 +259,5 @@ class BambuMqtt extends EventEmitter {
 }
 
 module.exports = BambuMqtt;
+module.exports.MAX_BUFFER_BYTES = MAX_BUFFER_BYTES;
+module.exports.MAX_PACKET_BYTES = MAX_PACKET_BYTES;

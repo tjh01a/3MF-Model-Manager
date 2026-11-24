@@ -52,6 +52,63 @@ function thumb(m) {
   return m && m.thumbnail ? esc('shelf://thumbs/' + m.thumbnail) : 'assets/placeholder.svg';
 }
 
+/**
+ * 「保留哪一个」的打分：内容既然完全相同，优先留下承载了人工信息的那份，
+ * 否则用户写的备注/评分/分类会随着被删的那份一起消失。
+ * 只有磁盘上还在的副本参与打分；失效/解析错误的交给「失效文件」视图处理。
+ */
+function keepScore(m) {
+  if (!m) return -1;
+  let s = 0;
+  if (m.status !== 'missing' && m.status !== 'error') s += 1000;
+  if (m.favorite) s += 200;
+  s += Math.max(0, Math.min(5, Number(m.rating) || 0)) * 20;
+  if (m.note && String(m.note).trim()) s += 60;
+  if (Number(m.printCount) > 0) s += 40;
+  if (m.printStatus && m.printStatus !== 'none') s += 10;
+  if (m.categoryId) s += 20;
+  s += Math.min(10, (m.tagIds || []).length) * 6;
+  return s;
+}
+
+/** 分数相同时保留更早入库的那份；再相同按 id 兜底，保证每次结果可复现 */
+function compareKeeper(a, b) {
+  const d = keepScore(b) - keepScore(a);
+  if (d) return d;
+  const ta = Number(a && a.createdAt) || 0;
+  const tb = Number(b && b.createdAt) || 0;
+  if (ta !== tb) return ta - tb;
+  return String(a && a.id || '').localeCompare(String(b && b.id || ''));
+}
+
+/**
+ * 生成「每组留一个」的清理计划。只处理内容完全相同（duplicateGroup）的组，
+ * 疑似重复（similarGroup）一律不碰——那是要靠人判断的。
+ */
+function planCleanup(items) {
+  const groups = groupBy(items, 'duplicateGroup');
+  const plans = [];
+  const extras = [];
+  for (const g of groups) {
+    const healthy = g.filter((m) => m && m.status !== 'missing' && m.status !== 'error');
+    if (healthy.length < 2) continue;   // 只剩一份（或都已失效）就没有可清理的
+    const sorted = healthy.slice().sort(compareKeeper);
+    const drop = sorted.slice(1);
+    plans.push({ keeper: sorted[0], drop });
+    for (const d of drop) extras.push(d);
+  }
+  return { plans, extras };
+}
+
+/** 确认清单里用短名，避免一屏都是超长路径 */
+function shortName(m) {
+  if (!m) return '未知文件';
+  const name = m.fileName || m.title || '';
+  if (name) return name;
+  const p = String(m.path || '');
+  return p.split(/[\\/]/).pop() || p || '未知文件';
+}
+
 // ---------- 重复文件 ----------
 function dupCard(m, group, similar) {
   const others = group.filter((x) => x && x.id !== m.id);
@@ -96,7 +153,14 @@ function renderDuplicates(items) {
     return empty('当前范围内没有重复模型',
       filterHint('duplicates') || '内容哈希完全相同的文件会在这里成组显示，方便你清理冗余。');
   }
-  let out = '<div class="special-head"><h2>重复文件</h2><p>按内容哈希完全相同的文件归为一组。</p></div>';
+  const plan = planCleanup(items);
+  let out = '<div class="special-head"><div class="special-head-main">' +
+    '<h2>重复文件</h2><p>按内容哈希完全相同的文件归为一组。</p></div>' +
+    (plan.extras.length
+      ? '<button type="button" class="btn btn-ghost btn-sm danger" data-act="sp-clean-all">' +
+        icon('i-trash') + '<span>一键清除 · 每组留 1 个（' + plan.extras.length + '）</span></button>'
+      : '') +
+    '</div>';
   out += groups.length
     ? groups.map((g) => dupGroup(g, false)).join('')
     : empty('没有内容完全相同的重复文件', '仅有下方疑似重复，请人工确认。');
@@ -215,6 +279,46 @@ async function trashGroup(idsStr) {
   } catch (e) { toastErr(e); }
 }
 
+/**
+ * 一键清除：内容完全相同的组，每组只留一个，其余移入回收站。
+ * 为什么不是「移出索引」——只移索引的话文件还在磁盘上，下次扫描会重新入库，
+ * 用户会以为没清理干净。这里走回收站（可恢复），并同时把记录移出索引。
+ */
+let cleaning = false;
+async function cleanupAll() {
+  if (cleaning) return;
+  const { plans, extras } = planCleanup(state.items || []);
+  if (!extras.length) { emitToast('info', '没有可清理的重复文件'); return; }
+  const lines = plans.slice(0, 8).map((p, i) =>
+    '第 ' + (i + 1) + ' 组：保留「' + shortName(p.keeper) + '」，移入回收站 ' + p.drop.length + ' 个');
+  if (plans.length > 8) lines.push('…另有 ' + (plans.length - 8) + ' 组，同样每组留 1 个');
+  const ok = await confirmDialog({
+    title: '一键清除重复（每组留一个）',
+    message: '共 ' + plans.length + ' 组重复，保留 ' + plans.length + ' 个，把其余 ' + extras.length + ' 个移入回收站。',
+    detail: '保留规则：优先留有备注/评分/分类等人工信息的副本，其次留最早入库的。'
+      + '磁盘文件进系统回收站可恢复，记录同时从索引移除；「疑似重复」不参与一键清除。',
+    items: lines, danger: true, confirmText: '移入回收站并清理', cancelText: '先不清除',
+  });
+  if (!ok) return;
+  cleaning = true;
+  try {
+    const r = await api.trash(extras.map((m) => m.id)) || {};
+    const done = Array.isArray(r.ok) ? r.ok.length : 0;
+    const failed = Array.isArray(r.failed) ? r.failed : [];
+    if (failed.length) {
+      emitToast(done ? 'warn' : 'error',
+        '已清理 ' + done + ' 个，' + failed.length + ' 个失败（' + ((failed[0] && failed[0].error) || '未知原因') + '）');
+    } else {
+      emitToast('success', '已清理 ' + done + ' 个重复文件，每组保留 1 个');
+    }
+  } catch (e) {
+    toastErr(e);
+  } finally {
+    cleaning = false;
+    await refreshSpecial('duplicates');
+  }
+}
+
 async function relinkAuto(id) {
   let candidates = [];
   try { candidates = await api.findRelinkCandidates(id); } catch (_) { /* 无候选走手动 */ }
@@ -275,6 +379,7 @@ async function dispatch(act, d) {
     case 'sp-keep': return keepOne(d.id, d.others);
     case 'sp-trash': return trashOne(d.id);
     case 'sp-trash-group': return trashGroup(d.ids);
+    case 'sp-clean-all': return cleanupAll();
     case 'sp-reveal': return api.reveal(d.id);
     case 'sp-relink-auto': return relinkAuto(d.id);
     case 'sp-relink-manual': return relinkManual(d.id);

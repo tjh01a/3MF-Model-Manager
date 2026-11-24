@@ -27,9 +27,10 @@ const METHODS = [
   'printerTest', 'printerAction', 'printersDiscover', 'cameraFrame', 'cameraDetect',
   'monitorHistory', 'monitorChart', 'monitorLatest', 'monitorStatus', 'monitorClear', 'notifyTest',
   'filamentsList', 'filamentCreate', 'filamentUpdate', 'filamentRemove', 'filamentSetDefault',
-  'filamentPickImage', 'filamentSetImage', 'filamentsOpenDir',
+  'filamentPickImage', 'filamentSetImage', 'filamentReadImage', 'filamentSetImageData', 'filamentsOpenDir',
   'modelCost', 'modelsCosts', 'modelSetFilaments',
-  'receiptsList', 'receiptsWithModels', 'receiptsClear', 'receiptsDelete',
+  'receiptsList', 'receiptsWithModels', 'receiptsClear', 'receiptsDelete', 'receiptsLinkModel',
+  'receiptsAutoLink',
   'bambuCloudStatus', 'bambuCloudLogin', 'bambuCloudLoginCode', 'bambuCloudLogout', 'bambuCloudSync',
   'reveal', 'copyPath', 'openExternal',
   'classifyRun', 'classifySkipUnmatched', 'classifyUndo', 'classifyPreset',
@@ -78,16 +79,42 @@ shelf.on = (channel, cb) => {
   return () => ipcRenderer.removeListener(channel, listener);
 };
 
-// 后端就绪信号。窗口现在先于 services.init 创建，preload 在 document-start 就监听，
-// 即使消息比渲染层模块加载更早也不会丢；main.js 还会在 did-finish-load 补发一次。
-let backendReady = false;
+// 后端就绪 / 失败信号。窗口先于 services.init 创建，preload 在 document-start 就监听，
+// 消息比渲染层模块加载更早也不会丢；main.js 在 did-finish-load 还会补发一次。
+//
+// 约定（供渲染层 api.js 同步）：
+//   · 成功：whenReady() resolve(true)
+//   · 失败：whenReady() reject(Error)，err.name === 'PrintShelfStartupError'，
+//           err.message 为已本地化的中文原因；失败态被缓存，后续调用同样立即 reject。
+// 渲染层不要用 || true / catch(()=>true) 把失败吞掉，否则 bootstrap 会打到未注册的 IPC。
+let readyState = 'pending'; // pending | ready | failed
+let readyError = null;
 const readyWaiters = [];
-ipcRenderer.on('app:ready', () => {
-  backendReady = true;
-  for (const fn of readyWaiters.splice(0)) fn(true);
+
+function resolveReady() {
+  readyState = 'ready';
+  readyError = null;
+  for (const w of readyWaiters.splice(0)) w.resolve(true);
+}
+
+function rejectReady(payload) {
+  readyState = 'failed';
+  const message = (payload && payload.message) || '程序启动失败，请重新启动 PrintShelf';
+  const err = new Error(message);
+  err.name = 'PrintShelfStartupError';
+  readyError = err;
+  for (const w of readyWaiters.splice(0)) w.reject(err);
+}
+
+ipcRenderer.on('app:ready', (_event, payload) => {
+  if (payload && payload.ok === false) rejectReady(payload);
+  else resolveReady(); // 兼容旧主进程只发空 payload 的情况
 });
-shelf.whenReady = () => (backendReady
-  ? Promise.resolve(true)
-  : new Promise((resolve) => readyWaiters.push(resolve)));
+
+shelf.whenReady = () => {
+  if (readyState === 'ready') return Promise.resolve(true);
+  if (readyState === 'failed') return Promise.reject(readyError);
+  return new Promise((resolve, reject) => readyWaiters.push({ resolve, reject }));
+};
 
 contextBridge.exposeInMainWorld('shelf', shelf);

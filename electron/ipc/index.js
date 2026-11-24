@@ -13,6 +13,35 @@ const { cnMakerWorldUrl } = require('../../src/core/source-urls');
 const camera = require('../../src/core/camera');
 
 /**
+ * IPC 错误统一中文包装：core 层抛出的原始错误常是英文（ENOENT / ECONNREFUSED /
+ * Unexpected token ...），个别还带整段 stack。渲染层只负责弹 Toast，这里先变成人话，
+ * 只保留第一行，杜绝把英文堆栈直接甩给用户；业务自己写好的中文提示原样透传。
+ */
+const NODE_ERR_CN = {
+  ENOENT: '找不到指定的文件或目录',
+  EACCES: '没有访问权限',
+  EPERM: '操作被系统拒绝',
+  EEXIST: '目标已存在',
+  ENOTDIR: '路径不是目录',
+  EISDIR: '目标是目录而不是文件',
+  ECONNREFUSED: '连接被拒绝，请检查设备是否在线',
+  ETIMEDOUT: '连接超时，请检查网络或设备',
+  ENOTFOUND: '找不到主机，请检查地址是否正确',
+  EINVAL: '参数无效',
+};
+function toUserError(e) {
+  let raw = (e && e.message) ? e.message : String(e || '');
+  raw = String(raw).replace(/^Error:\s*/, '').split('\n')[0].trim();
+  if (!raw) return new Error('操作失败，请稍后重试');
+  if (/[\u4e00-\u9fa5]/.test(raw)) return new Error(raw);
+  const code = /^([A-Z]{2,})\b/.exec(raw);
+  if (code && NODE_ERR_CN[code[1]]) {
+    return new Error('操作失败：' + NODE_ERR_CN[code[1]] + '（' + raw + '）');
+  }
+  return new Error('操作失败：' + raw);
+}
+
+/**
  * MakerWorld 中国站与国际站是两套**独立的模型库**，同一个作品的 ID 不一样
  * （实测：国际站 models/3377037 在中国站返回「模型不存在」）。
  * 所以不能自动换域名，也不能靠 HTTP 状态码探测（两站对非浏览器请求都返回 403）。
@@ -298,6 +327,8 @@ function registerIpc(services, { getWindow = () => null } = {}) {
       return (r && !r.canceled && r.filePaths && r.filePaths[0]) ? r.filePaths[0] : null;
     },
     filamentSetImage: (id, filePath) => services.filamentSetImage(id, filePath),
+    filamentReadImage: (filePath) => services.filamentReadImage(filePath),
+    filamentSetImageData: (id, dataUrl) => services.filamentSetImageData(id, dataUrl),
     filamentsOpenDir: async () => {
       const dir = cpaths.getFilamentImagesDir();
       cpaths.ensureDirs();
@@ -312,6 +343,8 @@ function registerIpc(services, { getWindow = () => null } = {}) {
     receiptsWithModels: (limit) => services.receiptsWithModels(limit),
     receiptsClear: () => services.receiptsClear(),
     receiptsDelete: (ids) => services.receiptsDelete(ids),
+    receiptsLinkModel: (id, modelId) => services.receiptsLinkModel(id, modelId),
+    receiptsAutoLink: () => services.receiptsAutoLink(),
 
     // 拓竹云账号
     bambuCloudStatus: () => services.bambuCloudStatus(),
@@ -406,8 +439,7 @@ function registerIpc(services, { getWindow = () => null } = {}) {
       try {
         return await fn(...args);
       } catch (e) {
-        const msg = (e && e.message) ? e.message : String(e);
-        throw new Error(msg);
+        throw toUserError(e);
       }
     });
   }

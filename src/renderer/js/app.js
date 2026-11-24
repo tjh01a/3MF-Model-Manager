@@ -13,7 +13,7 @@ import { applyMotionPrefs, watchMotionPrefs, withViewTransition, enterView, moti
 import { mountToolbar, syncToolbar } from './views/toolbar.js';
 import { mountDetail, openDetail, closeDetail, refreshDetail } from './views/detail.js';
 import { mountSettings, openSettings, closeSettings, isSettingsOpen } from './views/settings.js';
-import { mountDevices, openDevices, closeDevices, isDevicesOpen, refreshDeviceBadge } from './views/devices.js';
+import { mountDevices, openDevices, closeDevices, isDevicesOpen, refreshDeviceBadge, isPromptFormOpen, cancelPromptForm } from './views/devices.js';
 import { mountFilaments, openFilaments, closeFilaments, isFilamentsOpen } from './views/filaments.js';
 import { mountMonitorBar } from './components/monitorbar.js';
 import { mountOnboarding, maybeStartOnboarding, isOnboardingOpen } from './components/onboarding.js';
@@ -21,7 +21,7 @@ import { mountLightbox, openLightbox, closeLightbox, isLightboxOpen } from './vi
 import { mountSpecialView, renderSpecialView } from './views/duplicates.js';
 import { mountReceipts, renderReceipts } from './views/receipts.js';
 import { mountToast } from './components/toast.js';
-import { isModalOpen, closeAllModals, confirmDialog, promptDialog } from './components/modal.js';
+import { isModalOpen, confirmDialog, promptDialog } from './components/modal.js';
 import { openClassifyPrompt } from './components/classify-prompt.js';
 import { mountMenu, closeMenu, isMenuOpen } from './components/menu.js';
 import { mountBulkbar, syncBulkbar } from './components/bulkbar.js';
@@ -111,7 +111,24 @@ export function init() {
 if (typeof document !== 'undefined') {
   // 窗口先于主进程服务出现：等后端就绪再挂载各模块，避免 mountDevices 等
   // 在 IPC handler 注册前发请求、弹一串「操作失败」。等待期间由启动动画接管画面。
-  const start = () => { Promise.resolve(whenBackendReady()).then(init, init); };
+  const start = () => {
+    Promise.resolve(whenBackendReady()).then((r) => {
+      // 后端明确失败 / 超时：不要再走 bootstrap（否则会拿不到数据还弹一串错误），
+      // 直接用中文错误收掉启动动画。
+      if (r && r.ok === false) {
+        const msg = r.message || (r.reason === 'timeout'
+          ? '连接本地服务超时，请确认 PrintShelf 桌面应用已正常启动'
+          : '后端启动失败，请重启 PrintShelf');
+        emitToast('error', msg);
+        bootFailed(r.reason || 'backend', msg);
+        return;
+      }
+      init();
+    }, (err) => {
+      emitToast('error', '后端启动失败：' + ((err && err.message) || '未知原因'));
+      bootFailed('backend');
+    });
+  };
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start);
   } else {
@@ -123,7 +140,13 @@ if (typeof document !== 'undefined') {
 async function bootstrap() {
   // 窗口现在先于主进程服务创建，这样启动动画从「双击图标」那一刻就在。
   // 后端就绪前不发 IPC，避免 bootstrap 撞上「还没注册 handler」而误报错误。
-  await whenBackendReady();
+  const ready = await whenBackendReady();
+  if (ready && ready.ok === false) {
+    // 兜底：若 init 被其它入口直接调用，也不要在后端失败时继续 bootstrap
+    const err = new Error(ready.message || '后端未就绪');
+    err.ready = ready;
+    throw err;
+  }
   let data = {};
   try {
     data = await api.bootstrap();
@@ -830,12 +853,16 @@ async function globalUndo() {
     return;
   }
   const entry = stack.pop();
+  let done = true;
   try {
     if (entry && typeof entry.undo === 'function') {
-      await entry.undo();
+      const r = await entry.undo();
+      if (r && r.ok === false) done = false;
     } else if (entry && entry.before && Array.isArray(entry.ids)) {
       if (Array.isArray(entry.fields) && entry.fields.length === 0) {
-        await api.undo();
+        // 移出索引：由后端 undo 恢复记录；ok:false 表示后端已没有对应快照
+        const r = await api.undo();
+        if (r && r.ok === false) done = false;
       } else {
         for (const id of entry.ids) {
           const b = entry.before[id];
@@ -845,17 +872,46 @@ async function globalUndo() {
     } else if (entry && entry.ids && entry.patch) {
       await api.bulk(entry.ids, entry.patch);
     } else {
-      await api.undo();
+      const r = await api.undo();
+      if (r && r.ok === false) done = false;
     }
-    emitToast('success', '已撤销');
-    emitRefresh('undo');
-  } catch (_) { /* api 层已统一提示 */ }
+  } catch (_) {
+    done = false;   // api 层已统一提示
+  }
+  const diag = (typeof window !== 'undefined')
+    ? (window.__printshelfUndo = window.__printshelfUndo || {}) : null;
+  if (!done) {
+    // 撤销没有真正生效：不弹「已撤销」，条目放回栈，避免吞掉可撤销操作
+    if (diag) diag.globalNoop = (diag.globalNoop || 0) + 1;
+    stack.push(entry);
+    return;
+  }
+  if (diag) diag.globalDone = (diag.globalDone || 0) + 1;
+  emitToast('success', '已撤销');
+  emitRefresh('undo');
 }
 function handleEsc(e) {
-  // 逐层关闭：向导 > 灯箱 > 弹窗 > 菜单 > 设置 > 详情 > 清空选择；只关一层
+  // 逐层关闭：自建表单 > 向导 > 灯箱 > 弹窗 > 菜单 > 设置 > 详情 > 清空选择，只关一层。
+  if (typeof window !== 'undefined') {
+    const d = (window.__printshelfKeys = window.__printshelfKeys || {});
+    d.escSeen = (d.escSeen || 0) + 1;
+  }
+  // 设备页 promptForm 自建的 .ow-backdrop 不在 modal 栈里：先取消它并截断事件，
+  // 否则会连底下的设备面板一起关掉（表单还留在屏幕上）。
+  if (isPromptFormOpen()) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    cancelPromptForm();
+    return;
+  }
   if (isOnboardingOpen()) return; // 向导自己处理 Esc（避免同一次按键关掉两层）
   if (isLightboxOpen()) { e.preventDefault(); e.stopImmediatePropagation(); closeLightbox(); return; }
-  if (isModalOpen()) { e.preventDefault(); e.stopImmediatePropagation(); closeAllModals(); return; }
+  if (isModalOpen()) {
+    // 有弹窗时交给 modal.js 自己的捕获监听：它按栈只关顶层。
+    // 这里不能 stopImmediatePropagation，也不能 closeAllModals（那样会一次关掉整栈）。
+    e.preventDefault();
+    return;
+  }
   if (isMenuOpen()) { e.preventDefault(); e.stopImmediatePropagation(); closeMenu(); return; }
   if (isBambuAccountOpen()) { e.preventDefault(); e.stopImmediatePropagation(); closeBambuAccount(); return; }
   if (isDevicesOpen()) { e.preventDefault(); e.stopImmediatePropagation(); closeDevices(); return; }
@@ -870,11 +926,30 @@ function handleEsc(e) {
     document.activeElement.blur();
   }
 }
+/**
+ * 是否有弹窗 / 浮层打开。除 Esc 外，只要有一个打开，
+ * 单键与 Ctrl/Alt+单键都不触发后台动作（含 Ctrl+Z，交给输入框或弹窗自己的原生处理）。
+ */
+function isOverlayOpen() {
+  return isModalOpen() || isPromptFormOpen() || isSettingsOpen() || isDevicesOpen() ||
+    isFilamentsOpen() || isLightboxOpen() || isOnboardingOpen() || isMenuOpen() ||
+    isBambuAccountOpen();
+}
 function onKey(e) {
   const typing = isTyping(e.target);
-  const mod = e.ctrlKey || e.metaKey || e.altKey;
   const k = (e.key || '').toLowerCase();
 
+  // Esc 是唯一的例外：逐层关闭由 handleEsc 统一处理
+  if (e.key === 'Escape') { handleEsc(e); return; }
+  if (isOverlayOpen()) {
+    if (typeof window !== 'undefined') {
+      const d = (window.__printshelfKeys = window.__printshelfKeys || {});
+      d.blocked = (d.blocked || 0) + 1;
+      d.lastBlocked = k;
+    }
+    return;
+  }
+  const mod = e.ctrlKey || e.metaKey || e.altKey;
   if (mod) {
     if ((e.ctrlKey || e.metaKey) && k === 'a') {
       if (typing) return;                 // 输入框内交给浏览器全选文本
@@ -892,13 +967,20 @@ function onKey(e) {
     return;
   }
 
-  // 单键：输入框聚焦时忽略（Esc 除外）
-  if (typing && e.key !== 'Escape') return;
+  // 单键：输入框聚焦时忽略（Esc 已在上面处理）
+  if (typing) return;
   switch (e.key) {
     case '/': e.preventDefault(); focusSearch(); break;
-    case 'Escape': handleEsc(e); break;
     case ' ': case 'Spacebar': e.preventDefault(); openPreview(); break;
-    case 'Delete': e.preventDefault(); removeTargets(); break;
+    case 'Delete':
+      e.preventDefault();
+      // 回执视图的勾选是回执 id（rcp-…），绝不能传给模型 remove；转给回执自己的删除流程
+      if (state.contentMode === 'receipts') {
+        window.dispatchEvent(new CustomEvent('shelf:receipts-deleteselected'));
+      } else {
+        removeTargets();
+      }
+      break;
     case 'F2': e.preventDefault(); renameActive(); break;
     case 'F5': e.preventDefault(); startScan(false); break;
     default:

@@ -95,6 +95,32 @@ function countFiles(dir) {
   return n;
 }
 
+/**
+ * 把 app.ico 与版本信息写进 exe 的 PE 资源。
+ * rcedit 只有 ESM 导出，这里直接调它自带的二进制，避免为了同步流程引入 async。
+ * 没装 rcedit（例如只跑部分脚本）时只告警不中断：图标丑一点不影响能启动。
+ */
+function embedExeIcon(exePath) {
+  const { execFileSync } = require('child_process');
+  const rc = path.join(ROOT, 'node_modules', 'rcedit', 'bin',
+    process.arch === 'x64' ? 'rcedit-x64.exe' : 'rcedit.exe');
+  if (!fs.existsSync(APP_ICON)) return;
+  if (!fs.existsSync(exePath) || !fs.existsSync(rc)) {
+    process.stdout.write('\n[build] 未找到 rcedit（npm i -D rcedit），跳过 exe 图标嵌入；'
+      + 'exe 会保留 Electron 默认图标\n');
+    return;
+  }
+  execFileSync(rc, [
+    exePath,
+    '--set-icon', APP_ICON,
+    '--set-file-version', VERSION,
+    '--set-product-version', VERSION,
+    '--set-version-string', 'ProductName', APP_NAME,
+    '--set-version-string', 'FileDescription', APP_NAME,
+    '--set-version-string', 'OriginalFilename', APP_NAME + '.exe',
+  ], { stdio: 'inherit' });
+}
+
 function step(label, fn) {
   const t = Date.now();
   process.stdout.write(`[build] ${label} ... `);
@@ -446,6 +472,14 @@ function main() {
     }
     buildInstallBat();
     buildUninstallBat();
+  });
+
+  // 4.5 把图标真正嵌进 exe。
+  // 以前只把 app.ico 复制到产物根目录，exe 仍是 electron.exe 改名而来，
+  // 资源表里还是 Electron 的原子图标——于是任务栏/资源管理器显示原子、界面和
+  // 快捷方式显示紫色层叠 logo，看起来像两个软件。这里用 rcedit 改写 PE 资源。
+  step('写入 exe 图标与版本信息', () => {
+    embedExeIcon(path.join(OUT_DIR, `${APP_NAME}.exe`));
   });
 
   // 5. 校验关键文件

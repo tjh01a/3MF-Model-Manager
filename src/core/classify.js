@@ -202,6 +202,9 @@ function applyToRecord(rec, rules) {
   if (!hit) return null;
   rec.categoryId = hit;
   rec.autoClassified = true;
+  // 记住「自动分到的是哪一类」：撤销时只认仍是这条自动结果的记录，
+  // 用户后来手动改过分类的不能被 undo 清掉（P1-8）。
+  rec.autoCategoryId = hit;
   return hit;
 }
 
@@ -343,7 +346,7 @@ async function skipUnmatched(store, ids) {
   };
 }
 
-/** 撤销全部「自动分的」分类，人工分类不动 */
+/** 撤销仍是「自动分类原结果」的分类；人工后来改过的分类一律不碰（P1-8） */
 async function undoAutoClassified(store) {
   let cleared = 0;
   if (!store || typeof store.updateLibrary !== 'function') return { cleared };
@@ -352,11 +355,18 @@ async function undoAutoClassified(store) {
   if (!has) return { cleared };
   await store.updateLibrary((target) => {
     for (const rec of Object.values(target.models || {})) {
-      if (rec && rec.autoClassified) {
-        rec.categoryId = null;
+      if (!rec || !rec.autoClassified) continue;
+      // autoCategoryId 缺失的老记录按「仍是自动结果」处理；有值但已不一致说明被人工改过。
+      if (rec.autoCategoryId && rec.categoryId !== rec.autoCategoryId) {
+        // 人工改过就清掉自动标记，避免下次撤销再碰这条；分类本身保留。
         rec.autoClassified = false;
-        cleared++;
+        delete rec.autoCategoryId;
+        continue;
       }
+      rec.categoryId = null;
+      rec.autoClassified = false;
+      delete rec.autoCategoryId;
+      cleared++;
     }
   }, 'classify-undo');
   return { cleared };

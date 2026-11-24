@@ -23,9 +23,10 @@ const METHODS = [
   'printerTest', 'printerAction', 'printersDiscover', 'cameraFrame', 'cameraDetect',
   'monitorHistory', 'monitorChart', 'monitorLatest', 'monitorStatus', 'monitorClear', 'notifyTest',
   'filamentsList', 'filamentCreate', 'filamentUpdate', 'filamentRemove', 'filamentSetDefault',
-  'filamentPickImage', 'filamentSetImage', 'filamentsOpenDir',
+  'filamentPickImage', 'filamentSetImage', 'filamentReadImage', 'filamentSetImageData', 'filamentsOpenDir',
   'modelCost', 'modelsCosts', 'modelSetFilaments',
-  'receiptsList', 'receiptsWithModels', 'receiptsClear', 'receiptsDelete',
+  'receiptsList', 'receiptsWithModels', 'receiptsClear', 'receiptsDelete', 'receiptsLinkModel',
+  'receiptsAutoLink',
   'bambuCloudStatus', 'bambuCloudLogin', 'bambuCloudLoginCode', 'bambuCloudLogout', 'bambuCloudSync',
   'reveal', 'copyPath', 'openExternal',
   'classifyRun', 'classifySkipUnmatched', 'classifyUndo', 'classifyPreset',
@@ -41,10 +42,23 @@ const METHODS = [
  *   Error invoking remote method 'shelf:xxx': Error: <真正的中文消息>
  * 直接弹给用户很难看，这里把前缀剥掉，只留业务自己的话。
  */
+// 底层英文错误给人话。顺序要紧：先剥掉 Electron 的远程调用前缀，再逐条匹配。
+const FRIENDLY_RULES = [
+  [/No handler registered/i, '后端功能尚未注册，请稍后重试或重启应用'],
+  [/EPERM|EACCES/i, '没有权限执行此操作，请检查文件或目录权限'],
+  [/ENOENT/i, '找不到指定的文件或目录'],
+  [/ENOTDIR/i, '路径中有不是目录的部分，请检查路径是否正确'],
+  [/EEXIST/i, '同名文件或记录已存在'],
+  [/ETIMEDOUT|\btimeout\b/i, '连接超时，请稍后重试'],
+  [/ECONNREFUSED|ECONNRESET/i, '本地服务未连接或连接被中断'],
+  [/Object has been destroyed/i, '窗口已关闭，操作已取消'],
+];
 function friendlyMessage(err) {
   const raw = (err && err.message) || String(err || '');
   const m = /^Error invoking remote method '[^']*':\s*(?:Error:\s*)?([\s\S]*)$/.exec(raw);
-  return (m ? m[1] : raw).trim() || '操作失败';
+  const text = (m ? m[1] : raw).trim();
+  for (const [re, msg] of FRIENDLY_RULES) if (re.test(text)) return msg;
+  return text || '操作失败';
 }
 
 const OFFLINE_MSG = '请在 PrintShelf 桌面应用中打开';
@@ -103,17 +117,53 @@ export function on(channel, cb) {
 /**
  * 等后端（服务 + IPC handler）就绪。窗口先创建、后端后初始化，
  * 没有这道闸门时 mountDevices / bootstrap 会在 handler 注册前发请求。
- * 8 秒兜底：即使主进程异常没发信号，也让界面继续启动（启动动画由自身超时收尾）。
+ *
+ * 返回 Promise<{ok, reason, message}>，明确区分三种结果：
+ *   ok:true               服务与 IPC handler 就绪
+ *   ok:false, reason:'failed'   whenReady reject 或返回 {ok:false}（preload 读 app:ready payload.ok）
+ *   ok:false, reason:'timeout' 8 秒兜底仍未收到就绪信号
+ * 没有 window.shelf（浏览器直接调试）按 ok:true 处理，保留空库预览不白屏。
+ * 永不 reject：调用方只需判断 status.ok。
  */
+const READY_TIMEOUT_MS = 8000;
+function normalizeReady(v) {
+  if (v === true) return { ok: true, reason: 'ready' };
+  if (v === false) return { ok: false, reason: 'failed', message: '后端启动失败' };
+  if (v && typeof v === 'object') {
+    if (v.ok === false) {
+      return { ok: false, reason: 'failed', message: v.message || v.reason || '后端启动失败' };
+    }
+    return { ok: true, reason: 'ready' };
+  }
+  return { ok: false, reason: 'failed', message: '后端就绪状态无法识别' };
+}
 export function whenBackendReady() {
   const s = (typeof window !== 'undefined') ? window.shelf : null;
-  const wait = (s && typeof s.whenReady === 'function')
-    ? Promise.resolve(s.whenReady()).catch(() => true)
-    : Promise.resolve(true);
+  let wait;
+  if (!s || typeof s.whenReady !== 'function') {
+    wait = Promise.resolve({ ok: true, reason: 'offline' });
+  } else {
+    try {
+      wait = Promise.resolve(s.whenReady()).then(normalizeReady, (err) => ({
+        ok: false, reason: 'failed', message: friendlyMessage(err),
+      }));
+    } catch (err) {
+      wait = Promise.resolve({ ok: false, reason: 'failed', message: friendlyMessage(err) });
+    }
+  }
   return Promise.race([
     wait,
-    new Promise((resolve) => setTimeout(() => resolve(true), 8000)),
-  ]);
+    new Promise((resolve) => setTimeout(() => resolve({
+      ok: false, reason: 'timeout',
+      message: '连接本地服务超时，请确认 PrintShelf 桌面应用已正常启动',
+    }), READY_TIMEOUT_MS)),
+  ]).then((status) => {
+    // 诊断字段：走查探针据此确认启动闸门走了哪条路径
+    if (typeof window !== 'undefined') {
+      window.__printshelfBackendReady = { status, at: Date.now() };
+    }
+    return status;
+  });
 }
 
 export function emitRefresh(reason = 'refresh') {

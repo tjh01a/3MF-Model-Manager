@@ -58,6 +58,10 @@ class PrinterMonitor extends EventEmitter {
     this.lastState = new Map();       // printerId -> 上一次「在线」状态
     this.lastNotify = new Map();      // printerId -> { key, at }
     this.lastSampleAt = new Map();    // printerId -> 上次采样时间戳
+    // 设备最近一次已知状态，落盘保存（data/monitor/history.json 的 runtime 字段）。
+    // 只存在内存里的话，掉线重连/关掉软件再打开就丢：完成瞬间没连上 = 这条打印没有回执。
+    this.runtime = new Map();         // printerId -> {state, jobName, startedAt, percent, at}
+    this.lastJob = new Map();         // printerId -> 最近一次看到的任务名
     this.printers = o.printers || null;
     this._onUpdate = (p) => { try { this.onStatus(p); } catch (_) { /* 单条状态异常不影响轮询 */ } };
     this._started = false;
@@ -109,8 +113,43 @@ class PrinterMonitor extends EventEmitter {
   /** PrinterService 每次推统一状态都走这里：先判通知，再采样 */
   onStatus(p) {
     if (!p || !p.id) return;
+    // 顺序要紧：先判转移，再写入 runtime。
+    // 反过来会把「上一次是打印中」直接覆盖成 finished，重启后的补判就永远判不出来。
     this._checkNotify(p);
+    this._track(p);
     this._sample(p);
+    // 设备状态变了就尽快落盘（节流 10 秒）：不落盘的话，空闲时关掉软件，
+    // 「刚才在打什么」就丢了，重启后判不出完成。
+    if (this._dirty && this.now() - this._lastFlush >= 10000) this.flush(true);
+  }
+
+  /**
+   * 记录设备最近状态。在线才更新 state（离线是中转态，覆盖了会丢「刚才还在打印」），
+   * 任务名/进度则保留最后一次看到的非空值——拓竹在终态会把任务块收起。
+   */
+  _track(p) {
+    const id = p.id;
+    const st = this.runtime.get(id) || {};
+    const job = p.job || null;
+    const next = {
+      state: p.online ? p.state : (st.state || ''),
+      jobName: job && job.name ? String(job.name) : (st.jobName || ''),
+      startedAt: Number(st.startedAt) || 0,
+      percent: job && Number.isFinite(Number(job.percent)) ? Number(job.percent) : Number(st.percent) || 0,
+      at: this.now(),
+      // 最后一次确认「在打印」的时刻。用来兜住「打印中闪一下 idle 再 finished」——
+      // 那一闪会把 state 冲成 idle，光看上一次状态就判不出刚才是真在打。
+      lastActiveAt: Number(st.lastActiveAt) || 0,
+    };
+    if (ACTIVE_STATES.has(next.state)) {
+      next.lastActiveAt = next.at;
+      if (!next.startedAt) next.startedAt = next.at;
+    }
+    // 只有状态/任务名真的变了才标脏：空闲时每 3 秒推一次同样的状态，
+    // 每次都写盘既浪费也没意义。
+    if (st.state !== next.state || st.jobName !== next.jobName) this._dirty = true;
+    this.runtime.set(id, next);
+    if (job && job.name) this.lastJob.set(id, String(job.name));
   }
 
   // ------------------------------------------------------------------ 通知判定
@@ -125,31 +164,58 @@ class PrinterMonitor extends EventEmitter {
     // 注意：notify.enabled 只管通知，不管回执。关掉通知时下面仍要发 'job' 事件，
     // 否则用户关了通知就永远没有打印记录（docs/13）。
     if (!p.online) return;
-    const prev = this.lastState.get(p.id);
-    this.lastState.set(p.id, p.state);
+    const id = p.id;
+    // 重启后内存里的 lastState 是空的，用落盘的 runtime.state 补上：
+    // 「关软件 → 打完 → 再打开」这种最常见的情况，否则永远判不出完成。
+    const prev = this.lastState.has(id)
+      ? this.lastState.get(id)
+      : ((this.runtime.get(id) || {}).state || '');
+    this.lastState.set(id, p.state);
     if (!prev || prev === p.state) return;    // 首次见到这台机器不发「历史通知」
 
+    const rt = this.runtime.get(id) || {};
+    const ses = this.active.get(id);
+    // 「刚才确实在打印」的证据，任意一个成立都算：
+    //   ① 上一次在线状态是活动态  ② 正在采样的 session 还没结束
+    //   ③ 最近 10 分钟内确认过在打印  ④ 落盘状态是活动态
+    // 只看 ① 会漏：状态偶尔闪一下 idle（固件抖动/断线重连）就把 prev 冲掉了，
+    // 等真正 finished 到来时 prev 已经是 idle，回执就丢了（2026-11-24 实测漏记）。
+    const at = this.now();
+    const recentActive = (Number(rt.lastActiveAt) || 0) > 0
+      && (at - Number(rt.lastActiveAt)) < 10 * 60 * 1000;
+    const wasActive = ACTIVE_STATES.has(prev) || !!ses || recentActive || ACTIVE_STATES.has(rt.state);
+    const lastPt = ses && ses.points.length ? ses.points[ses.points.length - 1] : null;
+    const lastPercent = Math.max(Number(rt.percent) || 0, lastPt ? Number(lastPt[1]) || 0 : 0);
+    const jobName = safeText(
+      (p.job && p.job.name) || (ses && ses.jobName) || this.lastJob.get(id) || rt.jobName, '未命名任务');
+
     let kind = '';
-    if (p.state === 'finished' && ACTIVE_STATES.has(prev)) kind = 'finished';
+    let inferred = false;
+    if (p.state === 'finished' && wasActive) kind = 'finished';
     else if (p.state === 'error') kind = 'error';
     else if (p.state === 'paused' && prev === 'printing') kind = 'paused';
+    // 掉线重连/固件把完成态直接跳成 idle 时，会漏掉 finished 这一帧。
+    // 进度已经到 95% 以上再回 idle，按「打完了」记账；低于这个值更可能是取消，不记。
+    // prev==='finished' 说明完成帧已经记过账了，不能再补一条。
+    else if (p.state === 'idle' && prev !== 'finished' && wasActive && lastPercent >= 95) {
+      kind = 'finished';
+      inferred = true;
+    }
     if (!kind) return;
 
     const flag = { finished: 'onFinished', error: 'onError', paused: 'onPaused' }[kind];
-    const jobName = safeText(p.job && p.job.name, '当前任务');
-    const at = this.now();
 
     // 打印回执（13）：独立事件，不受通知分项开关影响——即使关掉了所有通知，
     // 完成/失败也要照常记账。暂停不落回执（不是一次打印的终态）。
     if (kind === 'finished' || kind === 'error') {
-      const ses = this.active.get(p.id);
       this.emit('job', {
-        printerId: p.id,
+        printerId: id,
         printerName: safeText(p.name, '打印机'),
         result: kind,
         jobName,
         at,
-        startedAt: ses && ses.startedAt ? ses.startedAt : at,
+        inferred,
+        startedAt: (ses && ses.startedAt) || Number(rt.startedAt) || at,
       });
     }
 
@@ -295,6 +361,22 @@ class PrinterMonitor extends EventEmitter {
       for (const s of this.sessions) {
         if (!s.endedAt) s.endedAt = s.updatedAt || s.startedAt;
       }
+      // 恢复每台设备的最近状态，用于重启后仍能判断「这次打印到底完没完」
+      const rt = raw && raw.runtime && typeof raw.runtime === 'object' ? raw.runtime : {};
+      const cutoff = this.now() - 7 * 24 * 3600 * 1000;
+      for (const [id, v] of Object.entries(rt)) {
+        if (!v || typeof v !== 'object') continue;
+        const at = num(v.at);
+        if (!at || at < cutoff) continue;      // 太旧的记录不再参与补判，避免误报
+        this.runtime.set(id, {
+          state: safeText(v.state, ''),
+          jobName: safeText(v.jobName, ''),
+          startedAt: num(v.startedAt),
+          percent: clamp(num(v.percent), 0, 100),
+          at,
+        });
+        if (v.jobName) this.lastJob.set(id, safeText(v.jobName, ''));
+      }
     } catch (e) {
       this._loadError = (e && e.message) || String(e);
       this.sessions = [];
@@ -306,8 +388,10 @@ class PrinterMonitor extends EventEmitter {
     try {
       fs.mkdirSync(this.dir, { recursive: true });
       const tmp = this.file + '.tmp';
+      const runtime = {};
+      for (const [id, v] of this.runtime) runtime[id] = v;
       fs.writeFileSync(tmp, JSON.stringify({
-        version: 1, updatedAt: this.now(), sessions: this.sessions,
+        version: 2, updatedAt: this.now(), sessions: this.sessions, runtime,
       }), 'utf8');
       fs.renameSync(tmp, this.file);
       this._dirty = false;
@@ -322,6 +406,25 @@ class PrinterMonitor extends EventEmitter {
   // ------------------------------------------------------------------ 查询
 
   /** 给设置页/曲线弹窗：按开始时间倒序，可选按设备过滤 */
+  /**
+   * 挑出「看起来打完但可能没记账」的历史 session，供主进程补录回执。
+   * 判定：已结束、任务名非空、最后一个采样点进度 ≥95%。
+   * 是否真的缺回执、是否重复，由调用方结合 receipts 判断（这里保持纯函数，好测）。
+   */
+  missedCompletions(limit = 50) {
+    const out = [];
+    for (const s of this.sessions) {
+      if (!s || !s.endedAt || !s.jobName || !s.printerId) continue;
+      const pts = Array.isArray(s.points) ? s.points : [];
+      if (!pts.length) continue;
+      const last = pts[pts.length - 1];
+      const pct = Number(last && last[1]) || 0;
+      if (pct < 95) continue;
+      out.push(s);
+    }
+    return out.slice(-clamp(Math.round(num(limit, 50)), 1, 500));
+  }
+
   history(printerId, limit = 12) {
     const n = clamp(Math.round(num(limit, 12)), 1, 100);
     return this.sessions

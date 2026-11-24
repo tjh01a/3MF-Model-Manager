@@ -10,7 +10,7 @@ const path = require('path');
 const paths = require('../src/core/paths');
 const cost = require('../src/core/cost');
 const { FilamentService, normalizeColor, normalizePrice, PRESETS, TYPES } = require('../src/core/filaments');
-const { ReceiptService, normalizeJobName, matchModel } = require('../src/core/receipts');
+const { ReceiptService, normalizeJobName, looseJobName, matchModel, matchModelFuzzy } = require('../src/core/receipts');
 const { parse3mf } = require('../src/core/model3mf');
 const { PrinterMonitor } = require('../src/core/monitor');
 const { EventEmitter } = require('events');
@@ -73,6 +73,15 @@ paths.setDataDir(tmp);
       usageNoMatch.parts.length === 1 && usageNoMatch.parts[0].filamentId === 'f1');
     ok('兜底来源标记 default', usageNoMatch.source === 'default');
 
+    // 耗材被删除后不能伪装成「未分配」，明细要明确告诉用户数据来自已删耗材
+    const deletedFil = cost.costOf({
+      meta: { weightG: 100 },
+      filamentLinks: [{ filamentId: 'gone', weightG: 100 }],
+    }, fsLib);
+    ok('已删除耗材在明细中明确标注',
+      deletedFil.parts.length === 1 && deletedFil.parts[0].name === '耗材已删除',
+      JSON.stringify(deletedFil.parts));
+
     // 部分有价、部分无价时不能被默认耗材整体覆盖
     const partial = cost.costOf({
       meta: { weightG: 80, filamentUsages: [] },
@@ -108,7 +117,8 @@ paths.setDataDir(tmp);
     // 批量路径也要透传默认耗材，否则卡片仍显示 ¥??
     const def = { id: 'f1', name: 'Bambu PLA', pricePerKg: 120 };
     const batchDef = cost.costOfBatch({ m2: models.m2 }, fl, { defaultFilament: def });
-    ok('批量默认耗材计价：m2 从 ¥?? 变成有价',
+    // m2 连重量都没有，默认耗材也算不出价格——断言的是「仍是 ¥??」，名称不能写成变成有价。
+    ok('批量默认耗材计价：m2 仍无重量时保持 ¥??（不编造价格）',
       batchDef.m2.total === 0 && batchDef.m2.complete === false, JSON.stringify(batchDef.m2));
     const batchDefWeight = cost.costOfBatch({ m2: { id: 'm2', meta: { weightG: 50 } } }, fl, { defaultFilament: def });
     ok('批量默认耗材：50g × ¥120/kg = ¥6',
@@ -173,6 +183,18 @@ paths.setDataDir(tmp);
     const r2 = await svc.setImage(a.id, imgFile);
     ok('同一张图重复导入文件名不变', r2.image === r.image);
 
+    // 扩展名会骗人：webp 改名成 .png 存进去就是破图，必须按文件头拒绝
+    const fakePng = path.join(tmp, 'fake.png');
+    fs.writeFileSync(fakePng, Buffer.from([0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50]));
+    let fakeRejected = false;
+    try { await svc.setImage(a.id, fakePng); } catch (_) { fakeRejected = true; }
+    ok('改了扩展名的 webp 会被拒绝', fakeRejected);
+
+    // 裁剪后走 setImageBuffer：JPEG 头要落成 .jpg，不能一律存 .png
+    const jpgBuf = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const rj = await svc.setImageBuffer(a.id, jpgBuf);
+    ok('按文件头决定扩展名（JPEG）', /^[0-9a-f]{24}\.jpg$/.test(rj.image), rj.image);
+
     await svc.remove(a.id);
     ok('删除后清单为空', svc.list().items.length === 0);
     ok('删除默认耗材时清空默认指向', svc.getDefault() === null && svc.list().defaultId === null);
@@ -193,6 +215,56 @@ paths.setDataDir(tmp);
     ok('匹配不到返回 null', matchModel('unknown.3mf', models) === null);
     ok('同名多份时不猜（返回 null）',
       matchModel('benchy.3mf', { m1: models.m1, m3: { id: 'm3', fileName: 'benchy.3mf', status: 'ok' } }) === null);
+
+    // 分多次打印会让同一个模型出现 _plate_2 / (3) / 尾部编号等变体（用户 2026-11-24 反馈）
+    ok('剥掉盘号后缀', looseJobName('沙奈朵拆(3)_plate_2') === '沙奈朵拆',
+      looseJobName('沙奈朵拆(3)_plate_2'));
+    ok('剥掉括号编号', looseJobName('沙奈朵拆（2）.3mf') === '沙奈朵拆', looseJobName('沙奈朵拆（2）.3mf'));
+    ok('剥掉材料与时长后缀', looseJobName('组合体_PETG_6h4m.gcode') === '组合体',
+      looseJobName('组合体_PETG_6h4m.gcode'));
+    ok('剥掉尾部数字编号', looseJobName('灯箱草稿_3') === '灯箱草稿', looseJobName('灯箱草稿_3'));
+
+    const plateModels = {
+      a: { id: 'a', fileName: '沙奈朵拆(3).3mf', title: '沙奈朵拆(3)', status: 'ok' },
+      d: { id: 'd', fileName: '沙奈朵拆_plate_4.3mf', title: '沙奈朵拆_plate_4', status: 'ok' },
+      n: { id: 'n', fileName: 'No_AMS.3mf', title: 'No AMS', status: 'ok' },
+    };
+    ok('分盘任务自动关联到同源模型',
+      (matchModelFuzzy('沙奈朵拆(3)_plate_2', plateModels).model || {}).id === 'a',
+      JSON.stringify(matchModelFuzzy('沙奈朵拆(3)_plate_2', plateModels)));
+    ok('同名不同盘号按原始后缀区分',
+      (matchModelFuzzy('沙奈朵拆_plate_4', plateModels).model || {}).id === 'd');
+    ok('无关名字不乱连', matchModelFuzzy('完全不相干的模型', plateModels).model === null);
+
+    // 真实库里的情况：沙奈朵拆 与 沙奈朵拆(3) 同时存在，归一后都是「沙奈朵拆」。
+    // 早先只卡分数差会判成「太像不敢猜」，实际按原始后缀能确定是哪一个（用户 2026-11-24 反馈）。
+    const sameBase = {
+      plain: { id: 'plain', fileName: '沙奈朵拆.3mf', title: '沙奈朵拆', status: 'ok' },
+      three: { id: 'three', fileName: '沙奈朵拆(3).3mf', title: '沙奈朵拆(3)', status: 'ok' },
+    };
+    const pick = matchModelFuzzy('沙奈朵拆(3)_plate_2', sameBase);
+    ok('同名基础名时按原始后缀挑对', (pick.model || {}).id === 'three' && pick.ambiguous === false,
+      JSON.stringify(pick));
+    // 但两条记录名字完全一样时仍要放弃，交给用户手点
+    const twins = {
+      t1: { id: 't1', fileName: 'benchy.3mf', title: 'benchy', status: 'ok' },
+      t2: { id: 't2', fileName: 'benchy.3mf', title: 'benchy', status: 'ok' },
+    };
+    ok('完全同名仍然不猜', matchModelFuzzy('benchy_plate_2', twins).model === null);
+
+    const svc0 = await new ReceiptService().init();
+    await svc0.add({ jobName: '沙奈朵拆(3)_plate_2', printerId: 'p9', printerName: 'X1',
+      result: 'finished', startedAt: 5000, endedAt: 65000 });
+    const rec0 = svc0.list()[0];
+    await svc0.linkModel(rec0.id, 'a', '沙奈朵拆(3)', { manual: false });
+    const afterLink = svc0.get(rec0.id);
+    ok('自动关联不标成手动', afterLink.modelId === 'a' && afterLink.linkedManually === false,
+      JSON.stringify({ m: afterLink.modelId, manual: afterLink.linkedManually }));
+    ok('去重能认出同一次打印',
+      !!svc0.findRecentJob('p9', '沙奈朵拆(3)_plate_2', 66000));
+    ok('不同打印机不算同一次',
+      svc0.findRecentJob('p8', '沙奈朵拆(3)_plate_2', 66000) === null);
+    await svc0.clear();
 
     const svc = await new ReceiptService().init();
     await svc.add({ jobName: 'benchy.3mf', printerId: 'p1', printerName: 'A1', result: 'finished',
@@ -220,6 +292,20 @@ paths.setDataDir(tmp);
     ok('汇总随删除重算（成功 1 / 异常 1）', s2.prints === 1 && s2.failures === 1, JSON.stringify(s2));
     const del2 = await svc.delete([]);
     ok('空 id 列表安全返回', del2.deleted === 0 && svc.list().length === 2);
+
+    // 手动关联 / 改绑模型
+    const link = await svc.linkModel(b.id, 'm2', '卡比喷气 发布');
+    const linked = svc.get(b.id);
+    ok('回执可以按 id 关联模型', link.ok === true && linked.modelId === 'm2', JSON.stringify(link));
+    ok('关联后保存模型名快照', linked.modelTitle === '卡比喷气 发布' && linked.linkedManually === true);
+    ok('关联不改成本与用料快照', linked.cost === 0 && linked.weightG === null && linked.jobName === 'b.3mf');
+    const relink = await svc.linkModel(b.id, 'm3', '另一个模型');
+    ok('可以再次改绑模型', relink.ok === true && svc.get(b.id).modelId === 'm3');
+    const cleared = await svc.linkModel(b.id, null, null);
+    ok('可以清除关联', cleared.ok === true && svc.get(b.id).modelId === null &&
+      svc.get(b.id).modelTitle === null && svc.get(b.id).linkedManually === false);
+    const missing = await svc.linkModel('rcp-not-exist', 'm2', '不存在');
+    ok('关联不存在的回执安全返回', missing.ok === false && svc.list().length === 2);
     await svc.clear();
   }
 

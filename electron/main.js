@@ -8,11 +8,13 @@
  *
  * 启动参数：
  *   --smoke              无头自检：初始化服务、注册全部 IPC、真实扫描一次，输出 JSON 后退出
- *   --capture=<png路径>   自动截图 UI 供视觉走查（若本地库为空会先扫描工作区示例）
+ *   --capture=<png路径>   自动截图 UI 供视觉走查；与正常启动共用单实例锁，已有实例时拒绝启动。
+ *                         相对路径按项目根目录解析（如 data/ui-capture.png）
+ *   --seed                capture 专用：库为空时显式灌入工作区示例数据（默认不灌，不碰真实 settings.folders）
  *   --ui=<场景>           截图前套用内置场景（dark/list/detail/settings/lightbox）
  *   --ui-script=<js路径>  截图前在页面里执行一段脚本（走查与自动化验证用，返回值会打印）
- *   --no-seed            不自动灌入工作区示例数据（配合 PRINTSHELF_DATA_DIR 做破坏性测试时必须加）
- *   --dev                打开开发者工具
+ *   --no-seed             显式否决示例数据灌入（即使传了 --seed；破坏性测试必须加）
+ *   --dev                 打开开发者工具
  */
 const path = require('path');
 const fs = require('fs');
@@ -40,9 +42,10 @@ const numArg = (name, fallback, lo, hi) => {
 const winWidth = numArg('width', 1480, 480, 3840);
 const winHeight = numArg('height', 940, 360, 2160);
 
-// 部分宿主程序会注入 ELECTRON_RUN_AS_NODE=1，使 Electron 退化成纯 Node、窗口不出现。
-// 桌面快捷方式直接指向 electron.exe，这里做一层自愈：用干净环境重启自己。
-if (process.env.ELECTRON_RUN_AS_NODE === '1') {
+// 部分宿主程序会注入 ELECTRON_RUN_AS_NODE（值可能是 1 / true / 任意非空串），
+// 使 Electron 退化成纯 Node、窗口不出现。与 launch.js 的「无条件 delete」语义保持一致：
+// 只要是非空值就认为需要自愈，用干净环境重启自己。
+if (process.env.ELECTRON_RUN_AS_NODE) {
   const cp = require('child_process');
   const cleanEnv = { ...process.env };
   delete cleanEnv.ELECTRON_RUN_AS_NODE;
@@ -90,7 +93,7 @@ const { app, BrowserWindow, Menu, protocol, shell, dialog, Notification } = elec
 // 此时 require('electron') 只返回可执行文件路径，所有 API 都是 undefined。
 if (!app || !protocol || typeof protocol.registerSchemesAsPrivileged !== 'function') {
   console.error('[PrintShelf] 启动失败：Electron API 不可用。');
-  console.error('通常由环境变量 ELECTRON_RUN_AS_NODE=1 引起，请使用 start.bat / npm start 启动（会自动清除该变量）。');
+  console.error('通常由环境变量 ELECTRON_RUN_AS_NODE 被设为非空值引起，请使用 start.bat / npm start 启动（会自动清除该变量）。');
   console.error('当前 ELECTRON_RUN_AS_NODE =', JSON.stringify(process.env.ELECTRON_RUN_AS_NODE || ''));
   process.exit(1);
 }
@@ -153,32 +156,86 @@ protocol.registerSchemesAsPrivileged([
 let services = null;
 let mainWindow = null;
 let ipcMethods = [];
-let backendReady = false;
+// 'pending' | 'ready' | 'failed'。窗口先于后端创建，状态可能在页面订阅前就确定，
+// 因此 did-finish-load 会补发当前状态；失败态还会被 preload 缓存，不让 whenReady 永远挂起。
+let readyState = 'pending';
+let startupFailure = null;
+let lastBootStage = null;
+// capture 的 ui 快照放在模块级：正常 finally 与超时走 before-quit 时都要能还原。
+let captureUiSnapshot = null;
+let shutdownPromise = null;
 
-/**
- * 后端（服务 + 全部 IPC handler）就绪信号。
- * 窗口现在先创建，启动动画从双击图标那一刻就在；渲染层 bootstrap 之前会等这个信号，
- * 不会撞上「handler 还没注册」。did-finish-load 时补发一次，避免消息早于页面订阅丢失。
- */
-function signalRendererReady() {
-  backendReady = true;
+function broadcastToRenderer(channel, payload) {
   for (const w of BrowserWindow.getAllWindows()) {
     if (!w.isDestroyed() && w.webContents) {
-      try { w.webContents.send('app:ready', { ok: true }); } catch (_) { /* 窗口已关闭 */ }
+      try { w.webContents.send(channel, payload); } catch (_) { /* 窗口已关闭 */ }
     }
   }
 }
 
+/** 后端（服务 + 全部 IPC handler）就绪信号：渲染层 bootstrap 之前会等它。 */
+function signalRendererReady() {
+  readyState = 'ready';
+  startupFailure = null;
+  broadcastToRenderer('app:ready', { ok: true });
+}
+
+/** 启动失败信号：preload 读取 payload.ok 后 reject 等待者并缓存失败态。 */
+function signalRendererFailure(message) {
+  readyState = 'failed';
+  startupFailure = { message: String(message || '程序启动失败，请重新启动 PrintShelf') };
+  broadcastToRenderer('app:ready', { ok: false, message: startupFailure.message });
+}
+
+/** did-finish-load 补发当前状态与最近缓存的 boot:stage，避免早发信号丢失。 */
+function replayStartupState(win) {
+  if (!win || win.isDestroyed() || !win.webContents) return;
+  try {
+    if (readyState === 'ready') win.webContents.send('app:ready', { ok: true });
+    else if (readyState === 'failed') {
+      win.webContents.send('app:ready', { ok: false, message: startupFailure.message });
+    }
+    if (lastBootStage) win.webContents.send('boot:stage', lastBootStage);
+  } catch (_) { /* 窗口已关闭 */ }
+}
+
 /**
  * 分阶段启动信号：让启动动画从「无限转圈」变成看得见进度的加载条。
- * 纯视觉反馈，不参与任何 await；preload 会缓存最后一帧，早发的阶段不会丢。
+ * 纯视觉反馈，不参与任何 await；preload 会缓存历史帧，早发的阶段不会丢。
  */
 function bootStage(name, percent) {
-  for (const w of BrowserWindow.getAllWindows()) {
-    if (!w.isDestroyed() && w.webContents) {
-      try { w.webContents.send('boot:stage', { name, percent }); } catch (_) { /* 窗口已关闭 */ }
-    }
+  lastBootStage = { name, percent };
+  broadcastToRenderer('boot:stage', lastBootStage);
+}
+
+/** shutdown 幂等：正常路径、capture 超时与 before-quit 可能都走到。 */
+function shutdownServicesOnce() {
+  if (!services) return Promise.resolve();
+  if (!shutdownPromise) shutdownPromise = Promise.resolve(services.shutdown()).catch(() => {});
+  return shutdownPromise;
+}
+
+/** capture 期间被改过的 ui 偏好，收尾时显式还原；重复调用只有第一次生效。 */
+async function restoreCaptureUiSnapshot() {
+  if (!captureUiSnapshot) return;
+  const snap = captureUiSnapshot;
+  captureUiSnapshot = null;
+  if (!services || !services.store || typeof services.store.updateSettings !== 'function') return;
+  try {
+    await services.store.updateSettings({ ui: snap });
+    process.stdout.write('[capture] 已还原 ui 设置快照（截图场景不污染用户偏好）\n');
+  } catch (e) {
+    process.stdout.write('[capture] ui 设置还原失败：' + ((e && e.message) || e) + '\n');
   }
+}
+
+/** 给用户看的启动失败原因：只取第一行，英文堆栈留给 stderr，不直接甩给用户。 */
+function startupErrorMessage(e) {
+  const raw = (e && e.message) ? e.message : String(e || '');
+  const first = String(raw).split('\n')[0].trim();
+  if (!first) return '程序启动失败，请重新启动 PrintShelf';
+  if (/[\u4e00-\u9fa5]/.test(first)) return first;
+  return '程序启动失败：' + first + '。请重新启动；若反复出现，请把这段信息反馈给我。';
 }
 
 /**
@@ -267,6 +324,37 @@ function scheduleSourceUrlBackfill() {
 }
 
 /**
+ * 启动后给还没关联模型的回执补一次自动关联。
+ * 之前只在「打印完成那一刻」尝试匹配，一次没匹配上就永远空着；
+ * 现在每次启动兜一次，用户新导入模型后老回执也能自己连上（2026-11-24）。
+ */
+function scheduleReceiptAutoLink() {
+  if (!services || !services.initialized) return;
+  // 截图走查期间不做后台写库：探针要观察稳定状态，不能被 3 秒后的自动关联改掉
+  if (capturePath) return;
+  setTimeout(() => {
+    if (!services || !services.initialized) return;
+    try {
+      // 先补录历史漏记（从监控采样里找打完但没记账的），再做自动关联
+      Promise.resolve(services.receiptsBackfillFromMonitor())
+        .then((r) => {
+          if (r && r.created > 0) {
+            process.stdout.write('[receipts] 补录 ' + r.created + ' 条漏记的打印回执\n');
+          }
+        })
+        .catch(() => {})
+        .then(() => services && services.receiptsAutoLink())
+        .then((r) => {
+          if (r && r.linked > 0) {
+            process.stdout.write('[receipts] 自动关联 ' + r.linked + ' 条打印回执\n');
+          }
+        })
+        .catch(() => {});
+    } catch (_) { /* 关联失败不影响启动 */ }
+  }, 3000);
+}
+
+/**
  * 启动后给「未分类」补一次自动分类（用户要求每次打开软件跑一次）。
  * 延迟 1.6 秒、异步、整批只写一次库；没有未分类时连库都不写。
  * 与扫描时的即时分类共用 classify.js，规则只从设置里读一次。
@@ -343,14 +431,20 @@ function registerProtocols() {
   });
 
   protocol.handle('shelf', (request) => {
+    let url;
     let rel;
-    try { rel = decodeURIComponent(new URL(request.url).pathname || ''); }
-    catch (_) { return new Response('Bad URL', { status: 400 }); }
+    try {
+      url = new URL(request.url);
+      rel = decodeURIComponent(url.pathname || '');
+    } catch (_) { return new Response('Bad URL', { status: 400 }); }
     const name = path.basename(rel);
     if (!name || name === '.' || name === '..') return new Response('Not Found', { status: 404 });
     // 耗材图片（docs/13）：与缩略图同样按内容哈希命名，同样 immutable。
-    // 必须放在 thumbnails 之前判断，避免同名串到缩略图目录。
-    if (rel.startsWith('/filaments/')) {
+    // 注意 shelf 是 standard 协议：shelf://filaments/xx.jpg 里的 filaments 是「主机名」，
+    // pathname 只有 /xx.jpg。只判断 rel 前缀会永远落到缩略图目录，图片全部 404（2026-11-24 实测）。
+    const host = String(url.hostname || '').toLowerCase();
+    const isFilamentImg = host === 'filaments' || /^\/?filaments\//i.test(rel);
+    if (isFilamentImg) {
       return fileResponse(path.join(cpaths.getFilamentImagesDir(), name),
         'public, max-age=31536000, immutable');
     }
@@ -396,10 +490,9 @@ function createWindow({ show = true } = {}) {
   });
 
   win.webContents.on('did-finish-load', () => {
-    // 后端可能比页面更早就绪；补发一次，保证 preload 一定能收到
-    if (backendReady) {
-      try { win.webContents.send('app:ready', { ok: true }); } catch (_) { /* 忽略 */ }
-    }
+    // 后端可能比页面更早就绪（成功或失败）；补发当前状态与最近的 boot:stage，
+    // 保证 preload 在 document-start 的监听一定能拿到终态。
+    replayStartupState(win);
   });
   // capture/走查模式下带 query：渲染层据此跳过「未匹配提示」弹窗，
   // 否则弹窗会挡住其它探针要点的按钮。需要截这个弹窗的探针自己调
@@ -532,7 +625,8 @@ async function runSmoke() {
 }
 
 async function ensureSeedData() {
-  // 破坏性测试（删除/移入回收站）必须加 --no-seed，否则会把工作区里真实 3mf 一起灌进测试库。
+  // 只在调用方显式传 --seed 时才会走到这里；这里再保留一层否决，
+  // 破坏性测试（删除/移入回收站）加 --no-seed 就绝不会把工作区真实 3mf 灌进测试库。
   if (argv.includes('--no-seed')) return;
   // 打包版没有「工作区」这个概念，不能把 resources/app 当样本目录写进用户设置
   if (app.isPackaged) return;
@@ -563,12 +657,12 @@ async function runCapture(target) {
   // capture 的 --ui=<场景> 会点击真实的视图切换按钮，而 toolbar.js 会把
   // ui.view 写进 settings.json。截图/走查是自动化工具，不该改用户偏好：
   // 先快照整份 ui，收尾时显式写回（沿用探针的「整份快照 + 显式还原」约定）。
-  let uiSnapshot = null;
+  captureUiSnapshot = null;
   if (uiScenario) {
     try {
       const cur = services && services.store ? services.store.getSettings() : null;
-      if (cur && cur.ui) uiSnapshot = JSON.parse(JSON.stringify(cur.ui));
-    } catch (_) { uiSnapshot = null; }
+      if (cur && cur.ui) captureUiSnapshot = JSON.parse(JSON.stringify(cur.ui));
+    } catch (_) { captureUiSnapshot = null; }
   }
 
   // 诊断：主动触发一次刷新并读取真实 DOM 状态，便于定位渲染层问题
@@ -634,25 +728,35 @@ async function runCapture(target) {
   }
 
   // 可选：执行外部脚本，用于自动化走查（点击、拖拽、读取真实 DOM 结果）
+  let uiScriptFailed = false;
   if (uiScriptPath) {
     try {
       const code = fs.readFileSync(path.resolve(uiScriptPath), 'utf8');
       const r = await wc.executeJavaScript('(async () => {' + code + '\n})()', true);
       process.stdout.write('\n=== PRINTSHELF_UI_SCRIPT ===\n' + JSON.stringify(r, null, 2) + '\n=== END ===\n');
+      // 探针返回 ok:false 必须让进程失败，否则 CI / 自动验收会「永远绿」。
+      if (r && typeof r === 'object' && r.ok === false) uiScriptFailed = true;
     } catch (e) {
+      uiScriptFailed = true;
       process.stdout.write('\n=== PRINTSHELF_UI_SCRIPT_ERROR ===\n' + (e && e.stack ? e.stack : e) + '\n=== END ===\n');
     }
     await new Promise((r) => setTimeout(r, 800));
   }
 
-  // 硬超时保底：截图链路在部分无显示环境会挂住，绝不阻塞退出
+  // 硬超时保底：截图链路在部分无显示环境会挂住，但不能再 app.exit(2)——
+  // 那会绕过 ui 快照还原与 shutdown 落盘，留下半截状态。改为打标志并触发
+  // 正常退出流程：before-quit 会先还原 ui、再 shutdown（落盘 + 停监视/连接）。
+  let captureTimedOut = false;
   const hardTimer = setTimeout(() => {
+    captureTimedOut = true;
     process.stdout.write('\n=== PRINTSHELF_CAPTURE_TIMEOUT ===\n');
-    app.exit(2);
+    process.exitCode = 2;
+    try { app.quit(); } catch (_) { app.exit(2); }
   }, 30000);
 
   try {
-    const abs = path.resolve(target);
+    // 相对路径按项目根目录解析（npm run capture 传 data/ui-capture.png）
+    const abs = path.isAbsolute(target) ? target : path.resolve(__dirname, '..', target);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
 
     // 让窗口处于前台，capturePage 在被遮挡时会返回 0 字节
@@ -665,8 +769,9 @@ async function runCapture(target) {
     } catch (_) { /* 部分平台不支持 */ }
     await new Promise((r) => setTimeout(r, 700));
 
-    let buf = null;
-    // 优先 CDP（不依赖窗口可见性），但必须带超时：某些环境该命令永不返回
+  let buf = null;
+  let captureFailed = false;
+  // 优先 CDP（不依赖窗口可见性），但必须带超时：某些环境该命令永不返回
     try {
       const dbg = wc.debugger;
       if (!dbg.isAttached()) dbg.attach('1.3');
@@ -694,25 +799,50 @@ async function runCapture(target) {
     fs.writeFileSync(abs, buf);
     process.stdout.write('\n=== PRINTSHELF_CAPTURE ===\n' + abs + ' (' + buf.length + ' bytes)\n=== END ===\n');
   } catch (e) {
+    captureFailed = true;
     process.stdout.write('\n=== PRINTSHELF_CAPTURE_ERROR ===\n' + (e && e.stack ? e.stack : e) + '\n=== END ===\n');
   } finally {
     clearTimeout(hardTimer);
-    if (uiSnapshot && services && services.store &&
-        typeof services.store.updateSettings === 'function') {
-      try {
-        await services.store.updateSettings({ ui: uiSnapshot });
-        process.stdout.write('[capture] 已还原 ui 设置快照（截图场景不污染用户偏好）\n');
-      } catch (e) {
-        process.stdout.write('[capture] ui 设置还原失败：' + ((e && e.message) || e) + '\n');
-      }
+    // 正常结束与超时都先还原 ui（幂等）；超时时再确保 shutdown 落盘。
+    // before-quit 可能已在走同一条路径，shutdownServicesOnce 保证只执行一次。
+    await restoreCaptureUiSnapshot();
+    if (captureTimedOut) {
+      process.exitCode = 2;
+      await shutdownServicesOnce();
+    } else if (uiScriptFailed && !process.exitCode) {
+      process.exitCode = 1;
     }
   }
 }
 
 // ---------------- 生命周期 ----------------
 
-const gotLock = (isSmoke || capturePath) ? true : app.requestSingleInstanceLock();
+// smoke 用隔离的临时数据目录，允许并发；capture 必须和正常启动共用同一把锁，
+// 否则两个进程会同时读写 real data 目录里的 library/settings/filaments/receipts，
+// 造成互相覆盖。渲染层 UI 探针一般单独运行，拿得到锁，不受影响。
+//
+// 例外：capture 显式指定了 PRINTSHELF_DATA_DIR 时，它读写的是一份影子数据目录，
+// 和用户正在用的 real data 不是同一份，此时再抢同一把锁只会让「用户开着软件就
+// 不能跑走查」。把 userData 也切到影子目录下，锁随之分开：既不打扰已开窗口，
+// 也不存在并发写同一份库的问题（2026-11-24 加）。
+if (capturePath && process.env.PRINTSHELF_DATA_DIR) {
+  try {
+    const isoUserData = path.join(path.resolve(process.env.PRINTSHELF_DATA_DIR), '.capture-userdata');
+    fs.mkdirSync(isoUserData, { recursive: true });
+    app.setPath('userData', isoUserData);
+  } catch (_) {
+    // 切不过去就退回共享锁：安全优先，宁可拒绝启动也不并发写真实库。
+  }
+}
+const gotLock = isSmoke ? true : app.requestSingleInstanceLock();
 if (!gotLock) {
+  if (capturePath) {
+    const reason = '已有 PrintShelf 实例正在运行。为避免两个进程同时改写模型库、设置、耗材与回执，'
+      + '本次 --capture 截图已拒绝启动。请先关闭正在运行的 PrintShelf，再重新执行截图。';
+    console.error('[PrintShelf] ' + reason);
+    process.stderr.write('PRINTSHELF_CAPTURE_LOCKED ' + reason + '\n');
+    startupLog('capture 拒绝启动：已有实例持有单实例锁');
+  }
   app.quit();
 } else {
   app.on('second-instance', () => {
@@ -728,7 +858,7 @@ if (!gotLock) {
 
     if (isSmoke) {
       const result = await runSmoke();
-      await services.shutdown().catch(() => {});
+      await shutdownServicesOnce();
       app.exit(result.ok ? 0 : 1);
       return;
     }
@@ -751,10 +881,11 @@ if (!gotLock) {
     // 打印机轮询：截图走查与正常启动都要有，否则设备页永远显示离线
     try { services.printers.start(); } catch (_) { /* 没配打印机也不影响启动 */ }
 
-    // 截图模式下先把示例数据灌好、旧库颜色补齐再放行，首屏拿到的就是有色板的库。
-    // 走查探针要验证「旧记录也能显示色板」，所以这里必须 await，不能只靠后台调度。
+    // capture 默认不再灌示例数据：dev 模式下项目上层目录会被写进真实 settings.folders
+    // 并触发全盘扫描。只有显式传 --seed 才灌；--no-seed 仍然可以否决。
+    // 旧库回填只处理已有记录，空库上是 no-op，保持原样执行。
     if (capturePath) {
-      await ensureSeedData();
+      if (argv.includes('--seed')) await ensureSeedData();
       try { await backfillFilamentColors(services.store); } catch (_) { /* 色板失败不影响截图 */ }
       try { await backfillSourceUrls(services.store); } catch (_) { /* 来源链接失败不影响截图 */ }
       try { await backfillWeights(services.store); } catch (_) { /* 重量失败不影响截图 */ }
@@ -767,23 +898,35 @@ if (!gotLock) {
     scheduleColorBackfill();
     scheduleAutoClassify();
     scheduleSourceUrlBackfill();
+    scheduleReceiptAutoLink();
     scheduleWeightBackfill();
     // 目录监视也移到后台：chokidar 的初始递归扫描不再是「进软件」的前置条件
     scheduleBackgroundWatch();
 
     if (capturePath) {
       await runCapture(capturePath);
-      await services.shutdown().catch(() => {});
-      setTimeout(() => app.exit(0), 300);
+      // 与正常退出共用一条优雅路径：before-quit 会再兜底还原快照 + 幂等 shutdown
+      await shutdownServicesOnce();
+      // Electron 在 quit 时不会把 process.exitCode 带出去（实测总是 0），
+      // 探针失败 / 截图超时必须显式 app.exit(code)，否则自动验收永远「绿」。
+      // shutdown 已经跑完，这里再 exit 不会丢落盘。
+      const code = process.exitCode || 0;
+      if (code) app.exit(code);
+      else app.quit();
     }
   }).catch((e) => {
     console.error('[PrintShelf] 启动失败：', e);
     process.stderr.write('PRINTSHELF_START_ERROR ' + (e && e.stack ? e.stack : e) + '\n');
-    // 让渲染层的启动动画以失败态收尾，不要留一个永远转圈的窗口
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      try { mainWindow.webContents.send('app:ready', { ok: false }); } catch (_) { /* 忽略 */ }
-    }
-    app.exit(1);
+    // 明确告诉渲染层「后端没起来」：preload 会 reject whenReady 并缓存失败态，
+    // 不再让 bootstrap 傻等或被 8 秒兜底放行到未注册的 IPC 上。
+    signalRendererFailure(startupErrorMessage(e));
+    process.exitCode = 1;
+    shutdownServicesOnce().then(() => {
+      // 留一点时间让 app:ready {ok:false} 真正投递到渲染层，再走优雅退出
+      setTimeout(() => {
+        try { app.quit(); } catch (_) { app.exit(1); }
+      }, 200);
+    });
   });
 
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
@@ -795,7 +938,11 @@ if (!gotLock) {
     if (quitting || !services) return;
     e.preventDefault();
     quitting = true;
-    Promise.resolve(services.shutdown()).catch(() => {}).then(() => app.quit());
+    Promise.resolve()
+      .then(() => restoreCaptureUiSnapshot()) // capture 改过的 ui 偏好先还原
+      .then(() => shutdownServicesOnce())     // 落盘 + 停 watcher/连接（幂等）
+      .catch(() => {})
+      .then(() => app.quit());
   });
 }
 

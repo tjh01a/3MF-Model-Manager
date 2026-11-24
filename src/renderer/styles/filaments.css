@@ -171,7 +171,6 @@
 .fil-color-wrap { display: flex; gap: 6px; align-items: center; }
 .fil-color-wrap input[type="color"] { width: 38px; height: 32px; padding: 2px; cursor: pointer; }
 .fil-hex { font-family: var(--mono, monospace); }
-.fil-hint { font-size: 11px; line-height: 1.6; color: var(--text-dim); padding: 9px 10px; background: var(--bg-soft, #f8fafc); border-radius: 7px; }
 
 html[data-theme="dark"] .fil-window { box-shadow: 0 24px 80px rgba(0, 0, 0, .5); }
 html[data-theme="dark"] .fil-dot { border-color: rgba(255,255,255,.2); }
@@ -235,6 +234,35 @@ body.edit-mode .rc-card:hover { transform: none; }
 .rc-result.is-ok { background: var(--success-soft); color: var(--success); }
 .rc-result.is-err { background: #fee2e2; color: #dc2626; }
 .rc-unlinked { font-size: 10px; color: var(--text-mute); }
+/* 单条回执的「关联 / 更换模型」入口：跟状态徽标同一行，不挤占标题 */
+.rc-link {
+  display: inline-flex; align-items: center; gap: 3px; margin-left: auto;
+  padding: 1px 6px; border: 1px solid var(--border); border-radius: 5px;
+  background: var(--bg-soft); color: var(--text-dim); font-size: 10px; line-height: 1.4;
+  cursor: pointer; white-space: nowrap;
+}
+.rc-link:hover { color: var(--accent); border-color: var(--accent); }
+.rc-link.is-linked { color: var(--accent); }
+.rc-link .ico { width: 11px; height: 11px; }
+/* 模型关联选择器 */
+.rc-picker { display: flex; flex-direction: column; gap: 10px; }
+.rc-picker-search { display: flex; align-items: center; gap: 8px; }
+.rc-picker-search .ico { width: 16px; height: 16px; color: var(--text-mute); flex: 0 0 auto; }
+.rc-picker-search .input { flex: 1; }
+.rc-pick-list { display: flex; flex-direction: column; gap: 4px; max-height: 340px; overflow-y: auto; }
+.rc-pick {
+  display: flex; align-items: center; gap: 9px; width: 100%; padding: 6px 8px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev);
+  color: var(--text); text-align: left; cursor: pointer;
+}
+.rc-pick:hover { border-color: var(--accent); background: var(--hover); }
+.rc-pick.is-current { border-color: var(--accent); background: var(--accent-soft); }
+.rc-pick img { width: 38px; height: 38px; flex: 0 0 38px; object-fit: cover; border-radius: 6px; background: var(--bg-soft); }
+.rc-pick-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rc-pick-main strong { font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-pick-main small { font-size: 10px; color: var(--text-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-pick-tag { flex: 0 0 auto; font-size: 10px; color: var(--accent); }
+.rc-pick-clear { justify-content: center; color: var(--text-dim); font-size: 11px; }
 .rc-meta { display: flex; flex-wrap: wrap; gap: 9px; font-size: 11px; color: var(--text-dim); }
 .rc-meta span { display: inline-flex; align-items: center; gap: 3px; }
 .rc-meta .ico { width: 12px; height: 12px; }

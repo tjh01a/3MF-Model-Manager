@@ -29,6 +29,10 @@ const BAMBU_BACKOFF_MS = 3000;      // 断线重连起点，失败逐次翻倍�
 const BAMBU_HEAL_MS = 300000;       // 连不上时自动找「同序列号的新 IP」的节流：5 分钟内不重复扫
 const BAMBU_HEAL_MAX = 6;           // 每个打印机每次运行最多扫 6 轮，避免云端模式时一直刷局域网
 const BAMBU_LAN_RETRY_MS = 300000;  // 双通道：走云端时每 5 分钟偷偷试一次局域网，恢复了就切回来
+// 配置不完整（缺 serial / accessCode）时不能每 3 秒刷一次离线提示与界面更新。
+const CONFIG_BACKOFF_MS = 5000;     // 起点 5 秒，逐次翻倍，最多 2 分钟
+const CONFIG_BACKOFF_MAX = 120000;
+const PRINTER_MODES = ['lan', 'cloud', 'auto'];
 
 function mergeDeep(base, patch) {
   if (!patch || typeof patch !== 'object') return base;
@@ -48,15 +52,23 @@ const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 const round1 = (v) => Math.round(num(v) * 10) / 10;
 
-/** RRGGBBAA / AARRGGBB → "#RRGGBB" */
+/**
+ * 颜色归一化 → "#RRGGBB"。
+ * 固件给两种写法：8 位十六进制 "39FF14FF" 是 RRGGBBAA（取前 6 位）；
+ * 十进制整数（含纯数字字符串）是 AARRGGBB 的 uint32（取低 24 位）。
+ * 老代码先看长度再看数字，8 位十进制被当成 hex 截断，非法 hex 也会被误收（P1-12）。
+ */
 function argbToHex(v) {
-  const s = String(v || '').replace(/^#/, '');
-  if (s.length === 8) return '#' + s.slice(0, 6).toUpperCase();        // 这些机器给的是 RRGGBBAA
-  if (s.length === 6) return '#' + s.toUpperCase();
-  if (Number.isFinite(Number(v))) {
-    const n = Number(v) >>> 0;
-    return '#' + ((n >> 8) & 0xffffff).toString(16).padStart(6, '0').toUpperCase();
+  if (v == null || v === '') return '#9AA3AF';
+  const raw = String(v).trim().replace(/^#/, '');
+  if (!raw) return '#9AA3AF';
+  if (/^\d+$/.test(raw)) {
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return '#9AA3AF';
+    return '#' + ((n >>> 0) & 0xffffff).toString(16).padStart(6, '0').toUpperCase();
   }
+  if (/^[0-9a-fA-F]{8}$/.test(raw)) return '#' + raw.slice(0, 6).toUpperCase();
+  if (/^[0-9a-fA-F]{6}$/.test(raw)) return '#' + raw.toUpperCase();
   return '#9AA3AF';
 }
 
@@ -90,8 +102,9 @@ class PrinterService extends EventEmitter {
     await this.store.updateSettings({ printers: list });
   }
 
-  async add({ kind, name, ip, serial = '', accessCode = '', model = '', cameraUrl = '' } = {}) {
+  async add({ kind, name, ip, serial = '', accessCode = '', model = '', cameraUrl = '', mode = 'auto' } = {}) {
     if (!kind || !['bambu', 'snapmaker'].includes(kind)) throw new Error('未知的打印机类型：' + kind);
+    const netMode = PRINTER_MODES.includes(mode) ? mode : 'auto';
     const host = String(ip || '').trim();
     if (!host) throw new Error('请填写打印机 IP');
     const list = this.list();
@@ -106,6 +119,8 @@ class PrinterService extends EventEmitter {
       // 可选的摄像头地址（快照或 MJPEG）。留空则用机型自带的取帧方式。
       cameraUrl: String(cameraUrl || '').trim(),
       model: String(model || '').trim(),
+      // 拓竹连接通道：lan / cloud / auto（默认自动：局域网优先，失败切云端）
+      mode: netMode,
       enabled: true,
     };
     list.push(item);
@@ -122,6 +137,11 @@ class PrinterService extends EventEmitter {
       if (k in patch && patch[k] != null) cur[k] = String(patch[k]).trim();
     }
     if ('enabled' in patch) cur.enabled = !!patch.enabled;
+    if ('mode' in patch) {
+      const m = String(patch.mode || '').trim();
+      if (!PRINTER_MODES.includes(m)) throw new Error('非法的连接模式：' + patch.mode);
+      cur.mode = m;
+    }
     await this._write(list);
     this._dropConnection(id);
     this.emit('changed', { type: 'update', id });
@@ -367,17 +387,15 @@ class PrinterService extends EventEmitter {
     }
     if (ent.client) return;                     // 已连着，靠推送即可
     if (Date.now() < ent.nextTry) return;       // 退避期内不重连，避免把打印机连接数打满
-    if (!p.serial) {
+    // 配置缺项是可预期的静态状态：必须退避，否则每 3 秒发一次 update 事件刷界面。
+    const missing = !p.serial ? '缺少打印机序列号'
+      : (p.mode !== 'cloud' && !p.accessCode
+        ? '缺少访问码：在打印机屏幕上查看，或登录拓竹账号自动获取' : null);
+    if (missing) {
+      ent.fails = (ent.fails || 0) + 1;
+      ent.nextTry = Date.now() + Math.min(CONFIG_BACKOFF_MAX, CONFIG_BACKOFF_MS * Math.pow(2, ent.fails - 1));
       const off = this._offline(p);
-      off.error = '缺少打印机序列号';
-      this._cache.set(p.id, off);
-      this.emit('update', off);
-      return;
-    }
-    // 云端打印机不需要访问码（认证走账号 token），局域网才需要
-    if (p.mode !== 'cloud' && !p.accessCode) {
-      const off = this._offline(p);
-      off.error = '缺少访问码：在打印机屏幕上查看，或登录拓竹账号自动获取';
+      off.error = missing;
       this._cache.set(p.id, off);
       this.emit('update', off);
       return;
@@ -803,3 +821,5 @@ class PrinterService extends EventEmitter {
 }
 
 module.exports = PrinterService;
+module.exports.argbToHex = argbToHex;
+module.exports.PRINTER_MODES = PRINTER_MODES;

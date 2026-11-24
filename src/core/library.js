@@ -246,6 +246,11 @@ class LibraryService {
         else if (k === 'favorite') v = !!v;
         else if (Array.isArray(v)) v = v.slice();
         rec[k] = v;
+        // 人工改过 categoryId 就不再是「自动分类结果」，撤销时不能清掉它（P1-8）。
+        if (k === 'categoryId') {
+          rec.autoClassified = false;
+          delete rec.autoCategoryId;
+        }
       }
       rec.updatedAt = U.now();
       result = rec;
@@ -274,6 +279,10 @@ class LibraryService {
           else if (k === 'favorite') v = !!v;
           else if (Array.isArray(v)) v = v.slice();
           rec[k] = v;
+          if (k === 'categoryId') {
+            rec.autoClassified = false;
+            delete rec.autoCategoryId;
+          }
         }
         if ((appendTags && appendTags.length) || (removeTags && removeTags.length)) {
           const set = new Set(Array.isArray(rec.tagIds) ? rec.tagIds : []);
@@ -553,7 +562,12 @@ class LibraryService {
       }
       arr.splice(idx, 1);
       for (const r of Object.values(lib.models || {})) {
-        if (r.categoryId === id) r.categoryId = target;
+        if (r.categoryId === id) {
+          r.categoryId = target;
+          // 分类被删后这条记录已不是原自动结果，撤销不能再动它。
+          r.autoClassified = false;
+          delete r.autoCategoryId;
+        }
       }
     }, 'categoryDelete');
   }
@@ -669,6 +683,7 @@ class LibraryService {
       favorites: 0, printed: 0, unprinted: 0, missing: 0, duplicates: 0,
       recentAdded: 0, recentOpened: 0, thumbnails: 0,
     };
+    const dupSizes = this._dupGroupSizes();
     const bump = (obj, k) => { obj[k] = (obj[k] || 0) + 1; };
     for (const r of this._all()) {
       // 失效记录只用于「失效文件」维护视图的计数，不进入模型总数 / 占用空间 /
@@ -687,7 +702,7 @@ class LibraryService {
       if (r.favorite) s.favorites++;
       if (r.printStatus === 'printed') s.printed++;
       if (r.printStatus === 'unprinted') s.unprinted++;
-      if (r.duplicateGroup || r.duplicateOf) s.duplicates++;
+      if (r.duplicateOf || (r.duplicateGroup && dupSizes.get(r.duplicateGroup) > 1)) s.duplicates++;
       if (r.createdAt && (now - r.createdAt) <= DAY7) s.recentAdded++;
       if (r.lastOpenedAt && (now - r.lastOpenedAt) <= DAY7) s.recentOpened++;
       if (r.thumbnail) s.thumbnails++;
@@ -699,15 +714,32 @@ class LibraryService {
     const out = {};
     for (const k of SMART_KEYS) out[k] = 0;
     const now = U.now();
+    const dupSizes = this._dupGroupSizes();
     for (const r of this._all()) {
       // 与 query 保持一致：失效记录只计入 missing 视图，其它徽标不能比列表多
       const isMissing = r.status === 'missing';
       for (const k of SMART_KEYS) {
+        if (k === 'duplicates') continue;   // 单独算：要按「组内 ≥2」判定
         if (isMissing && k !== 'missing') continue;
         if (matchSmart(r, k, now)) out[k]++;
       }
+      // 一键清除后留下的那份仍带旧分组标记；只按标记计数会让徽标一直是 N 而列表是空的。
+      if (!isMissing && (r.duplicateOf || (r.duplicateGroup && dupSizes.get(r.duplicateGroup) > 1))) {
+        out.duplicates++;
+      }
     }
     return out;
+  }
+
+  /** 各重复组当前的文件数：判断「还是不是重复」不能只看记录上有没有分组标记 */
+  _dupGroupSizes() {
+    const sizes = new Map();
+    for (const r of this._all()) {
+      const k = r && r.duplicateGroup;
+      if (!k) continue;
+      sizes.set(k, (sizes.get(k) || 0) + 1);
+    }
+    return sizes;
   }
 
   roulette() {

@@ -46,6 +46,29 @@ const STATE_CLS = {
   finished: 's-done', preparing: 's-busy', error: 's-err', offline: 's-off',
 };
 
+/** 设备卡片 / 确认弹窗里统一的人话名字 */
+function printerLabel(p) {
+  if (!p) return '未知设备';
+  const name = String(p.name || p.model || '打印机').trim();
+  const ip = String(p.ip || '').trim();
+  const id = String(p.id || '').trim();
+  return name + (ip ? '（' + ip + '）' : (id ? '（' + id + '）' : ''));
+}
+
+/** 快照里明确离线的设备才算「失效」，连接中不算，避免网络抖一下就误删配置 */
+function isOfflinePrinter(p) {
+  if (!p || !p.id) return false;
+  return p.online === false || p.state === 'offline' || p.stateText === '离线';
+}
+
+/** 卡片来自 snapshot，配置来自 list；两边都查，不能只认 list（旧版就是这里点了没反应） */
+function findPrinter(id) {
+  const key = String(id || '');
+  if (!key) return null;
+  return (st.snap || []).find((x) => x && String(x.id) === key) ||
+    (st.list || []).find((x) => x && String(x.id) === key) || null;
+}
+
 /**
  * 四工具头温度。U1 是 extruder + extruder1..3，只显示当前喷嘴的话，
  * 另外三个头有没有升温、有没有超温完全看不见（用户明确要求每个头都显示）。
@@ -117,6 +140,15 @@ const camErrors = new Map();   // id -> string（取帧失败原因，直接显�
 const camLoading = new Map();  // id -> true（正在连摄像头，画面区显示等待动画）
 const detectState = new Map(); // id -> { running, left, shots, staleSec }
 
+// promptForm 自建的 .ow-backdrop 不在 modal.js 的栈里，单独记一层：
+// app.js 的 Esc 逐层关闭要先取消它，否则会关掉底下的设备面板却留下表单。
+const promptFormStack = [];
+export function isPromptFormOpen() { return promptFormStack.length > 0; }
+export function cancelPromptForm() {
+  const top = promptFormStack[promptFormStack.length - 1];
+  if (top) top.cancel();
+}
+
 /** 把「多久以前」说成人话：45 秒前 / 3 分钟前 / 2 小时前 */
 function agoText(sec) {
   const n = Math.max(0, Math.round(Number(sec) || 0));
@@ -133,7 +165,7 @@ function camBlock(p) {
   // 拓竹首帧要 3~12 秒，没有等待动画用户会以为软件卡死
   if (camLoading.get(p.id) && !url && !err) {
     return '<div class="dev-cam is-loading">' +
-      '<i class="ico i-refresh" aria-hidden="true"></i>' +
+      icon('i-refresh', 'ico') +
       '<span>正在连接摄像头…</span>' +
       '<span class="dev-cam-hint">拓竹首帧通常要几秒，请稍候</span>' +
       '</div>';
@@ -232,7 +264,8 @@ function emptyHtml() {
     '<h3>还没有添加打印机</h3>' +
     '<p>本工具可以直连局域网里的打印机看状态，不用先打开切片软件。<br>' +
       '快造 U1 走 Moonraker（7125 端口），拓竹走局域网 MQTT（8883）。</p>' +
-    '<div class="btn-row"><button class="btn btn-primary" data-act="dev-scan">扫描局域网</button>' +
+    '<div class="btn-row"><button class="btn btn-primary" data-act="dev-tidy">一键整理设备</button>' +
+    '<button class="btn btn-ghost" data-act="dev-scan">扫描局域网</button>' +
     '<button class="btn btn-ghost" data-act="dev-add">手动添加</button></div>' +
     '</div>';
 }
@@ -240,6 +273,7 @@ function emptyHtml() {
 function discoveredHtml() {
   const list = st.discovered;
   if (!list) return '';
+  const newCount = discoveredNew().length;
   if (!list.length) {
     return '<div class="dev-panel-block"><p class="hint">这个网段没有扫到打印机。确认打印机已开机、和电脑在同一个局域网。</p>' +
       '<div class="btn-row"><button class="btn btn-ghost btn-sm" data-act="dev-scan">再扫一次</button></div></div>';
@@ -253,7 +287,9 @@ function discoveredHtml() {
         ? '<span class="dev-found-tag">已在列表</span>'
         : '<button class="btn btn-primary btn-sm" data-act="dev-add-found" data-ip="' + esc(d.ip) + '">添加</button>') +
     '</div>').join('') +
-    '<div class="btn-row"><button class="btn btn-ghost btn-sm" data-act="dev-scan">再扫一次</button>' +
+    '<div class="btn-row">' +
+    (newCount ? '<button class="btn btn-primary btn-sm" data-act="dev-scan-add">添加全部新设备（' + newCount + '）</button>' : '') +
+    '<button class="btn btn-ghost btn-sm" data-act="dev-scan">再扫一次</button>' +
     '<button class="btn btn-ghost btn-sm" data-act="dev-close-found">收起</button></div></div>';
 }
 
@@ -266,10 +302,16 @@ function render() {
     (Array.isArray(st.list) && st.list.some((p) => p && p.kind === 'bambu'));
   body.innerHTML =
     '<div class="dev-toolbar">' +
+      '<button class="btn btn-primary btn-sm" data-act="dev-tidy" ' +
+        'title="扫描局域网添加新打印机，并列出可移除的离线设备；执行前会先给你确认清单">' +
+        icon('i-search') + '一键整理设备</button>' +
+      '<button class="btn btn-ghost btn-sm danger" data-act="dev-remove-offline" ' +
+        'title="只从本机配置里移除离线设备，不会重置打印机；执行前会列出清单">' +
+        icon('i-trash') + '移除失效设备</button>' +
       '<button class="btn btn-ghost btn-sm" data-act="dev-scan">' + icon('i-search') + '扫描局域网</button>' +
       '<button class="btn btn-ghost btn-sm" data-act="dev-add">' + icon('i-plus') + '手动添加</button>' +
       (hasBambu ? '<button class="btn btn-ghost btn-sm" data-act="dev-bambu-account">' + icon('i-cloud') + '拓竹账号</button>' : '') +
-      '<span class="dev-tip">状态每 3 秒刷新一次</span>' +
+      '<span class="dev-tip">' + (busy ? '正在扫描，请稍候…' : '状态每 3 秒刷新一次') + '</span>' +
     '</div>' +
     (st.error ? '<p class="dev-err">' + esc(st.error) + '</p>' : '') +
     discoveredHtml() +
@@ -311,6 +353,159 @@ async function scan() {
   }
 }
 
+/** 扫描结果里真正还没在本机配置里的设备；d.added 可能过期，以 st.list 的 IP 为准 */
+function discoveredNew() {
+  const known = new Set((st.list || [])
+    .map((p) => String((p && p.ip) || '').trim()).filter(Boolean));
+  return (st.discovered || []).filter((d) => {
+    const ip = String((d && d.ip) || '').trim();
+    return !!ip && !known.has(ip);
+  });
+}
+
+async function addOne(d) {
+  if (!d || !d.ip) return false;
+  await api.printerAdd({
+    kind: d.kind, ip: d.ip, name: d.name, serial: d.serial,
+    accessCode: d.accessCode, model: d.model, cameraUrl: d.cameraUrl,
+  });
+  return true;
+}
+
+/** 把扫描结果里没配过的机器一次性加进来（执行前有确认清单） */
+async function addAllFound() {
+  const addList = discoveredNew();
+  if (!addList.length) {
+    emitToast('info', '没有发现新的打印机');
+    return;
+  }
+  const ok = await confirmDialog({
+    title: '添加扫描到的打印机',
+    message: '把扫到的 ' + addList.length + ' 台新打印机加入本机设备列表？',
+    detail: '只是保存连接信息，不会改动打印机设置。拓竹机器若缺访问码，添加后请在「编辑设备」里补上。',
+    items: addList.map((d) => printerLabel(d)),
+    confirmText: '添加这些设备',
+    cancelText: '先不添加',
+  });
+  if (!ok) return;
+  let added = 0;
+  const failed = [];
+  for (const d of addList) {
+    try { if (await addOne(d)) added++; }
+    catch (e) { failed.push(printerLabel(d) + '：' + ((e && e.message) || '添加失败')); }
+  }
+  emitToast(added ? 'success' : 'warn', added
+    ? ('已添加 ' + added + ' 台' + (failed.length ? '，' + failed.length + ' 台失败' : ''))
+    : '没有添加成功');
+  await refresh();
+}
+
+/** 扫描并添加：一键扫描后直接走确认清单，不需要一台一台点添加 */
+async function scanAndAdd() {
+  if (busy) return;
+  await scan();
+  await addAllFound();
+}
+
+/** 移除失效设备：按快照判断，不从 st.list 取，离线机器也一样能移除 */
+async function removeOffline() {
+  const targets = (st.snap || []).filter(isOfflinePrinter);
+  if (!targets.length) {
+    emitToast('info', '当前没有需要移除的离线设备');
+    return;
+  }
+  const ok = await confirmDialog({
+    title: '移除失效设备（只删本机配置）',
+    message: '移除 ' + targets.length + ' 台离线设备？',
+    detail: '只是删除本工具保存的连接信息，不会重置打印机、也不会影响它正在进行的打印。'
+      + '当前离线不一定代表机器坏了（例如 Wi-Fi 掉了），以后可以重新添加回来。',
+    items: targets.map(printerLabel),
+    confirmText: '移除这些设备',
+    cancelText: '不移除，返回',
+    danger: true,
+  });
+  if (!ok) return;
+  let removed = 0;
+  const failed = [];
+  for (const p of targets) {
+    try {
+      await api.printerRemove(p.id);
+      removed++;
+    } catch (e) {
+      failed.push(printerLabel(p) + '：' + ((e && e.message) || '移除失败'));
+    }
+  }
+  emitToast(removed ? 'success' : 'warn', removed
+    ? ('已移除 ' + removed + ' 台' + (failed.length ? '，' + failed.length + ' 台失败' : ''))
+    : '没有移除成功');
+  await refresh();
+}
+
+/**
+ * 一键整理：扫描局域网 → 列出可添加的新设备和可移除的离线设备 → 用户确认后一次执行。
+ * 扫描时还能连上的 IP 即使旧快照是离线，也不会被列入移除清单，避免误删。
+ */
+async function tidyDevices() {
+  if (busy) return;
+  busy = true;
+  render();
+  const body = document.getElementById('devices-body');
+  if (body) body.insertAdjacentHTML('afterbegin', '<p class="hint" id="dev-tidying">正在扫描局域网并整理设备（约 3 秒）…</p>');
+  let found = [];
+  try {
+    found = await api.printersDiscover({}) || [];
+    st.discovered = found;
+  } catch (e) {
+    found = [];
+    st.discovered = [];
+    emitToast('warn', (e && e.message) || '扫描失败，仍可整理已有离线设备');
+  } finally {
+    busy = false;
+    const el = document.getElementById('dev-tidying');
+    if (el) el.remove();
+    render();
+  }
+
+  const foundIps = new Set(found.map((d) => String((d && d.ip) || '').trim()).filter(Boolean));
+  const addList = discoveredNew();
+  const removeList = (st.snap || []).filter((p) => isOfflinePrinter(p) && !foundIps.has(String((p && p.ip) || '').trim()));
+  if (!addList.length && !removeList.length) {
+    emitToast('info', '没有需要添加或移除的设备');
+    return;
+  }
+
+  const items = []
+    .concat(addList.map((d) => '添加 · ' + printerLabel(d)))
+    .concat(removeList.map((p) => '移除 · ' + printerLabel(p)));
+  const ok = await confirmDialog({
+    title: '一键整理设备',
+    message: '准备添加 ' + addList.length + ' 台、移除 ' + removeList.length + ' 台设备',
+    detail: '移除只删除本工具保存的连接信息，不会重置打印机，也不会影响正在进行的打印；'
+      + '清单里没有出现的设备不会被动到。',
+    items,
+    confirmText: '按这个清单整理',
+    cancelText: '先不整理',
+    danger: removeList.length > 0,
+  });
+  if (!ok) return;
+
+  let added = 0;
+  let removed = 0;
+  const failed = [];
+  for (const d of addList) {
+    try { if (await addOne(d)) added++; }
+    catch (e) { failed.push('添加 ' + printerLabel(d) + '：' + ((e && e.message) || '失败')); }
+  }
+  for (const p of removeList) {
+    try { await api.printerRemove(p.id); removed++; }
+    catch (e) { failed.push('移除 ' + printerLabel(p) + '：' + ((e && e.message) || '失败')); }
+  }
+  emitToast(failed.length ? 'warn' : 'success',
+    '整理完成：添加 ' + added + ' 台，移除 ' + removed + ' 台' +
+    (failed.length ? '；失败 ' + failed.length + ' 项' : ''));
+  await refresh();
+}
+
 // ------------------------------------------------------------------ 表单
 
 function promptForm({ title, fields, confirmText }) {
@@ -330,7 +525,23 @@ function promptForm({ title, fields, confirmText }) {
         '</div>' +
       '</div>';
     root.appendChild(back);
-    const finish = (v) => { back.remove(); resolve(v); };
+    const entry = { cancel: null, back };
+    const finish = (v) => {
+      const i = promptFormStack.indexOf(entry);
+      if (i >= 0) promptFormStack.splice(i, 1);
+      if (back.parentNode) back.remove();
+      resolve(v);
+    };
+    entry.cancel = () => finish(null);
+    promptFormStack.push(entry);
+    // 表单自己也要响应 Escape，并截断事件，别让同一按键继续关掉底层面板
+    back.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        finish(null);
+      }
+    });
     back.addEventListener('click', (e) => {
       if (e.target === back || e.target.closest('[data-x]')) return finish(null);
       if (e.target.closest('[data-ok]')) {
@@ -366,11 +577,11 @@ async function addManual() {
 }
 
 async function addFound(ip) {
-  const d = (st.discovered || []).find((x) => x.ip === ip);
+  const d = (st.discovered || []).find((x) => String(x && x.ip) === String(ip));
   if (!d) return;
   try {
-    await api.printerAdd({ kind: d.kind, ip: d.ip, name: d.name, serial: d.serial, accessCode: d.accessCode, model: d.model });
-    emitToast('success', '已添加 ' + d.name);
+    await addOne(d);
+    emitToast('success', '已添加 ' + (d.name || d.ip));
     await scan();
     await refresh();
   } catch (e) { emitToast('error', (e && e.message) || '添加失败'); }
@@ -399,11 +610,16 @@ async function editPrinter(id) {
 }
 
 async function removePrinter(id) {
-  const p = st.list.find((x) => x.id === id);
-  if (!p) return;
+  if (!id) {
+    emitToast('warn', '找不到这台设备，请刷新设备列表后再试');
+    return;
+  }
+  // 卡片是从 snapshot 渲染的，离线/失效设备可能只在 snapshot 里；
+  // 旧版只查 st.list，找不到就静默 return，用户看到的就是「点移除没反应」。
+  const p = findPrinter(id);
   const ok = await confirmDialog({
     title: '移除设备（只删本机配置）',
-    message: '把「' + p.name + '」（' + p.ip + '）从 PrintShelf 的设备列表里移除？',
+    message: '把「' + printerLabel(p || { id }) + '」从 PrintShelf 的设备列表里移除？',
     detail: '只是删除本工具保存的连接信息，不会重置打印机、也不会影响它正在进行的打印。以后可以重新添加回来。',
     confirmText: '移除设备',
     cancelText: '不移除，返回',
@@ -412,7 +628,7 @@ async function removePrinter(id) {
   if (!ok) return;
   try {
     await api.printerRemove(id);
-    emitToast('success', '已移除');
+    emitToast('success', '已移除 ' + printerLabel(p || { id }));
     await refresh();
   } catch (e) { emitToast('error', (e && e.message) || '移除失败'); }
 }
@@ -485,6 +701,9 @@ function onClick(e) {
   const id = card ? card.dataset.id : (node.dataset.id || '');
   switch (act) {
     case 'dev-scan': return scan();
+    case 'dev-tidy': return tidyDevices();
+    case 'dev-scan-add': return scanAndAdd();
+    case 'dev-remove-offline': return removeOffline();
     case 'dev-bambu-account': return openBambuAccount();
     case 'dev-add': return addManual();
     case 'dev-add-found': return addFound(node.dataset.ip);
@@ -639,7 +858,8 @@ function repaintCam(id) {
   const p = st.snap.find((x) => x.id === id) || { id };
   if (box) box.outerHTML = camBlock(p);
   const btn = card.querySelector('[data-act="dev-cam"]');
-  if (btn) btn.textContent = camTimers.has(id) ? '关闭画面' : '摄像头';
+  // 文案必须和 cardHtml 初次渲染一致：查看摄像头 / 关闭预览
+  if (btn) btn.textContent = camTimers.has(id) ? '关闭预览' : '查看摄像头';
 }
 
 async function toggleCam(id) {

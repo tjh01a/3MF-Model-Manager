@@ -45,7 +45,8 @@ ok('花样唱片 → 唱片/绘画', hit('花样唱片_D60_魔法阵夜想曲') 
 ok('高达 → 摆件装饰', hit('月高达-头') === 'c_deco');
 ok('英文毒液 → 摆件装饰', hit('PAINTED_Venom') === 'c_deco');
 ok('大小写不敏感', hit('PAINTED_VENOM') === 'c_deco');
-ok('模糊名 + 3MF 内部对象名 → 命中', hit('v2', { meta: { objNames: ['左腿_Boolean', '头发B'] } }) === null);
+ok('模糊名 + 3MF 内部对象名含关键词 → 命中',
+  hit('v2', { meta: { objNames: ['左腿_Boolean', '刀刃_part'] } }) === 'c_deco');
 ok('无信息名不硬猜', hit('v2') === null);
 ok('空记录返回 null', C.matchCategory(null, rules) === null);
 

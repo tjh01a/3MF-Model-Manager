@@ -136,13 +136,15 @@ export function finishBoot(reason = 'ready') {
   finish(reason);
 }
 
-export function bootFailed(reason = 'error') {
+export function bootFailed(reason = 'error', message = '') {
   // 已经正常收尾了（例如先 ready 后又有异步报错）：幂等退出，别再留定时器或改结束原因
   if (finished) return;
   const el = root();
   const hint = typeof document !== 'undefined' ? document.getElementById('boot-hint') : null;
   if (el) el.classList.add('is-error');
-  if (hint) hint.textContent = '启动时遇到问题，已进入主界面；如有异常可查看界面提示';
+  // 后端明确失败 / 超时时给出具体中文原因；没有具体原因才用兜底文案
+  boot.errorMessage = message || boot.errorMessage || '';
+  if (hint) hint.textContent = message || '启动时遇到问题，已进入主界面；如有异常可查看界面提示';
   // 留 ~900ms 让人看清提示，但仍受硬超时约束
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => finish(reason), 900);

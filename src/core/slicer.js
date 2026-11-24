@@ -32,18 +32,13 @@ class SlicerService extends EventEmitter {
   }
 
   /**
-   * 写入 slicers。除走 updateSettings 外，先把内存数组原地截断到目标长度，
-   * 以兼容「深合并按索引合并数组」的 store 实现，避免 remove 后残留旧元素。
+   * 写入 slicers：只在临时副本上构造新数组，交给 store 统一落盘。
+   * 旧实现先原地改 store 内存，再写盘；一旦写盘失败，内存已是新值而磁盘还是旧值，
+   * 界面会显示「保存成功」的假象（P1-14）。store.mergeSettings 对数组是整体替换，
+   * 不需要也不应该手动截断内部数组。
    */
   async _write(slicers) {
     const arr = slicers.map((s) => ({ ...s }));
-    try {
-      const settings = this.store.getSettings();
-      if (settings && Array.isArray(settings.slicers)) {
-        settings.slicers.length = 0;
-        for (const s of arr) settings.slicers.push(s);
-      }
-    } catch (_) { /* 只读/冻结对象：忽略，交由 updateSettings 处理 */ }
     await this.store.updateSettings({ slicers: arr });
   }
 

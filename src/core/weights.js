@@ -12,7 +12,8 @@
  *  2. withThumbnail:false —— 不解压 PNG，单文件实测几毫秒。
  *  3. 每 12 条让出事件循环，10 秒总预算；超预算写回已解析部分，下次启动继续。
  *  4. 收集完一次性 updateLibrary()，只触发一次 lib:changed / 一次界面刷新。
- *  5. 解析后无论有没有重量都写 weightChecked:true，避免每次启动重试无数据的文件。
+ *  5. 解析成功时（哪怕没重量）写 weightChecked:true，避免反复解析；
+ *     解析失败绝不写终态，下次启动还要重试，否则一次坏盘/占用就永久留空（P1-7）。
  *  6. 只合并重量相关字段：withThumbnail:false 下其它字段可能降级，整体替换会打坏。
  *
  * 纯 Node，禁止 require('electron')。
@@ -28,12 +29,14 @@ const yieldTick = () => new Promise((resolve) => setImmediate(resolve));
 
 /** 由旧 meta + 新解析结果生成合并后的 meta（导出便于单测） */
 function weightPatch(oldMeta, freshMeta) {
+  // freshMeta=null 表示解析失败：只保留旧值，不写 checked，也不写空用量。
+  if (!freshMeta) return { ...(oldMeta || {}) };
   const patch = { weightChecked: true };
   for (const k of WEIGHT_KEYS) {
     if (k === 'filamentUsages') {
-      patch[k] = Array.isArray(freshMeta && freshMeta[k]) ? freshMeta[k] : [];
+      patch[k] = Array.isArray(freshMeta[k]) ? freshMeta[k] : [];
     } else {
-      patch[k] = freshMeta && freshMeta[k] != null ? freshMeta[k] : null;
+      patch[k] = freshMeta[k] != null ? freshMeta[k] : null;
     }
   }
   return { ...(oldMeta || {}), ...patch };
@@ -86,12 +89,21 @@ async function backfillWeights(store, options = {}) {
       const res = await parse3mf(r.path, { withThumbnail: false, withMeta: true });
       if (res && res.ok && res.meta) fresh = res.meta;
     } catch (_) { /* 单文件失败只降级 */ }
-    if (!fresh) out.failed++;
-    patches.push({ id: r.id, meta: weightPatch(r.meta, fresh), got: !!(fresh && fresh.weightG != null) });
     out.scanned++;
+    if (!fresh) {
+      // 解析失败不写任何终态，留待下次回填重试。
+      out.failed++;
+      continue;
+    }
+    patches.push({ id: r.id, meta: weightPatch(r.meta, fresh), got: fresh.weightG != null });
     if ((i + 1) % YIELD_EVERY === 0) await yieldTick();
   }
 
+  if (!patches.length) {
+    // 全失败时不要为了「空写」制造一次 lib:changed，也避免覆盖并发写入的新数据。
+    out.duration = Date.now() - startedAt;
+    return out;
+  }
   try {
     await store.updateLibrary((target) => {
       for (const p of patches) {

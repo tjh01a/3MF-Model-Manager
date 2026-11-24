@@ -122,7 +122,8 @@ function mk(o = {}) {
     const file = path.join(d, 'history.json');
     ok('历史文件已写出', fs.existsSync(file));
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-    ok('文件里带版本与 session', raw.version === 1 && raw.sessions.length === 1);
+    ok('文件里带版本与 session', raw.version === 2 && raw.sessions.length === 1);
+    ok('文件里带设备最近状态（重启补判用）', !!raw.runtime && typeof raw.runtime === 'object');
     ok('文件里确实有采样点', raw.sessions[0].points.length === 3, String(raw.sessions[0].points.length));
 
     const m2 = new PrinterMonitor({ store: makeStore(), dataDir: d, now }); m2.start();
@@ -229,6 +230,113 @@ function mk(o = {}) {
       JSON.stringify(m.stats));
     ok('时间轴有 5 个刻度', m.ticks.length === 5);
     ok('温度网格 5 条', m.grid.length === 5);
+  }
+
+  section('8. 回执补判：重启后补判 / 丢帧按进度补');
+
+  {
+    // 场景：打印中关掉软件，打完再打开。以前 lastState 只在内存里，
+    // 重启后第一次看到 finished 时 prev 为空，回执直接丢失。
+    const d = dir('restart');
+    const m1 = new PrinterMonitor({ store: makeStore(), dataDir: d, now });
+    m1.start();
+    m1.onStatus(status({ state: 'printing', job: { name: '沙奈朵拆(3)_plate_2', percent: 40 } }));
+    m1.flush(true);
+
+    const m2 = new PrinterMonitor({ store: makeStore(), dataDir: d, now });
+    const jobs2 = [];
+    m2.on('job', (j) => jobs2.push(j));
+    m2.start();
+    m2.onStatus(status({ state: 'finished', job: { name: '沙奈朵拆(3)_plate_2', percent: 100 } }));
+    ok('重启后仍能判出完成', jobs2.length === 1 && jobs2[0].result === 'finished', JSON.stringify(jobs2));
+    ok('完成事件带回落盘的任务名',
+      jobs2[0] && jobs2[0].jobName === '沙奈朵拆(3)_plate_2', jobs2[0] && jobs2[0].jobName);
+  }
+
+  {
+    // 场景：固件把完成态直接跳成 idle（掉线重连也常见），finished 这一帧没采到
+    const m3 = mk();
+    const jobs3 = [];
+    m3.on('job', (j) => jobs3.push(j));
+    m3.start();
+    m3.onStatus(status({ state: 'printing', job: { name: '组合体_PETG_6h4m', percent: 97 } }));
+    advance(1000);
+    m3.onStatus(status({ state: 'idle', job: null }));
+    ok('进度 97% 后回 idle 补判为完成',
+      jobs3.length === 1 && jobs3[0].result === 'finished' && jobs3[0].inferred === true,
+      JSON.stringify(jobs3));
+    ok('补判事件仍带任务名',
+      jobs3[0] && jobs3[0].jobName === '组合体_PETG_6h4m', jobs3[0] && jobs3[0].jobName);
+  }
+
+  {
+    // 取消打印也是 idle，但进度很低，不能记成「成功打印」
+    const m4 = mk();
+    const jobs4 = [];
+    m4.on('job', (j) => jobs4.push(j));
+    m4.start();
+    m4.onStatus(status({ state: 'printing', job: { name: '半途取消', percent: 30 } }));
+    advance(1000);
+    m4.onStatus(status({ state: 'idle', job: null }));
+    ok('低进度回 idle 不记完成', jobs4.length === 0, JSON.stringify(jobs4));
+  }
+
+  {
+    // 异常时拓竹会把任务块收起（job=null），不能让回执标题变成「当前任务」
+    const m5 = mk();
+    const jobs5 = [];
+    m5.on('job', (j) => jobs5.push(j));
+    m5.start();
+    m5.onStatus(status({ state: 'printing', job: { name: 'No_AMS_plate_2', percent: 55 } }));
+    advance(1000);
+    m5.onStatus(status({ state: 'error', job: null }));
+    ok('异常回执沿用最后已知任务名',
+      jobs5.length === 1 && jobs5[0].jobName === 'No_AMS_plate_2', JSON.stringify(jobs5));
+  }
+
+  {
+    // 同一个任务反复推 idle 不能重复记账
+    const m6 = mk();
+    const jobs6 = [];
+    m6.on('job', (j) => jobs6.push(j));
+    m6.start();
+    m6.onStatus(status({ state: 'printing', job: { name: '任务A', percent: 99 } }));
+    advance(1000);
+    m6.onStatus(status({ state: 'idle', job: null }));
+    advance(1000);
+    m6.onStatus(status({ state: 'idle', job: null }));
+    ok('补判只发一次', jobs6.length === 1, JSON.stringify(jobs6));
+  }
+
+  {
+    // 实测漏记场景（2026-11-24）：打印到 100% 结束，但中途状态闪了一下 idle，
+    // 等 finished 到来时 prev 已经是 idle，旧逻辑直接不记账。
+    const m7 = mk();
+    const jobs7 = [];
+    m7.on('job', (j) => jobs7.push(j));
+    m7.start();
+    m7.onStatus(status({ state: 'printing', job: { name: '支架_PETG_5m47s.gcode', percent: 80 } }));
+    advance(15000);
+    m7.onStatus(status({ state: 'idle', job: null }));          // 固件闪断
+    advance(15000);
+    m7.onStatus(status({ state: 'finished', job: { name: '支架_PETG_5m47s.gcode', percent: 100 } }));
+    ok('状态闪断后仍能判完成',
+      jobs7.length === 1 && jobs7[0].result === 'finished', JSON.stringify(jobs7));
+    m7.onStatus(status({ state: 'finished', job: { name: '支架_PETG_5m47s.gcode', percent: 100 } }));
+    ok('重复推送不再多记一条', jobs7.length === 1, JSON.stringify(jobs7));
+  }
+
+  section('9. 漏记回执的候选筛选');
+  {
+    const m8 = new PrinterMonitor({ store: makeStore(), dataDir: dir('miss'), now });
+    m8.sessions = [
+      { id: 's1', printerId: 'p1', printerName: 'A', jobName: '打完的', startedAt: 1, updatedAt: 2, endedAt: 3, points: [[1, 50], [2, 96]] },
+      { id: 's2', printerId: 'p1', printerName: 'A', jobName: '取消的', startedAt: 1, updatedAt: 2, endedAt: 3, points: [[1, 50], [2, 40]] },
+      { id: 's3', printerId: 'p1', printerName: 'A', jobName: '没结束', startedAt: 1, updatedAt: 2, endedAt: 0, points: [[1, 100]] },
+    ];
+    const r = m8.missedCompletions();
+    ok('只挑「已结束 + 进度≥95%」的 session', r.length === 1 && r[0].id === 's1',
+      JSON.stringify(r.map((x) => x.id)));
   }
 
   console.log('\n' + '─'.repeat(30));

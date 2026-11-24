@@ -4,10 +4,16 @@
  *
  * 断言：
  *  1) 每张卡片的 .card-meta 行右端都有 .card-price，且该行文字左对齐、价格靠右；
- *  2) 当前库中没有任何可算成本的模型时，徽标显示 ¥?? 并带 data-price="??"；
- *  3) 批量 modelsCosts() 能一次拿全（返回对象，长度与模型数一致）；
- *  4) 造一条"100g × ¥120/kg"的测试分配后，对应卡片价格变成 ¥12 并带 data-price="12"，
- *     验证派生成本 → 缓存 → 卡片重画整条链路；最后清理分配与测试耗材，不留脏数据。
+ *  2) 徽标两种状态成立：算不出的显示 ¥??，算得出的显示 ¥金额（不假设库为空）；
+ *  3) 批量 modelsCosts() 能一次拿全（对象，键数与模型数一致）；
+ *  4) 造一条"100g × ¥120/kg"的临时分配后，对应卡片价格变成 ¥12，
+ *     验证派生成本 → 缓存 → 卡片重画整条链路。
+ *
+ * 数据安全（P0）：写接口仅在完整快照 + finally 恢复的保护下调用。
+ *  - 快照全部模型的成本、目标模型的 filamentLinks / costWeightG、耗材 id 集合；
+ *  - 只创建 1 个带时间戳的临时耗材，不复用 / 不删除任何既有耗材；
+ *  - finally 中还原目标模型的 filamentLinks / costWeightG、删除临时耗材；
+ *  - 恢复后校验成本表与耗材 id 集合完全一致，任何不一致都让 ok=false。
  */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function waitFor(fn, ms, step) {
@@ -24,10 +30,26 @@ const q = (s) => document.querySelector(s);
 const qa = (s) => Array.from(document.querySelectorAll(s));
 const out = {};
 
+// 被 catch 后只弹红字、不进 window.onerror 的运行时错误，视为探针失败
+const toastErrors = [];
+const toastBox = q('#toast-container');
+if (toastBox && typeof MutationObserver !== 'undefined') {
+  new MutationObserver((muts) => {
+    for (const m of muts) for (const n of m.addedNodes) {
+      if (!n || n.nodeType !== 1) continue;
+      const bad = n.classList && n.classList.contains('toast-error') ? n : n.querySelector('.toast-error');
+      if (!bad) continue;
+      const msg = bad.querySelector('.toast-message');
+      toastErrors.push(msg ? msg.textContent.trim() : 'error toast');
+    }
+  }).observe(toastBox, { childList: true });
+}
+
 // 等首屏卡片画出来
 await waitFor(() => qa('.card[data-id]').length ? true : null, 15000);
 const cards = qa('.card[data-id]');
 out.cardCount = cards.length;
+if (!cards.length) { out.ok = false; out.error = '没有模型卡片'; out.toastErrors = toastErrors; return out; }
 
 // 1) 每张卡的 meta 行都有价格徽标，位置靠右
 const withBadge = cards.filter((c) => {
@@ -56,25 +78,61 @@ try {
   out.costsEntries = Object.keys(costs || {}).length;
 } catch (e) { out.costsError = (e && e.message) || String(e); }
 
-// 3) 徽标两种状态都要成立：算不出的显示 ¥??，算得出的显示 ¥金额
-//    注意：不能假设「库是空的」——用户可能真的配了耗材并给模型分配过重量。
+// 3) 徽标两种状态都要成立
 out.unknownCount = qa('.card-price.is-unknown').length;
 out.unknownText = ((q('.card-price.is-unknown') || {}).textContent || '').trim();
 out.knownCount = out.cardCount - out.unknownCount;
 out.knownSample = ((qa('.card-price:not(.is-unknown)')[0] || {}).textContent || '').trim();
 
-// 4) 造测试分配，验证派生成本 → 卡片重画；测完立即还原
-let fid = null;
-let targetId = null;
+// ---- 写前快照（只读） ----
+let snap = null;
 try {
-  let f = (await window.shelf.filamentsList()).items.find((x) => x.name === '__探针耗材·卡片价__');
-  if (!f) f = await window.shelf.filamentCreate({
-    name: '__探针耗材·卡片价__', brand: 'Bambu 拓竹', type: 'PLA', color: '#ffffff', pricePerKg: 120,
+  const items = ((await window.shelf.query({})) || {}).items || [];
+  const byId = new Map(items.map((m) => [m.id, m]));
+  const target = byId.get(cards[0].dataset.id) || null;
+  snap = {
+    costsJson: JSON.stringify(await window.shelf.modelsCosts()),
+    filamentIds: ((await window.shelf.filamentsList()).items || []).map((f) => f.id).sort(),
+    targetId: target ? target.id : null,
+    links: target && Array.isArray(target.filamentLinks) ? JSON.parse(JSON.stringify(target.filamentLinks)) : [],
+    weightG: target ? (target.costWeightG == null ? null : target.costWeightG) : null,
+  };
+} catch (e) {
+  out.ok = false;
+  out.error = '无法读取写入前快照，放弃写入：' + ((e && e.message) || String(e));
+  out.toastErrors = toastErrors;
+  return out;
+}
+out.targetHasPriorLinks = snap.links.length > 0;
+
+const createdIds = [];
+let restoreResult = null;
+async function restore() {
+  const errs = [];
+  try {
+    if (snap.targetId) await window.shelf.modelSetFilaments(snap.targetId, snap.links, snap.weightG);
+  } catch (e) { errs.push((e && e.message) || String(e)); }
+  for (const id of createdIds) {
+    try { await window.shelf.filamentRemove(id); } catch (e) { errs.push((e && e.message) || String(e)); }
+  }
+  let costsJsonNow = null;
+  let filamentIdsNow = null;
+  try { costsJsonNow = JSON.stringify(await window.shelf.modelsCosts()); } catch (e) { errs.push((e && e.message) || String(e)); }
+  try { filamentIdsNow = ((await window.shelf.filamentsList()).items || []).map((f) => f.id).sort(); } catch (e) { errs.push((e && e.message) || String(e)); }
+  const costsMatch = costsJsonNow === snap.costsJson;
+  const idsMatch = JSON.stringify(filamentIdsNow) === JSON.stringify(snap.filamentIds);
+  return { ok: !errs.length && costsMatch && idsMatch, costsMatch, idsMatch, errors: errs };
+}
+
+// 4) 造临时分配，验证派生成本 → 卡片重画；finally 立即还原
+try {
+  const created = await window.shelf.filamentCreate({
+    name: '__探针耗材·卡片价·' + Date.now().toString(36) + '__', brand: 'Bambu 拓竹', type: 'PLA', color: '#ffffff', pricePerKg: 120,
   });
-  fid = f.id;
-  const card = cards[0];
-  if (card) {
-    targetId = card.dataset.id;
+  const fid = created && created.id;
+  if (fid) createdIds.push(fid);
+  const targetId = snap.targetId;
+  if (fid && targetId) {
     await window.shelf.modelSetFilaments(targetId, [{ filamentId: fid, weightG: 100 }], null);
     // filaments:changed → emitRefresh('costs') → 重新拉缓存 + 卡片重画
     await waitFor(() => {
@@ -89,24 +147,26 @@ try {
     };
   }
 } catch (e) { out.assignError = (e && e.message) || String(e); }
+finally {
+  restoreResult = await restore();
+}
 
-// 清理：还原分配 + 删除测试耗材
-try {
-  if (targetId) await window.shelf.modelSetFilaments(targetId, [], null);
-  if (fid) await window.shelf.filamentRemove(fid);
-} catch (_) { /* 清理失败也要如实返回 */ }
+out.restored = restoreResult.ok;
+out.restoreDetail = { costsMatch: restoreResult.costsMatch, idsMatch: restoreResult.idsMatch, errors: restoreResult.errors };
 
 const badgeOk = out.cardCount > 0 && out.badgeCount === out.cardCount;
 const layoutOk = !!out.badgeLayout && out.badgeLayout.inRow &&
   out.badgeLayout.textLeft >= 0 && out.badgeLayout.badgeRight >= 0;
-const batchOk = out.costsIsObject && out.costsEntries === out.cardCount;
-// 每个徽标要么是 ¥??，要么是 ¥数字；两种都算正常，乱码/空才算失败
+// costs 接口会返回库里全部记录（含普通视图隐藏的 missing），因此不能要求严格等于卡片数。
+const batchOk = out.costsIsObject && out.costsEntries >= out.cardCount;
 const unknownOk = out.unknownCount + out.knownCount === out.cardCount
   && (out.unknownCount === 0 || out.unknownText === '¥??')
   && (out.knownCount === 0 || /^¥\d/.test(out.knownSample));
 const assignOk = !!(out.afterAssign && out.afterAssign.dataPrice === '12' &&
   out.afterAssign.text === '¥12' && out.afterAssign.isUnknown === false);
 
-out.checks = { badgeOk, layoutOk, batchOk, unknownOk, assignOk };
-out.ok = badgeOk && layoutOk && batchOk && unknownOk && assignOk;
+out.checks = { badgeOk, layoutOk, batchOk, unknownOk, assignOk, restored: restoreResult.ok };
+out.toastErrors = Array.from(new Set(toastErrors));
+out.ok = restoreResult.ok && !out.toastErrors.length && badgeOk && layoutOk && batchOk && unknownOk && assignOk;
+if (!restoreResult.ok) out.error = '成本/耗材数据恢复失败，禁止判定通过';
 return out;

@@ -3,6 +3,7 @@
 import { state, setState } from '../state.js';
 import { api, emitRefresh } from '../api.js';
 import { escapeHtml, icon, debounce, clamp, qs, qsa } from '../utils.js';
+import { receiptsCount } from './receipts.js';
 
 const SMART_LABELS = {
   all: '全部模型', favorites: '收藏', recentOpened: '最近打开',
@@ -59,7 +60,13 @@ export function syncToolbar() {
   const title = qs('#view-title');
   if (title) title.textContent = viewName();
   const sub = qs('#view-subtitle');
-  if (sub) sub.textContent = '共 ' + state.total + ' 个模型' + (hasFilters() ? ' · 已筛选' : '');
+  if (sub) {
+    // 回执视图里 state.total 是「智能视图匹配到的模型数」，写成「个模型」会让人以为
+    // 回执页在显示模型。这里按当前视图换成对应单位。
+    const isReceipts = state.contentMode === 'receipts';
+    const n = isReceipts ? receiptsCount() : state.total;
+    sub.textContent = '共 ' + n + (isReceipts ? ' 条回执' : ' 个模型') + (hasFilters() ? ' · 已筛选' : '');
+  }
 
   const chips = qs('#filter-chips');
   if (chips) chips.innerHTML = filterChipsHtml();
@@ -190,4 +197,10 @@ export function mountToolbar() {
 
   const selAll = qs('#btn-select-all');
   if (selAll) selAll.addEventListener('click', () => window.dispatchEvent(new CustomEvent('shelf:selectall')));
+
+  // 回执是异步拉回来的：首次进入视图时工具栏先按缓存（0 条）渲染，
+  // 数据到位后回执视图会广播一次，这里补刷副标题的「共 N 条回执」。
+  window.addEventListener('shelf:receipts-rendered', () => {
+    if (state.contentMode === 'receipts') syncToolbar();
+  });
 }

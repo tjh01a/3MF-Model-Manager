@@ -31,9 +31,27 @@ function handlerKeys(src) {
   return Array.from(src.slice(start, end).matchAll(/^    ([A-Za-z0-9_]+)\s*:/gm)).map((m) => m[1]);
 }
 
+/**
+ * 静态扫描主进程「实际发给渲染层」的 channel。
+ * 以前只比名称集合，main.js / services.js 里 webContents.send / emitToRenderer
+ * 发出但 preload EVENTS 没放行的 channel 不会被发现（渲染层订阅了也收不到）。
+ * 这里只抓字符串字面量；bridgeEvents 里的变量 channel 由 services 侧的
+ * emitToRenderer 字面量覆盖，不会漏。
+ */
+function sentChannels(...srcs) {
+  const out = new Set();
+  for (const src of srcs) {
+    for (const m of src.matchAll(/\bwebContents\.send\(\s*['"]([\w:.\-]+)['"]/g)) out.add(m[1]);
+    for (const m of src.matchAll(/\bemitToRenderer\(\s*['"]([\w:.\-]+)['"]/g)) out.add(m[1]);
+  }
+  return Array.from(out).sort();
+}
+
 const preload = read('electron/preload.js');
 const api = read('src/renderer/js/api.js');
 const ipc = read('electron/ipc/index.js');
+const main = read('electron/main.js');
+const services = read('electron/services.js');
 
 const preMethods = listBlock(preload, 'METHODS');
 const apiMethods = listBlock(api, 'METHODS');
@@ -64,6 +82,9 @@ check('api METHODS ↔ preload METHODS', ...diff(apiMethods, preMethods));
 // app:ready 由 preload 自己消费（whenReady），不需要 api.js 再转发
 const needForward = events.filter((e) => e !== 'app:ready');
 check('preload EVENTS ↔ api 转发', ...diff(needForward, Array.from(forwarded)));
-console.log('  方法 ' + handlers.length + ' 个 · 事件 ' + events.length + ' 个');
+// 主进程实际发送的 channel 必须都在 preload EVENTS 白名单里
+const sent = sentChannels(main, services, ipc);
+check('主进程 send/emit channel ⊂ preload EVENTS', sent.filter((c) => !events.includes(c)), []);
+console.log('  方法 ' + handlers.length + ' 个 · 事件 ' + events.length + ' 个 · 主进程发送 ' + sent.length + ' 个 channel');
 console.log(bad ? '\n  契约不一致，请同步三处白名单。' : '\n  契约一致。');
 if (bad) process.exitCode = 1;

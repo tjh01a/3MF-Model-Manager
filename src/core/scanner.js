@@ -22,6 +22,41 @@ const DEFAULT_OPTIONS = {
   parseMeta: true,
 };
 
+/**
+ * 扫描只负责「磁盘事实 + 自动派生字段」。人工字段必须来自写回瞬间的当前库记录，
+ * 否则长扫描开始时拍下的旧快照会整条覆盖用户在扫描期间的编辑（P0-2）。
+ */
+const HUMAN_FIELDS = [
+  'title', 'categoryId', 'tagIds', 'favorite', 'rating', 'note',
+  'sourceUrl', 'sourceUrlAuto', 'author', 'printStatus',
+  'openCount', 'lastOpenedAt', 'printCount', 'lastPrintedAt',
+  'filamentLinks', 'costWeightG', 'costNote', 'autoClassified', 'autoCategoryId',
+];
+
+/**
+ * 用当前记录为底，只覆盖本次扫描真正重新算过的技术字段。
+ * current 为 null 时（扫描期间新增的文件）直接用新记录。
+ */
+function mergeScannedRecord(current, scanned) {
+  if (!current) return { ...scanned };
+  const merged = { ...current };
+  for (const [k, v] of Object.entries(scanned)) {
+    if (HUMAN_FIELDS.includes(k)) continue;
+    merged[k] = v;
+  }
+  // createdAt 属于记录身份，任何情况下都不被扫描改写
+  if (current.createdAt != null) merged.createdAt = current.createdAt;
+  // 解析失败时新记录的 meta 是空壳，绝不能顶掉原有的重量/色板等派生数据（P1-7）
+  if (scanned.__parseOk === false) {
+    for (const k of ['meta', 'thumbSource', 'thumbnail', 'parseError']) {
+      if (Object.prototype.hasOwnProperty.call(current, k)) merged[k] = current[k];
+      else delete merged[k];
+    }
+  }
+  delete merged.__parseOk;
+  return merged;
+}
+
 /** 判断 p 是否位于 root 之下（含相等），Windows 大小写不敏感 */
 function isUnder(p, root) {
   const a = utils.pathKey(p);
@@ -62,7 +97,21 @@ class Scanner extends EventEmitter {
    * 这些目录里不会有用户的模型，扫进来只会污染库。
    */
   _selfDirs() {
-    const dataDir = corePaths.getDataDir();
+    // 优先用 store 自己的 dataDir（Store 可以私有目录运行，不污染全局 paths）。
+    // 只看全局 paths 会把私有数据目录漏掉，把自己的缓存当模型扫进库（P1-17）。
+    let dataDir = null;
+    const s = this.store;
+    if (s && typeof s._paths === 'function') {
+      try {
+        const p = s._paths();
+        if (p && p.thumbs) dataDir = path.dirname(p.thumbs);
+      } catch (_) { /* 回退到全局 */ }
+    }
+    if (!dataDir && s && typeof s.dataDir === 'string') dataDir = s.dataDir;
+    if (!dataDir && typeof s?.getDataDir === 'function') {
+      try { dataDir = s.getDataDir(); } catch (_) { /* 忽略 */ }
+    }
+    if (!dataDir) dataDir = corePaths.getDataDir();
     if (!dataDir) return [];
     return ['thumbs', 'backups', 'logs', 'u1-cache']
       .map((n) => path.join(dataDir, n));
@@ -330,9 +379,10 @@ class Scanner extends EventEmitter {
           const pk = utils.pathKey(item.path);
           const id = utils.sha1(pk).slice(0, 20);
 
-          // 基于旧记录展开，保留全部人工字段；只覆盖技术字段
+          // 基于旧记录展开，保留全部人工字段；写回时还会跟当前库再合并一次。
           const record = {
             ...(prev || {}),
+            __parseOk: parseResult.ok === true,   // 非持久化标记：失败结果不能写终态
             id,
             path: item.path,
             fileName,
@@ -350,9 +400,10 @@ class Scanner extends EventEmitter {
             meta: parseResult.meta,
             thumbSource: parseResult.thumbnail ? parseResult.thumbnail.entry : null,
           };
-          // 这次已经用当前解析器完整读过一遍：没重量就打标记，
-          // 重量回填（src/core/weights.js）以后不必再为它重复解析。
-          if (record.meta && record.meta.weightG == null) record.meta.weightChecked = true;
+          // 只有解析成功才代表「确实没有重量」；解析失败写终态会让回填永久跳过（P1-7）。
+          if (parseResult.ok === true && record.meta && record.meta.weightG == null) {
+            record.meta.weightChecked = true;
+          }
           const defaultTitle = utils.baseName(fileName);
           if (!prev || record.title == null || record.title === '') record.title = defaultTitle;
           // 新增记录的默认字段兜底
@@ -371,6 +422,7 @@ class Scanner extends EventEmitter {
                 // 命中了已删除的分类：回滚成未分类，别把孤儿 id 写进库
                 record.categoryId = null;
                 record.autoClassified = false;
+                delete record.autoCategoryId;
               }
             } catch (_) { /* 分类失败不影响入库 */ }
           }
@@ -438,47 +490,55 @@ class Scanner extends EventEmitter {
           continue;
         }
         records.push(r.record);
-        if (r.action === 'added') report.added++;
-        else report.updated++;
         report.files.push({ path: r.item.path, action: r.action });
       }
 
-      // ---- 4. 失效检测：库中有、本次范围内、磁盘已不存在 ----
+      // ---- 4/5. 写回：所有判断都在 mutator 内基于「当前库」重做 ----
+      // 长扫描期间用户可能改标题、重新定位（relink）甚至删记录；开始前拍下的
+      // lib 快照只用于增量筛选，绝不能拿它整条覆盖写回（P0-2）。
       const nowMs = utils.now();
-      const missingIds = [];
-      for (const prev of Object.values(lib.models || {})) {
-        if (!prev || !prev.path) continue;
-        const pk = utils.pathKey(prev.path);
-        if (diskPathKeys.has(pk)) continue;               // 本次确实枚举到（含被跳过项）
-        const inScope = scannedDirs.some((sd) => isUnder(prev.path, sd.root));
-        if (!inScope) continue;                          // 其它未扫目录的记录不动
-        let stillExists = false;
-        try { await fsp.stat(prev.path); stillExists = true; } catch (_) { stillExists = false; }
-        if (stillExists) continue;                       // 仅本次没枚举到，文件仍在，不误标
-        if (prev.status === 'missing') continue;         // 已标记，不重复刷新 missingSince
-        missingIds.push(prev.id);
-        report.missing++;
-        report.files.push({ path: prev.path, action: 'missing' });
-      }
-
-      // ---- 5. 一次性写回 store，并在 mutator 内重算重复分组 ----
-      await this.store.updateLibrary((target) => {
+      let added = 0, updated = 0;
+      // 缩略图已落盘但引用要等这次写库才生效，期间同样避开 prune（P1-6）。
+      const inFlightThumbs = (this.thumbs && this.thumbs._inflight instanceof Set)
+        ? records.map((r) => r.thumbnail).filter(Boolean) : [];
+      for (const n of inFlightThumbs) this.thumbs._inflight.add(n);
+      await this.store.updateLibrary(async (target) => {
         const models = target.models || (target.models = {});
-        for (const rec of records) models[rec.id] = rec;
-        for (const id of missingIds) {
-          const r = models[id];
-          if (!r) continue;
+        for (const rec of records) {
+          const current = models[rec.id];
+          // 路径被用户改过（relink）：这份解析结果已经过时，直接放弃，别把路径改回去。
+          if (current && current.path
+            && utils.pathKey(current.path) !== utils.pathKey(rec.path)) continue;
+          models[rec.id] = mergeScannedRecord(current, rec);
+          if (current) updated++; else added++;
+        }
+
+        // 失效检测：用当前记录的最新 path 复核，而不是旧快照里的 path。
+        for (const r of Object.values(models)) {
+          if (!r || !r.path || r.status === 'missing') continue;
+          if (diskPathKeys.has(utils.pathKey(r.path))) continue;
+          if (!scannedDirs.some((sd) => isUnder(r.path, sd.root))) continue;
+          let stillExists = false;
+          try { await fsp.stat(r.path); stillExists = true; } catch (_) { stillExists = false; }
+          if (stillExists) continue;
           r.status = 'missing';
           r.missingSince = nowMs;
           r.updatedAt = nowMs;
-          // 保留全部人工字段与其它技术字段，不删除记录
+          report.missing++;
+          report.files.push({ path: r.path, action: 'missing' });
         }
+
         if (!target.scanMeta) target.scanMeta = {};
         for (const [fid, cnt] of folderCounts) {
           target.scanMeta[fid] = { lastScanAt: nowMs, fileCount: cnt };
         }
         const dup = duplicates.annotate(target);
         report.duplicateGroups = dup.groups;
+        // 实际写入条数以 mutator 内的结果为准，报告不要虚报。
+        report.added = added;
+        report.updated = updated;
+      }).finally(() => {
+        for (const n of inFlightThumbs) this.thumbs._inflight.delete(n);
       });
 
       // ---- 6. 收尾 ----

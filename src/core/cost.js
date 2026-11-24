@@ -87,6 +87,9 @@ function costOf(rec, filaments, opts) {
   const parts = [];
   let total = 0;
   let complete = links.length > 0;
+  // 是否已经存在「可用的」耗材分配：找得到耗材且有克数。
+  // 注意显式 0 价也是有效分配——用户明确填了 0，不能被默认耗材悄悄替换（P1-9）。
+  let hasUsableAssignment = false;
 
   for (const link of links) {
     const f = lookup(link.filamentId);
@@ -95,10 +98,12 @@ function costOf(rec, filaments, opts) {
     const pg = f ? perGram(f.pricePerKg) : 0;
     const cost = validG ? grams * pg : 0;
     total += cost;
+    if (f && validG) hasUsableAssignment = true;
     if (!f || !pg || !validG) complete = false;
     parts.push({
       filamentId: link.filamentId,
-      name: f ? f.name : '未分配耗材',
+      // 有 filamentId 但查不到 = 耗材被删了，不能伪装成「未分配」误导用户。
+      name: f ? f.name : (link.filamentId ? '耗材已删除' : '未分配耗材'),
       color: f ? f.color : null,
       grams: validG ? grams : 0,
       pricePerKg: f ? Number(f.pricePerKg) || 0 : 0,
@@ -121,6 +126,7 @@ function costOf(rec, filaments, opts) {
         let f = all.find((x) => x && u.color && String(x.color).toLowerCase() === String(u.color).toLowerCase());
         if (!f) f = all.find((x) => x && u.type && String(x.type).toUpperCase() === String(u.type).toUpperCase());
         const pg = f ? perGram(f.pricePerKg) : 0;
+        if (f) hasUsableAssignment = true;   // 匹配到了显式 0 价耗材，同样不许默认兜底覆盖
         const cost = ug * pg;
         total += cost;
         parts.push({
@@ -140,13 +146,12 @@ function costOf(rec, filaments, opts) {
   const weightG = isValidWeight(r.weightG) ? Number(r.weightG)
     : (isValidWeight(r.costWeightG) ? Number(r.costWeightG) : wsrc.weightG);
 
-  // 兜底：用户设了默认耗材时，按 重量 × 默认耗材单价 估算。
-  // 触发条件用 total <= 0 而不是「parts 为空」：常见情况是切片里写了逐耗材用量
-  // （如绿色 PLA），但耗材库里没有对应颜色/类型的耗材，price 算成 0，
-  // parts 非空却仍是一分钱都没算出来——这时也该用默认耗材给出一个估算价。
+  // 兜底：只在「找不到任何可用耗材分配」（link 指向的耗材不存在 / 没有重量 /
+  // 切片用量匹配不到耗材）时用默认耗材估算。不能再用 total<=0 判断——
+  // 用户显式把某个耗材单价设成 0 时 total 也是 0，那是用户的选择，不是缺失数据。
   let source = links.length ? 'assigned' : (wsrc.source || (weightG != null ? 'manual' : 'none'));
   const def = opts && opts.defaultFilament;
-  if (total <= 0 && def && isValidWeight(weightG)) {
+  if (!hasUsableAssignment && def && isValidWeight(weightG)) {
     const pg = perGram(def.pricePerKg);
     if (pg > 0) {
       const cost = Number(weightG) * pg;

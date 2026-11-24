@@ -38,7 +38,8 @@ section('1. weightPatch 合并策略');
   ok('没重量时用量为空数组', Array.isArray(noWeight.filamentUsages) && noWeight.filamentUsages.length === 0);
 
   const failed = weightPatch(oldMeta, null);
-  ok('解析失败不抛错且标记 checked', failed.weightG === null && failed.weightChecked === true);
+  // 解析失败不能写终态，否则一次坏盘就永久跳过回填（P1-7）。
+  ok('解析失败不抛错且不写 checked', failed.weightG === null && failed.weightChecked !== true);
 }
 
 section('2. needsWeightParse 目标筛选');

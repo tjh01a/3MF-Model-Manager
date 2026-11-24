@@ -45,6 +45,7 @@ class U1Converter extends EventEmitter {
     this.presets = presets || new OrcaPresets({ store });
     this._worker = null;
     this._inflight = new Map();   // key -> Promise，同一任务不重复起 worker
+    this._cancelCurrent = null;   // 当前 worker 的统一取消入口
     this._jobId = 0;
   }
 
@@ -215,9 +216,19 @@ class U1Converter extends EventEmitter {
         if (settled) return;
         settled = true;
         if (timer) clearTimeout(timer);
+        if (this._cancelCurrent && this._cancelCurrent.key === key) this._cancelCurrent = null;
         this._worker = null;
         try { worker.terminate(); } catch (_) { /* 已结束 */ }
         fn(arg);
+      };
+
+      // 取消走同一个 finish 出口：统一 reject「已取消」，不让 exit 事件误报「线程提前退出」。
+      this._cancelCurrent = {
+        key,
+        cancel: () => {
+          this.emit('cancelled', { key });
+          finish(reject, new Error('已取消'));
+        },
       };
 
       timer = setTimeout(() => {
@@ -266,10 +277,13 @@ class U1Converter extends EventEmitter {
   }
 
   cancel() {
-    if (this._worker) {
-      try { this._worker.terminate(); } catch (_) { /* 已结束 */ }
-      this._worker = null;
-      this.emit('cancelled', {});
+    const cur = this._cancelCurrent;
+    if (cur) {
+      // 先 reject 约定文案，再由 finish 统一 terminate / 清 _worker；
+      // 直接 terminate 会先触发 exit，旧代码据此报「线程提前退出」。
+      cur.cancel();
+      // convert() 的 finally 会清 _inflight；这里兜底，防止取消时 finally 尚未执行。
+      if (this._inflight.get(cur.key)) this._inflight.delete(cur.key);
       return true;
     }
     return false;

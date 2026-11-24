@@ -49,6 +49,41 @@ function tsStamp(d) {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
+/** 损坏文件留底：原 library.json 一个字节都不能丢。 */
+function corruptBackupPath(file) {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  const stamp = tsStamp(d) + '-' + p(d.getMilliseconds());
+  return `${file}.corrupt-${stamp}`;
+}
+
+/**
+ * 逐条基本结构校验。原来的 isValidLibrary 只看四个容器是不是对象/数组，
+ * 一个 {models:{bad:null}} 的「合法空库」能借 merge:false 把几万条索引顶掉。
+ */
+function validateLibraryRecords(lib) {
+  const errors = [];
+  for (const [id, rec] of Object.entries((lib && lib.models) || {})) {
+    if (!rec || typeof rec !== 'object' || Array.isArray(rec)) {
+      errors.push('模型 ' + id + ' 不是对象');
+    } else if ((rec.id != null && String(rec.id) !== String(id))
+      || typeof rec.path !== 'string' || !rec.path.trim()) {
+      errors.push('模型 ' + id + ' 缺少合法的 id/path');
+    }
+    if (errors.length >= 3) break;
+  }
+  for (const key of ['categories', 'tags', 'savedViews']) {
+    for (const item of (lib && lib[key]) || []) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)
+        || typeof item.id !== 'string' || !item.id) {
+        errors.push(key + ' 中存在缺少 id 的条目');
+        break;
+      }
+    }
+  }
+  return errors;
+}
+
 /** 合并导入记录时只补齐本地为空的字段，保留本地已有的人工字段。 */
 function mergeIncoming(local, incoming) {
   for (const k of Object.keys(incoming || {})) {
@@ -81,6 +116,8 @@ class Store extends EventEmitter {
     this._writeQueue = Promise.resolve();
     this._saveTimer = null;
     this._saveWaiters = [];
+    // 损坏恢复的可观察状态：界面/测试可读取，也可以用 store.on('recovery') 订阅。
+    this.recovery = null;
   }
 
   // ---- 路径与基础设施 ----
@@ -124,6 +161,21 @@ class Store extends EventEmitter {
     const e = err instanceof Error ? err : new Error(String(err));
     // EventEmitter 在没有任何 'error' 监听器时会把 emit 变成 throw，这里吞掉以免中断主流程。
     try { this.emit('error', e); } catch (_) { /* 忽略 */ }
+  }
+
+  /** 记录并广播恢复状态；无监听器也不影响启动 */
+  _setRecovery(info) {
+    this.recovery = info;
+    try { this.emit('recovery', info); } catch (_) { /* 忽略 */ }
+    this._emitError(new Error(info.message));
+  }
+
+  /** 把损坏的原文件原样留底；留底失败就中止，绝不拿空库覆盖它。 */
+  _preserveCorrupt(file) {
+    const backup = corruptBackupPath(file);
+    try { fs.copyFileSync(file, backup); }
+    catch (e) { throw new Error('库文件已损坏，但无法另存备份（' + e.message + '）：' + file); }
+    return backup;
   }
 
   /**
@@ -253,14 +305,23 @@ class Store extends EventEmitter {
       this._library = this._freshLibrary();
       this._atomicWrite(p.library, this._library);
     } else if (lread.corrupt || !isValidLibrary(lread.value)) {
+      // 无论有没有可用备份，先把损坏的原文件留底，绝不静默覆盖（P0-5）。
+      const backup = this._preserveCorrupt(p.library);
       const recovered = this._recoverFromBackups();
       if (recovered) {
         this._library = recovered;
         this._atomicWrite(p.library, this._library);
+        this._setRecovery({
+          kind: 'corrupt', source: 'backup', file: p.library, backup, at: U.now(),
+          message: '库文件已损坏，已从最近的备份恢复；原文件已另存为 ' + backup,
+        });
       } else {
         this._library = this._freshLibrary();
         this._atomicWrite(p.library, this._library);
-        this._emitError(new Error('库文件已损坏且没有可用的备份，已重置为默认库'));
+        this._setRecovery({
+          kind: 'corrupt', source: 'fresh', file: p.library, backup, at: U.now(),
+          message: '库文件已损坏且没有可用的备份，已重置为默认库；原文件已另存为 ' + backup,
+        });
       }
     } else {
       this._library = this._normalizeLibrary(lread.value);
@@ -428,6 +489,11 @@ class Store extends EventEmitter {
       const r = this._readJson(src);
       if (!r.exists || r.corrupt || !isValidLibrary(r.value)) {
         throw new Error('导入文件无效或不存在：' + src);
+      }
+      // 顶层容器合法不代表每条记录合法：merge:false 会整库替换，必须先逐条体检。
+      const errors = validateLibraryRecords(r.value);
+      if (errors.length) {
+        throw new Error('导入文件包含无效记录，已拒绝导入：' + errors.join('；'));
       }
       const incoming = this._normalizeLibrary(r.value);
       let imported = 0;

@@ -23,6 +23,22 @@ async function waitFor(fn, ms = 15000) {
 }
 
 const out = {};
+
+// 被 catch 后只弹红字、不进 window.onerror 的运行时错误，视为探针失败
+const toastErrors = [];
+const toastBox = q('#toast-container');
+if (toastBox && typeof MutationObserver !== 'undefined') {
+  new MutationObserver((muts) => {
+    for (const m of muts) for (const n of m.addedNodes) {
+      if (!n || n.nodeType !== 1) continue;
+      const bad = n.classList && n.classList.contains('toast-error') ? n : n.querySelector('.toast-error');
+      if (!bad) continue;
+      const msg = bad.querySelector('.toast-message');
+      toastErrors.push(msg ? msg.textContent.trim() : 'error toast');
+    }
+  }).observe(toastBox, { childList: true });
+}
+
 await window.shelf.whenReady();
 await waitFor(() => qa('#content .card').length > 0);
 
@@ -69,6 +85,7 @@ if (target) {
   out.detailHasAmount = /¥\s*\d/.test(out.detailCostText);
 }
 
-out.ok = out.withWeight > 0 && out.hasDefault && out.pricedCards > 0 &&
+out.toastErrors = Array.from(new Set(toastErrors));
+out.ok = !out.toastErrors.length && out.withWeight > 0 && out.hasDefault && out.pricedCards > 0 &&
   out.detailHasSource && out.detailHasAmount;
 return out;

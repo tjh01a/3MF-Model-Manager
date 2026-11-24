@@ -16,17 +16,32 @@ async function waitFor(fn, ms, step) {
 const q = (s) => document.querySelector(s);
 const out = {};
 
+// 被 catch 后只弹红字、不进 window.onerror 的运行时错误，视为探针失败
+const toastErrors = [];
+const toastBox = q('#toast-container');
+if (toastBox && typeof MutationObserver !== 'undefined') {
+  new MutationObserver((muts) => {
+    for (const m of muts) for (const n of m.addedNodes) {
+      if (!n || n.nodeType !== 1) continue;
+      const bad = n.classList && n.classList.contains('toast-error') ? n : n.querySelector('.toast-error');
+      if (!bad) continue;
+      const msg = bad.querySelector('.toast-message');
+      toastErrors.push(msg ? msg.textContent.trim() : 'error toast');
+    }
+  }).observe(toastBox, { childList: true });
+}
+
 // 统计主进程推来的增量事件：这一项能证明 preload 白名单 + api 桥接是通的，
 // 否则设备页只能靠手动刷新（曾经就是这样，界面上写「每 3 秒刷新」是假的）。
 window.__devPushCount = 0;
 window.addEventListener('printers:update', () => { window.__devPushCount++; });
 
 const btn = await waitFor(() => q('#btn-devices'), 15000);
-if (!btn) return { ok: false, error: '找不到设备按钮' };
+if (!btn) { out.ok = false; out.error = '找不到设备按钮'; out.toastErrors = toastErrors; return out; }
 btn.click();
 
 const panel = await waitFor(() => (q('#devices-panel') && !q('#devices-panel').hidden) ? q('#devices-panel') : null, 5000);
-if (!panel) return { ok: false, error: '设备面板没打开' };
+if (!panel) { out.ok = false; out.error = '设备面板没打开'; out.toastErrors = toastErrors; return out; }
 
 // 等卡片出现（首屏要先拉一次 IPC）
 const cards = await waitFor(() => {
@@ -35,7 +50,8 @@ const cards = await waitFor(() => {
 }, 12000);
 if (!cards) {
   out.body = (q('#devices-body') || {}).textContent;
-  return { ok: false, error: '没有渲染出打印机卡片', body: out.body };
+  out.ok = false; out.error = '没有渲染出打印机卡片'; out.toastErrors = toastErrors;
+  return out;
 }
 
 // 等状态「定下来」：不许有卡片永远停在「连接中」，且至少有一台真的连上。
@@ -68,6 +84,7 @@ out.onlineCount = out.cards.filter((c) => c.state && c.state !== '离线' && c.s
 out.degraded = out.onlineCount < out.cards.length;
 // 允许「部分设备离线」（打印机可能没开机 / 在云端模式），但必须：有推送、至少一台在线、
 // 且没有任何卡片卡在「连接中」——离线卡要给出可操作的错误说明。
-out.ok = out.cards.length >= 1 && out.pushEvents > 0 && out.onlineCount >= 1 &&
+out.toastErrors = Array.from(new Set(toastErrors));
+out.ok = !out.toastErrors.length && out.cards.length >= 1 && out.pushEvents > 0 && out.onlineCount >= 1 &&
   !out.cards.some((c) => c.state === '连接中' || (c.state === '离线' && !c.error));
 return out;

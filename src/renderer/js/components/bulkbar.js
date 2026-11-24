@@ -53,14 +53,29 @@ async function runBulk(list, fields, doPatch, opts = {}) {
   if (!Array.isArray(state.undoStack)) state.undoStack = [];
   const snap = takeSnapshot(list, fields);
   state.undoStack.push(snap);
+  // 快照按对象身份消费：toast 撤销和 Ctrl+Z 只能有一个真正生效，
+  // 否则第二次会去恢复/撤销一个更早的无关操作。
+  const consumeSnapshot = () => {
+    const i = state.undoStack.indexOf(snap);
+    if (i >= 0) state.undoStack.splice(i, 1);
+  };
   try {
     await doPatch();
     const restore = opts.remove
-      ? async () => { await api.undo(); }          // 移出索引用后端 undo 恢复记录
+      ? async () => {          // 移出索引用后端 undo 恢复记录
+          const r = await api.undo();
+          if (r && r.ok === false) throw new Error(r.reason || '后端没有可撤销的操作');
+        }
       : async () => { await restoreSnapshot(snap); };
     emitToast('success', '已更新 ' + list.length + ' 个模型', {
       actionLabel: '撤销',
       action: async () => {
+        // 同步消费，先删栈再恢复：用户紧接着按 Ctrl+Z 时不会再吃到这一条
+        consumeSnapshot();
+        if (typeof window !== 'undefined') {
+          const d = (window.__printshelfUndo = window.__printshelfUndo || {});
+          d.toastConsumed = (d.toastConsumed || 0) + 1;
+        }
         try { await restore(); }
         catch (e) { emitToast('error', (e && e.message) || '撤销失败'); }
         emitRefresh('undo');
@@ -68,8 +83,11 @@ async function runBulk(list, fields, doPatch, opts = {}) {
     });
     emitRefresh('bulk');
   } catch (e) {
-    const i = state.undoStack.indexOf(snap);
-    if (i >= 0) state.undoStack.splice(i, 1);
+    consumeSnapshot();
+    if (typeof window !== 'undefined') {
+      const d = (window.__printshelfUndo = window.__printshelfUndo || {});
+      d.failedConsumed = (d.failedConsumed || 0) + 1;
+    }
     emitToast('error', (e && e.message) || '操作失败');
   }
 }

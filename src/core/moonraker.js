@@ -10,6 +10,22 @@ const http = require('http');
 
 const DEFAULT_TIMEOUT = 4000;
 
+/**
+ * 设备返回的 camera 文件名只能是其根目录下的相对路径。
+ * 固件/代理被污染时可能回 "../etc/passwd"、"/etc/passwd" 或 "C:\\..."，
+ * 直接拼进 URL 会打成任意文件读取，必须在拼 URL 前拒绝（P1-10）。
+ */
+function safeCameraPath(name) {
+  let s = String(name == null ? '' : name).trim();
+  if (!s) return null;
+  try { s = decodeURIComponent(s); } catch (_) { /* 保留原值再校验 */ }
+  s = s.replace(/\\/g, '/');
+  if (s.startsWith('/') || /^[a-zA-Z]:/.test(s)) return null;
+  if (s.split('/').some((seg) => seg === '..' || seg === '.' || seg === '')) return null;
+  if (/[\u0000-\u001f]/.test(s)) return null;
+  return s;
+}
+
 function request(host, port, method, path, body, timeout = DEFAULT_TIMEOUT, opts = {}) {
   return new Promise((resolve, reject) => {
     const payload = body == null ? null : Buffer.from(JSON.stringify(body), 'utf8');
@@ -122,9 +138,13 @@ class Moonraker {
     return (r && r.result) || [];
   }
 
-  /** 按路径取 camera 根目录下的文件（图片/视频） */
+  /** 按路径取 camera 根目录下的文件（图片/视频）；越界路径直接拒绝 */
   fileBuffer(name) {
-    const p = String(name).split('/').map(encodeURIComponent).join('/');
+    const safe = safeCameraPath(name);
+    if (!safe) {
+      return Promise.reject(new Error('摄像头文件路径不合法，已拒绝访问：' + String(name)));
+    }
+    const p = safe.split('/').map(encodeURIComponent).join('/');
     return this.getBinary('/server/files/camera/' + p);
   }
 
@@ -140,3 +160,4 @@ class Moonraker {
 
 module.exports = Moonraker;
 module.exports.request = request;
+module.exports.safeCameraPath = safeCameraPath;

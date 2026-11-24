@@ -92,7 +92,8 @@ function testSnapmaker() {
   const s3 = ps._normalizeSnapmaker(cfg, idle);
   ok('空闲态无任务', s3.state === 'idle' && s3.job === null);
 
-  ok('无文件名时剩余时间为 0（不编造）',
+  // 文件名无时长时用已打印时长外推剩余时间；这里断言的是 >0，名称必须与实际行为一致。
+  ok('文件名无时长时按进度外推剩余时间（不编造 0）',
     ps._normalizeSnapmaker(cfg, Object.assign({}, SNAP_FIXTURE, { print_stats: Object.assign({}, SNAP_FIXTURE.print_stats, { filename: 'x.gcode' }) })).job.remainingMin > 0);
   ok('文件名时长解析 12h19m = 739', ps._durationFromName('xx_PETG_12h19m.gcode') === 739, String(ps._durationFromName('xx_PETG_12h19m.gcode')));
   ok('文件名没有时长时返回 0', ps._durationFromName('random_name.gcode') === 0);
@@ -205,6 +206,12 @@ async function testConfig() {
 
   await ps.remove(a.id);
   ok('移除后清空', ps.list().length === 0 && ps.snapshot().length === 0);
+
+  // 失效设备卡片可能比配置列表新：移除一个「找不到」的 id 必须是安全空操作，
+  // 不能抛错把界面卡死（渲染层现在也允许按 snapshot 的 id 直接移除）。
+  threw = false;
+  try { await ps.remove('pr-stale-offline'); } catch (_) { threw = true; }
+  ok('移除已不存在的 id 安全返回', !threw && ps.list().length === 0 && ps.snapshot().length === 0);
 
   // enabled=false 不进快照
   const b = await ps.add({ kind: 'bambu', ip: '192.168.0.109', serial: 'X', accessCode: 'Y' });

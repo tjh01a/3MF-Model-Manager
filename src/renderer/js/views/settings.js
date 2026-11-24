@@ -358,7 +358,7 @@ function renderAppearance() {
         opt('grid', '网格', view) + opt('list', '列表', view) + '</select>')
     ) +
     row(
-      field('卡片尺寸', '<input class="input" type="range" min="160" max="320" step="10" data-bind="ui.cardSize" data-kind="number" value="' + esc(size) + '">') +
+      field('卡片尺寸', '<input class="input" type="range" min="140" max="340" step="10" data-bind="ui.cardSize" data-kind="number" value="' + esc(size) + '">') +
       field('界面密度', '<select class="select" data-bind="ui.density" data-kind="string">' +
         opt('comfortable', '宽松', density) + opt('compact', '紧凑', density) + '</select>')
     ) +
@@ -749,6 +749,14 @@ function applyUI(key, value) {
     let t = value;
     if (t === 'system') t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
     root.dataset.theme = t;
+    // 与 app.js applyTheme 保持同一套行为：state.theme 记实际生效值，
+    // 工具栏按钮也要换图标（深色显示太阳，浅色显示月亮），否则切完主题图标还是旧的
+    setState({ theme: t });
+    const btn = document.getElementById('btn-theme');
+    if (btn) {
+      const use = btn.querySelector('use');
+      if (use) use.setAttribute('href', t === 'dark' ? '#i-sun' : '#i-moon');
+    }
   } else if (key === 'cardSize') {
     applyCardSize(value);
   } else if (key === 'showStats') {

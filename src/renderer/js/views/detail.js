@@ -35,6 +35,12 @@ let lastRenderId = null;
 const el = (id) => document.getElementById(id);
 const itemById = (id) => (state.items || []).find((m) => m && m.id === id) || null;
 const toastErr = (e) => emitToast('error', (e && e.message) || '操作失败');
+// 与 grid.js 卡片上的绿/灰校验完全一致：只认 http(s)，其余一律当作没有来源
+const SAFE_HTTP = /^https?:\/\//i;
+function safeSourceUrl(v) {
+  const s = String(v == null ? '' : v).trim();
+  return SAFE_HTTP.test(s) ? s : '';
+}
 
 // ---------- 展示辅助 ----------
 function fmtOrDash(ts, fn) {
@@ -240,7 +246,7 @@ function render(m) {
         '<label class="field"><span class="field-label">作者 / 设计师</span>' +
           '<input class="input" data-field="author" value="' + esc(m.author || '') + '" placeholder="设计师名称"></label>' +
       '</div>' +
-      (m.sourceUrl ? textBtn('open-source', 'i-external', '打开来源链接', 'btn btn-ghost btn-sm') : '') +
+      (safeSourceUrl(m.sourceUrl) ? textBtn('open-source', 'i-external', '打开来源链接', 'btn btn-ghost btn-sm') : '') +
     '</div>'
   );
 
@@ -592,8 +598,8 @@ async function doRelink(id, path) {
 }
 
 async function openSource(id, m) {
-  const url = ((m && m.sourceUrl) || '').trim();
-  if (!url) { emitToast('warn', '未填写来源链接'); return; }
+  const url = safeSourceUrl(m && m.sourceUrl);
+  if (!url) { emitToast('warn', '来源链接只支持 http(s) 开头的网址'); return; }
   try { await api.openExternal(url); } catch (e) { toastErr(e); }
 }
 
@@ -629,7 +635,18 @@ function onChange(e) {
   const id = currentId;
   if (!id) return;
   const patch = {};
-  patch[field] = t.value;
+  if (field === 'sourceUrl') {
+    const raw = String(t.value || '').trim();
+    if (raw && !SAFE_HTTP.test(raw)) {
+      emitToast('warn', '来源链接只支持 http(s) 开头的网址，已忽略这次修改');
+      const m = itemById(id);
+      t.value = safeSourceUrl(m && m.sourceUrl);   // 还原成已保存的有效值
+      return;
+    }
+    patch[field] = raw;   // 规范化：去掉首尾空白
+  } else {
+    patch[field] = t.value;
+  }
   Promise.resolve(api.update(id, patch))
     .then(() => { showSaved(); emitRefresh('detail-edit'); })
     .catch(toastErr);

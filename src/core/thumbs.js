@@ -117,6 +117,9 @@ function buildPlaceholderSvg(record, hashHex) {
 class ThumbnailService {
   constructor({ store } = {}) {
     this.store = store || null;
+    // 正在生成、但引用还没写回 library 的缓存文件名。prune 必须跳过它们，
+    // 否则「扫描生成缩略图」和「清理孤立缩略图」并发时会把刚写出的图删掉（P1-6）。
+    this._inflight = new Set();
     this.thumbsDir = paths.getThumbsDir();
     try {
       fs.mkdirSync(this.thumbsDir, { recursive: true });
@@ -156,6 +159,7 @@ class ThumbnailService {
    * @returns {Promise<String|null>}
    */
   async ensureFor(record, { force = false, parseResult = null } = {}) {
+    let guarded = [];
     try {
       if (!record || !record.path) {
         console.warn('缩略图生成跳过：记录缺少 path 字段');
@@ -176,6 +180,9 @@ class ThumbnailService {
       }
 
       const hashHex = utils.sha1(utils.pathKey(record.path)).slice(0, 24);
+      // 先登记所有可能产出的文件名再开始异步解析/写盘，prune 看到就会跳过。
+      guarded = [hashHex + '.png', hashHex + '.jpg', hashHex + '.svg'];
+      for (const n of guarded) this._inflight.add(n);
 
       let pr = parseResult;
       if (!pr) {
@@ -206,6 +213,8 @@ class ThumbnailService {
       console.warn('生成缩略图失败：' + (record && record.path ? record.path : '未知记录') +
         ' · ' + (e && e.message ? e.message : String(e)));
       return null;
+    } finally {
+      for (const n of guarded) this._inflight.delete(n);
     }
   }
 
@@ -240,6 +249,8 @@ class ThumbnailService {
 
     // 一次批量写，避免逐条落盘
     if (updates.length && this.store && typeof this.store.updateLibrary === 'function') {
+      // ensureFor 已经返回但引用还没落库：继续保护这段时间，别被 prune 抢先删掉。
+      for (const u of updates) this._inflight.add(u.name);
       try {
         await this.store.updateLibrary((l) => {
           const ms = l && l.models ? l.models : {};
@@ -251,6 +262,8 @@ class ThumbnailService {
         console.warn('批量写回缩略图文件名失败：' + (e && e.message ? e.message : String(e)));
         failed += updates.length;
         done -= updates.length;
+      } finally {
+        for (const u of updates) this._inflight.delete(u.name);
       }
     }
     return { done, failed };
@@ -270,6 +283,7 @@ class ThumbnailService {
       for (const ent of entries) {
         if (!ent.isFile()) continue; // 跳过目录
         if (refs.has(ent.name)) continue;
+        if (this._inflight.has(ent.name)) continue; // 正在生成、引用尚未写回
         try {
           await fsp.unlink(path.join(this.thumbsDir, ent.name));
           removed++;

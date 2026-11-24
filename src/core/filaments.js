@@ -98,6 +98,43 @@ function emptyData() {
   return { schemaVersion: 2, updatedAt: Date.now(), items: {}, defaultId: null };
 }
 
+/** 旧版本写入的记录可能缺字段；list/get 统一补齐，避免渲染层读到 undefined。 */
+function normalizeFilament(rec) {
+  const r = (rec && typeof rec === 'object' && !Array.isArray(rec)) ? rec : {};
+  const t = Number.isFinite(Number(r.updatedAt)) ? Number(r.updatedAt) : 0;
+  return {
+    ...r,
+    id: r.id == null ? '' : String(r.id),
+    name: typeof r.name === 'string' ? r.name : '',
+    brand: typeof r.brand === 'string' ? r.brand : '其他 / 自定义',
+    type: typeof r.type === 'string' ? r.type : 'PLA',
+    color: normalizeColor(r.color),
+    pricePerKg: normalizePrice(r.pricePerKg),
+    image: typeof r.image === 'string' ? r.image : null,
+    note: typeof r.note === 'string' ? r.note : '',
+    params: typeof r.params === 'string' ? r.params : '',
+    isPreset: !!r.isPreset,
+    createdAt: Number.isFinite(Number(r.createdAt)) ? Number(r.createdAt) : t,
+    updatedAt: t,
+  };
+}
+
+/** 按文件头判断真实图片格式；不是 PNG/JPEG 返回 null。 */
+function sniffImageExt(buf) {
+  const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf || []);
+  if (b.length >= 4 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return '.png';
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return '.jpg';
+  return null;
+}
+
+/** 损坏文件另存备份名：绝不覆盖原始数据，方便用户事后找回。 */
+function corruptBackupPath(file) {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${p(d.getMilliseconds())}`;
+  return `${file}.corrupt-${stamp}`;
+}
+
 function normalizeColor(c) {
   if (typeof c !== 'string') return null;
   const s = c.trim();
@@ -138,6 +175,7 @@ class FilamentService {
   constructor() {
     this._data = null;
     this._queue = Promise.resolve();
+    this.recovery = null;   // 损坏/不可读的可观察状态，便于界面提示与测试断言
   }
 
   _file() { return paths.getFilamentsPath(); }
@@ -146,12 +184,46 @@ class FilamentService {
   async init() {
     paths.ensureDirs();
     const file = this._file();
+    let raw = null;
     try {
-      const txt = await fsp.readFile(file, 'utf8');
-      const j = JSON.parse(txt.charCodeAt(0) === 0xfeff ? txt.slice(1) : txt);
-      if (j && j.items && typeof j.items === 'object') this._data = j;
-      else this._data = emptyData();
+      raw = await fsp.readFile(file, 'utf8');
+    } catch (e) {
+      // 第一次启动没有文件是正常情况，直接建一份空库；其它读取失败绝不写文件。
+      if (e && e.code === 'ENOENT') {
+        this.recovery = { kind: 'missing', file };
+        this._data = emptyData();
+        await this._flush();
+        return this;
+      }
+      this.recovery = { kind: 'unreadable', file, code: (e && e.code) || 'EUNKNOWN' };
+      throw new Error('耗材库文件无法读取（可能被其它程序占用，错误码 '
+        + ((e && e.code) || 'EUNKNOWN') + '）：' + file + '。为避免覆盖你的数据，本次不做任何写入。');
+    }
+    let j = null;
+    try {
+      j = JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw);
     } catch (_) {
+      // 内容损坏：先把原始字节另存为 .corrupt-*，再从空数据启动；原文件字节绝不覆写。
+      const backup = corruptBackupPath(file);
+      try { await fsp.copyFile(file, backup); }
+      catch (e) { throw new Error('耗材库文件已损坏，且无法另存备份（' + (e && e.message ? e.message : String(e)) + '）：' + file); }
+      this.recovery = { kind: 'corrupt', file, backup };
+      this._data = emptyData();
+      await this._flush();
+      return this;
+    }
+    if (j && j.items && typeof j.items === 'object' && !Array.isArray(j.items)) {
+      this._data = j;
+      // 旧数据缺字段时只补内存结构；原文件保留到下一次正常写入才更新。
+      for (const [id, rec] of Object.entries(this._data.items)) {
+        this._data.items[id] = normalizeFilament(rec);
+      }
+    } else {
+      // 结构不对按损坏处理：同样先留底，不直接覆盖。
+      const backup = corruptBackupPath(file);
+      try { await fsp.copyFile(file, backup); }
+      catch (e) { throw new Error('耗材库文件结构无效，且无法另存备份（' + (e && e.message ? e.message : String(e)) + '）：' + file); }
+      this.recovery = { kind: 'invalid-structure', file, backup };
       this._data = emptyData();
       await this._flush();
     }
@@ -174,7 +246,8 @@ class FilamentService {
   }
 
   list() {
-    const items = Object.values((this._data && this._data.items) || {});
+    // 旧库记录即使绕过 init 注入，也在读出口补齐字段（P0-16）。
+    const items = Object.values((this._data && this._data.items) || {}).map(normalizeFilament);
     return {
       items: items.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)),
       presets: PRESETS,
@@ -185,7 +258,8 @@ class FilamentService {
   }
 
   get(id) {
-    return ((this._data && this._data.items) || {})[id] || null;
+    const rec = ((this._data && this._data.items) || {})[id];
+    return rec ? normalizeFilament(rec) : null;
   }
 
   /** 默认耗材：未分配耗材的模型按它的单价估算成本。传 null 取消默认。 */
@@ -215,6 +289,7 @@ class FilamentService {
       pricePerKg: normalizePrice(data.pricePerKg),
       image: null,
       note: String(data.note == null ? '' : data.note).slice(0, 2000),
+      params: String(data.params == null ? '' : data.params).slice(0, 2000),
       isPreset: !!data.isPreset,
       createdAt: t, updatedAt: t,
     };
@@ -237,6 +312,7 @@ class FilamentService {
       if (Object.prototype.hasOwnProperty.call(p, 'color')) rec.color = normalizeColor(p.color);
       if (Object.prototype.hasOwnProperty.call(p, 'pricePerKg')) rec.pricePerKg = normalizePrice(p.pricePerKg);
       if (Object.prototype.hasOwnProperty.call(p, 'note')) rec.note = String(p.note == null ? '' : p.note).slice(0, 2000);
+      if (Object.prototype.hasOwnProperty.call(p, 'params')) rec.params = String(p.params == null ? '' : p.params).slice(0, 2000);
       rec.updatedAt = Date.now();
       return rec;
     });
@@ -252,17 +328,29 @@ class FilamentService {
     return { ok: true };
   }
 
-  /** 从本地图片文件导入，按内容哈希命名后落盘。返回引用名。 */
+  /**
+   * 从本地图片文件导入，按内容哈希命名后落盘。返回引用名。
+   * 只接受真正的 PNG / JPEG：扩展名可以骗人（把 webp 改名成 .png 就存成 .png，
+   * 浏览器按 image/png 解码必然失败，又变回「图片显示不出来」）。
+   */
   async setImage(id, filePath) {
     const src = String(filePath || '');
     if (!src) throw new Error('没有选择图片');
     const buf = await fsp.readFile(src);
-    if (!buf.length || buf.length > 8 * 1024 * 1024) throw new Error('图片为空或超过 8MB');
-    const ext = /\.jpe?g$/i.test(src) ? '.jpg' : /\.png$/i.test(src) ? '.png' : '.png';
-    const hash = U.sha1(buf).slice(0, 24);
+    return this.setImageBuffer(id, buf);
+  }
+
+  /** 直接落一段图片字节（用于裁剪 / 缩放后重新编码的结果）。 */
+  async setImageBuffer(id, buf) {
+    const data = Buffer.isBuffer(buf) ? buf : Buffer.from(buf || []);
+    if (!data.length) throw new Error('图片为空');
+    if (data.length > 8 * 1024 * 1024) throw new Error('图片超过 8MB，请先裁切或压缩');
+    const ext = sniffImageExt(data);
+    if (!ext) throw new Error('只支持 PNG / JPG 图片');
+    const hash = U.sha1(data).slice(0, 24);
     const name = hash + ext;
     const target = path.join(this._imgDir(), name);
-    if (!fs.existsSync(target)) await atomicWrite(target, buf);
+    if (!fs.existsSync(target)) await atomicWrite(target, data);
     await this._mutate((d) => {
       const rec = d.items[id];
       if (!rec) throw new Error('找不到这个耗材');
@@ -281,5 +369,5 @@ class FilamentService {
 
 module.exports = {
   FilamentService, PRESETS, TYPES, BRANDS, HEX,
-  normalizeColor, normalizePrice, emptyData,
+  normalizeColor, normalizePrice, normalizeFilament, corruptBackupPath, emptyData, sniffImageExt,
 };

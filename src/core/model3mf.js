@@ -10,6 +10,14 @@ const fs = require('fs');
 const AdmZip = require('adm-zip');
 const { MAX_MODEL_BYTES, THUMB_PRIORITY } = require('./constants');
 
+/**
+ * 解压上限。adm-zip 的 header.size 是解压后体积：一个几十 KB 的 zip bomb
+ * 能声明几百 MB 的条目，直接 getData() 会 OOM 打崩主进程。
+ * 文本类条目超限按「单条目降级」跳过，图片超限则丢弃缩略图，都不影响正常模型。
+ */
+const MAX_TEXT_BYTES = 48 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 128 * 1024 * 1024;
+
 /** 与契约 1.2 一致的 meta 初始降级值 */
 function emptyMeta() {
   return {
@@ -32,7 +40,7 @@ function emptyMeta() {
  * 只有拓竹系 3MF 会写这些字段（全库实测约 19% 覆盖），缺失是常态，不是错误。
  * 异常值（如 G-code 里 volume=9297cm³ 却 weight=11.62g）一律丢弃，交给用户手填。
  */
-function extractWeightInfo(entries) {
+function extractWeightInfo(entries, maxTextBytes = MAX_TEXT_BYTES) {
   const out = { weightG: null, weightSource: null, filamentUsages: [] };
   const valid = (v) => {
     const n = Number(v);
@@ -41,7 +49,7 @@ function extractWeightInfo(entries) {
 
   // 1) slice_info.config：拓竹 plate 段 <metadata key="weight" value="90.39"/> 与 <filament .../>
   try {
-    const txt = readEntryText(entries, 'Metadata/slice_info.config');
+    const txt = readEntryText(entries, 'Metadata/slice_info.config', maxTextBytes);
     if (txt) {
       const wm = /<metadata\b[^>]*\bkey\s*=\s*["']weight["'][^>]*\bvalue\s*=\s*["']([^"']+)["']/i.exec(txt);
       if (wm && valid(wm[1])) {
@@ -71,7 +79,9 @@ function extractWeightInfo(entries) {
       for (const e of entries) {
         if (!/\.gcode$/i.test(e.entryName)) continue;
         if (!e.header || typeof e.header.size !== 'number' || e.header.size > 1024 * 1024) continue;
-        const head = e.getData().toString('utf8', 0, Math.min(16384, e.header.size));
+        const gcodeHead = readEntryBuffer(e, Math.min(1024 * 1024, maxTextBytes));
+        if (!gcodeHead) continue;
+        const head = gcodeHead.toString('utf8', 0, Math.min(16384, gcodeHead.length));
         const wm = /;\s*total filament weight \[g\]\s*:\s*([\d.]+)/i.exec(head);
         if (wm && valid(wm[1])) {
           out.weightG = Number(wm[1]);
@@ -313,10 +323,21 @@ function findEntry(entries, name) {
   return entries.find((e) => safeKey(e.entryName) === k) || null;
 }
 
-function readEntryText(entries, name) {
+/** 解压后再校验一次实际字节，防止 header.size 被伪造；超限返回 null（跳过该条目）。 */
+function readEntryBuffer(entry, maxBytes) {
+  if (!entry) return null;
+  const declared = entry.header && typeof entry.header.size === 'number' ? entry.header.size : 0;
+  // declared=0 时不拦截，留给解压后的真实长度兜底（部分测试夹具没有 header）。
+  if (declared > maxBytes) return null;
+  const buf = entry.getData();
+  if (!Buffer.isBuffer(buf) || buf.length > maxBytes) return null;
+  return buf;
+}
+
+function readEntryText(entries, name, maxBytes = MAX_TEXT_BYTES) {
   const e = findEntry(entries, name);
-  if (!e) return null;
-  return e.getData().toString('utf8');
+  const buf = readEntryBuffer(e, maxBytes);
+  return buf ? buf.toString('utf8') : null;
 }
 
 /** JSON 容错：去 BOM / 首尾空白；混合换行由 JSON.parse 自身消化 */
@@ -424,6 +445,7 @@ function collectExtruderIndices(out, n) {
 }
 
 function extractMeta(entries, opts, thumbnailName) {
+  const maxTextBytes = Number(opts.maxTextBytes) > 0 ? Number(opts.maxTextBytes) : MAX_TEXT_BYTES;
   const meta = emptyMeta();
   meta.entryCount = entries.length;
   meta.thumbnailEntry = thumbnailName || null;
@@ -443,7 +465,9 @@ function extractMeta(entries, opts, thumbnailName) {
   try {
     const e = findEntry(entries, '3D/3dmodel.model');
     if (e && e.header && typeof e.header.size === 'number' && e.header.size <= maxModel) {
-      const xml = e.getData().toString('utf8');
+      const modelBuf = readEntryBuffer(e, Math.min(maxModel, maxTextBytes));
+      if (!modelBuf) throw new Error('模型 XML 超过解压上限');
+      const xml = modelBuf.toString('utf8');
       meta.objectCount = (xml.match(/<object[\s/>]/gi) || []).length;
       meta.buildItemCount = (xml.match(/<item[\s/>]/gi) || []).length;
       const um = /<model\b[^>]*\bunit\s*=\s*["']([^"']*)["']/i.exec(xml);
@@ -475,7 +499,7 @@ function extractMeta(entries, opts, thumbnailName) {
 
   // Metadata/project_settings.config（JSON，可能含 BOM / 混合换行）
   try {
-    const j = parseJsonLoose(readEntryText(entries, 'Metadata/project_settings.config'));
+    const j = parseJsonLoose(readEntryText(entries, 'Metadata/project_settings.config', maxTextBytes));
     if (j && typeof j === 'object') {
       const lh = parseFloat(firstVal(j.layer_height));
       meta.layerHeight = isNaN(lh) ? null : lh;
@@ -492,7 +516,7 @@ function extractMeta(entries, opts, thumbnailName) {
 
   // Metadata/slice_info.config（XML：X-BBL-Client-Version）
   try {
-    const txt = readEntryText(entries, 'Metadata/slice_info.config');
+    const txt = readEntryText(entries, 'Metadata/slice_info.config', maxTextBytes);
     if (txt != null) {
       meta.hasSliceInfo = true;
       const tagM = /<header_item\b[^>]*X-BBL-Client-Version[^>]*>/i.exec(txt);
@@ -505,7 +529,7 @@ function extractMeta(entries, opts, thumbnailName) {
 
   // Metadata/model_settings.config：真实样本是 XML，契约描述为 JSON，双容错
   try {
-    const txt = readEntryText(entries, 'Metadata/model_settings.config');
+    const txt = readEntryText(entries, 'Metadata/model_settings.config', maxTextBytes);
     if (txt != null) {
       const j = parseJsonLoose(txt);
       let handled = false;
@@ -563,7 +587,7 @@ function extractMeta(entries, opts, thumbnailName) {
 
   // Metadata/filament_sequence.json：plate 数 + 耗材序列长度
   try {
-    const j = parseJsonLoose(readEntryText(entries, 'Metadata/filament_sequence.json'));
+    const j = parseJsonLoose(readEntryText(entries, 'Metadata/filament_sequence.json', maxTextBytes));
     if (j && typeof j === 'object') {
       const plates = Object.keys(j);
       plateFromSeq = plates.length;
@@ -576,7 +600,7 @@ function extractMeta(entries, opts, thumbnailName) {
 
   // 切片重量与逐耗材用量（13 · 成本账本）：缺失是常态，不影响其它 meta
   try {
-    const w = extractWeightInfo(entries);
+    const w = extractWeightInfo(entries, maxTextBytes);
     meta.weightG = w.weightG;
     meta.weightSource = w.weightSource;
     meta.filamentUsages = w.filamentUsages;
@@ -611,8 +635,8 @@ function extractMeta(entries, opts, thumbnailName) {
   // 兜底：少数 3MF 把来源写在 project_settings / model_settings 里
   if (!meta.sourceUrl) {
     try {
-      const su = extractSourceUrl(readEntryText(entries, 'Metadata/project_settings.config'))
-        || extractSourceUrl(readEntryText(entries, 'Metadata/model_settings.config'));
+      const su = extractSourceUrl(readEntryText(entries, 'Metadata/project_settings.config', maxTextBytes))
+        || extractSourceUrl(readEntryText(entries, 'Metadata/model_settings.config', maxTextBytes));
       if (su) meta.sourceUrl = su;
     } catch (_) { /* 单条目降级 */ }
   }
@@ -633,6 +657,9 @@ async function parse3mf(filePath, options = {}) {
     withThumbnail: options.withThumbnail !== false,
     withMeta: options.withMeta !== false,
     maxModelBytes: Number(options.maxModelBytes) || MAX_MODEL_BYTES,
+    // 允许测试用更小的值快速验证 zip bomb 防护，不影响生产默认口径。
+    maxTextBytes: Number(options.maxTextBytes) > 0 ? Number(options.maxTextBytes) : MAX_TEXT_BYTES,
+    maxImageBytes: Number(options.maxImageBytes) > 0 ? Number(options.maxImageBytes) : MAX_IMAGE_BYTES,
   };
 
   try {
@@ -656,7 +683,8 @@ async function parse3mf(filePath, options = {}) {
     let relsXml = '';
     try {
       const relEntry = findEntry(entries, '_rels/.rels');
-      if (relEntry) relsXml = relEntry.getData().toString('utf8');
+      const relBuf = readEntryBuffer(relEntry, opts.maxTextBytes);
+      if (relBuf) relsXml = relBuf.toString('utf8');
     } catch (_) { relsXml = ''; }
 
     // 缩略图
@@ -665,12 +693,10 @@ async function parse3mf(filePath, options = {}) {
       try {
         thumbName = pickThumbnailEntry(entries, relsXml);
         if (thumbName) {
-          const te = findEntry(entries, thumbName);
-          if (te) {
-            const data = te.getData();
-            if (data && data.length) {
-              result.thumbnail = { entry: thumbName, data, mime: mimeOf(thumbName) };
-            }
+          // 缩略图同样限流：恶意 zip 可以把一张 PNG 声明成几百 MB。
+          const data = readEntryBuffer(findEntry(entries, thumbName), opts.maxImageBytes);
+          if (data && data.length) {
+            result.thumbnail = { entry: thumbName, data, mime: mimeOf(thumbName) };
           }
         }
       } catch (_) { result.thumbnail = null; }
@@ -704,5 +730,6 @@ async function readThumbnail(filePath) {
 
 module.exports = {
   parse3mf, pickThumbnailEntry, parseRels, readThumbnail, normalizeColor,
+  MAX_TEXT_BYTES, MAX_IMAGE_BYTES,
   extractSourceUrl, deriveMakerWorldUrl, decodeEntities, isModelPage, looksBrokenUrl,
 };

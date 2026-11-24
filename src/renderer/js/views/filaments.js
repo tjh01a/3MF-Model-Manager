@@ -8,6 +8,7 @@
 import { api, emitToast, emitRefresh } from '../api.js';
 import { escapeHtml, icon } from '../utils.js';
 import { confirmDialog, promptDialog } from '../components/modal.js';
+import { openImageEditor } from '../components/img-editor.js';
 
 const esc = (v) => escapeHtml(v == null ? '' : String(v));
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -68,7 +69,7 @@ function filtered() {
   return st.items.filter((f) => {
     if (st.filterType && f.type !== st.filterType) return false;
     if (!kw) return true;
-    return [f.name, f.brand, f.type, f.note].some((v) => String(v || '').toLowerCase().includes(kw));
+    return [f.name, f.brand, f.type, f.note, f.params].some((v) => String(v || '').toLowerCase().includes(kw));
   });
 }
 
@@ -122,7 +123,7 @@ function detailHtml(f) {
         '<label class="fil-field"><span>单价（元 / kg）</span><input type="number" data-field="pricePerKg" min="0" step="0.01" value="' + esc(f.pricePerKg || 0) + '"></label>' +
       '</div>' +
       '<label class="fil-field"><span>备注</span><textarea data-field="note" rows="3" maxlength="2000">' + esc(f.note || '') + '</textarea></label>' +
-      '<div class="fil-hint">每克价 = 单价 ÷ 1000。改价后新回执用新价，历史回执不变。</div>' +
+      '<label class="fil-field"><span>耗材参数</span><textarea data-field="params" rows="3" maxlength="2000" placeholder="例如：打印温度 220°C / 热床 60°C / 收缩率 0.4% 等">' + esc(f.params || '') + '</textarea></label>' +
     '</div>';
 }
 
@@ -184,6 +185,7 @@ function readForm() {
     color: get('colorText') || get('color'),
     pricePerKg: get('pricePerKg'),
     note: get('note'),
+    params: get('params'),
   };
 }
 
@@ -191,6 +193,14 @@ async function save() {
   if (!st.selectedId) return;
   const p = readForm();
   if (!p || !String(p.name || '').trim()) { emitToast('error', '名称不能为空'); return; }
+  // 后端会把非法颜色静默归一化成默认值，用户以为保存成功、再看却变了色。
+  // 保存前在这里拦住，必须严格是 #RRGGBB。
+  const color = String(p.color || '').trim();
+  if (!HEX.test(color)) {
+    emitToast('error', '颜色格式不对，请填写 #RRGGBB（例如 #FF0000）');
+    return;
+  }
+  p.color = color;
   try {
     await api.filamentUpdate(st.selectedId, p);
     emitToast('success', '耗材已保存');
@@ -251,9 +261,20 @@ async function onClick(e) {
       let p;
       try { p = await api.filamentPickImage(); } catch (_) { return; }
       if (!p) return;
+      const f0 = st.items.find((x) => x.id === st.selectedId);
+      // 先读原图 -> 裁切/缩放 -> 再落盘。原图不直接入库，
+      // 手机拍的 4000px 大图会在卡片里当几百 KB 的装饰图，白占内存。
+      let raw;
+      try { raw = await api.filamentReadImage(p); } catch (_) { return; }
+      let edited;
       try {
-        const r = await api.filamentSetImage(st.selectedId, p);
-        emitToast('success', '图片已更新');
+        edited = await openImageEditor({ dataUrl: raw.dataUrl, fileName: raw.name, name: f0 ? f0.name : '' });
+      } catch (_) { return; }
+      if (!edited) return;
+      if (edited.error) { emitToast('error', edited.error); return; }
+      try {
+        const r = await api.filamentSetImageData(st.selectedId, edited.dataUrl);
+        emitToast('success', '图片已更新（' + edited.width + ' × ' + edited.height + '）');
         const f = st.items.find((x) => x.id === st.selectedId);
         if (f) f.image = r.image;
         render();

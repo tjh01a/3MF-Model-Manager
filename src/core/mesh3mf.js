@@ -483,7 +483,23 @@ function replaceMeshGeometry(block, V, F) {
  */
 async function buildOptimized3mf(o) {
   const { srcPath, outPath, parts, plyDir, mode = 'coords', clampMm = 0.15 } = o;
-  if (path.resolve(srcPath) === path.resolve(outPath)) throw new Error('输出路径不能与源文件相同');
+  // 同 inode / 软链接绕过 path.resolve 比较：realpath 必须不同，否则会覆盖源文件（P1-15）。
+  const real = (p) => {
+    try { return fs.realpathSync(path.resolve(p)); } catch (_) { return path.resolve(p); }
+  };
+  const srcReal = real(srcPath);
+  const outReal = real(outPath);
+  const samePath = process.platform === 'win32'
+    ? srcReal.toLowerCase() === outReal.toLowerCase()
+    : srcReal === outReal;
+  // 硬链接的 realpath 仍不同，但 dev/ino 相同；不查 inode 就可能把优化产物写回源文件。
+  let sameInode = false;
+  try {
+    const a = fs.statSync(srcReal);
+    const b = fs.statSync(outReal);
+    sameInode = a.dev === b.dev && a.ino === b.ino;
+  } catch (_) { /* 输出还不存在时按路径判断即可 */ }
+  if (samePath || sameInode) throw new Error('输出路径不能与源文件相同（软链接或同一文件）');
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
 
   const zip = new AdmZip(srcPath);
@@ -544,7 +560,23 @@ async function buildOptimized3mf(o) {
     const data = modified.get(e.entryName) || originals.get(e.entryName) || Buffer.alloc(0);
     outZip.addFile(e.entryName, data);
   }
-  outZip.writeZip(outPath);
+  // 先写临时文件再 rename：写到一半崩溃不会留下半截 3MF 覆盖旧产物（P1-15）。
+  const tmpOut = outPath + '.tmp-' + process.pid + '-' + Math.random().toString(36).slice(2, 8);
+  try {
+    outZip.writeZip(tmpOut);
+    if (!fs.existsSync(tmpOut) || fs.statSync(tmpOut).size <= 0) throw new Error('写入输出文件失败');
+    try {
+      fs.renameSync(tmpOut, outPath);
+    } catch (e) {
+      if (e && (e.code === 'EEXIST' || e.code === 'EPERM' || e.code === 'EACCES')) {
+        try { fs.unlinkSync(outPath); } catch (_) { /* 目标不存在 */ }
+        fs.renameSync(tmpOut, outPath);
+      } else throw e;
+    }
+  } catch (e) {
+    try { fs.unlinkSync(tmpOut); } catch (_) { /* 清理残留 */ }
+    throw e;
+  }
   if (!fs.existsSync(outPath)) throw new Error('写入输出文件失败');
   clampStats.meanDisp = clampStats.moved ? clampStats.meanDisp / clampStats.moved : 0;
 

@@ -220,8 +220,11 @@ function cardSig(m) {
     m.favorite ? 1 : 0, m.rating || 0, m.createdAt, dupGroupSize(m),
     meta.objectCount || 0, meta.plateCount || 0,
     colors, colorTypes, meta.colorSource || '',
-    // 价格是派生值但会显示：改耗材单价 / 分配耗材后必须重画这张卡（docs/14）
+    // 价格是派生值但会显示：priceHtml 读到的每个字段都要进指纹——
+    // 手填重量只改 weightG、切换来源只改 source，漏掉这两项卡片文本就不会更新（docs/14）
     (state.costs && state.costs[m.id] && state.costs[m.id].total) || 0,
+    (state.costs && state.costs[m.id] && state.costs[m.id].weightG) || 0,
+    (state.costs && state.costs[m.id] && state.costs[m.id].source) || '',
     (state.costs && state.costs[m.id] && state.costs[m.id].complete) ? 1 : 0].join('\u0001');
 }
 
@@ -249,7 +252,10 @@ export function invalidateGridCache() {
 export function applyViewClass() {
   const content = qs('#content');
   if (!content) return;
-  const cls = state.view === 'list' ? 'content-list' : 'content-grid';
+  // 回执 / 重复文件等特殊视图也走轻量刷新（切网格-列表、设置改动后的刷新），
+  // 这里必须把 content-special 一起带上，否则特殊视图样式会被悄悄抹掉。
+  const special = state.contentMode && state.contentMode !== 'normal' ? ' content-special' : '';
+  const cls = (state.view === 'list' ? 'content-list' : 'content-grid') + special;
   if (content.className !== cls) content.className = cls;
   lastRender.cls = cls;
 }

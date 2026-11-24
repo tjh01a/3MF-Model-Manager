@@ -23,6 +23,22 @@ async function waitFor(fn, ms = 15000) {
 }
 
 const out = {};
+
+// 被 catch 后只弹红字、不进 window.onerror 的运行时错误，视为探针失败
+const toastErrors = [];
+const toastBox = q('#toast-container');
+if (toastBox && typeof MutationObserver !== 'undefined') {
+  new MutationObserver((muts) => {
+    for (const m of muts) for (const n of m.addedNodes) {
+      if (!n || n.nodeType !== 1) continue;
+      const bad = n.classList && n.classList.contains('toast-error') ? n : n.querySelector('.toast-error');
+      if (!bad) continue;
+      const msg = bad.querySelector('.toast-message');
+      toastErrors.push(msg ? msg.textContent.trim() : 'error toast');
+    }
+  }).observe(toastBox, { childList: true });
+}
+
 await window.shelf.whenReady();
 await waitFor(() => qa('#content .card').length > 0);
 
@@ -81,6 +97,7 @@ out.cardCountMatches = out.cardCount === out.expectedCards;
 out.consistent = out.cardCountMatches &&
   (out.statTotal == null || out.statTotal === out.queryTotal) &&
   (out.sidebarAllBadge == null || out.sidebarAllBadge === out.queryTotal);
-out.ok = out.itemsWithMissing === 0 && out.missingBadges === 0 &&
+out.toastErrors = Array.from(new Set(toastErrors));
+out.ok = !out.toastErrors.length && out.itemsWithMissing === 0 && out.missingBadges === 0 &&
   !out.statHasMissingLabel && out.consistent && out.missingViewWorks;
 return out;

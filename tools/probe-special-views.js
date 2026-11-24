@@ -17,6 +17,21 @@ async function waitFor(fn, ms) {
 const q = (s) => document.querySelector(s);
 const out = {};
 
+// 被 catch 后只弹红字、不进 window.onerror 的运行时错误，视为探针失败
+const toastErrors = [];
+const toastBox = q('#toast-container');
+if (toastBox && typeof MutationObserver !== 'undefined') {
+  new MutationObserver((muts) => {
+    for (const m of muts) for (const n of m.addedNodes) {
+      if (!n || n.nodeType !== 1) continue;
+      const bad = n.classList && n.classList.contains('toast-error') ? n : n.querySelector('.toast-error');
+      if (!bad) continue;
+      const msg = bad.querySelector('.toast-message');
+      toastErrors.push(msg ? msg.textContent.trim() : 'error toast');
+    }
+  }).observe(toastBox, { childList: true });
+}
+
 async function openSmart(key) {
   const btn = await waitFor(() => q('#sidebar [data-smart="' + key + '"]'), 8000);
   if (!btn) return false;
@@ -72,7 +87,8 @@ if (mi) {
 const dupOk = !!out.dup.hasItem ? (out.dup.styled && out.dup.layout.insideParent && out.dup.headStyled) : true;
 const missOk = !!out.missing.hasItem ? (out.missing.styled && out.missing.layout.insideParent) : true;
 out.checks = { dupOk, missOk };
-out.ok = dupOk && missOk;
+out.toastErrors = Array.from(new Set(toastErrors));
+out.ok = !out.toastErrors.length && dupOk && missOk;
 
 // 回到全部模型，别把用户留在特殊视图
 await openSmart('all');

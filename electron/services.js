@@ -23,8 +23,8 @@ const PresetGuard = require('../src/core/presetguard');
 const PrinterService = require('../src/core/printers');
 const { PrinterMonitor, buildChartModel } = require('../src/core/monitor');
 const U1Converter = require('../src/core/u1convert');
-const { FilamentService } = require('../src/core/filaments');
-const { ReceiptService, matchModel } = require('../src/core/receipts');
+const { FilamentService, sniffImageExt } = require('../src/core/filaments');
+const { ReceiptService, matchModel, matchModelFuzzy } = require('../src/core/receipts');
 const cost = require('../src/core/cost');
 
 class Services extends EventEmitter {
@@ -548,11 +548,27 @@ class Services extends EventEmitter {
 
   // ---- 13 · 打印回执 / 耗材库 / 成本账本 ----
 
-  /** monitor 'job' 终态 → 落回执；成功且精确匹配到模型时自动回写状态（用户 2026-11-16 确认） */
+  /** monitor 'job' 终态 → 落回执；成功且匹配到模型时自动回写状态（用户 2026-11-16 确认） */
   async _onPrintJob(j) {
     if (!j) return null;
     const models = this.store.getLibrary().models || {};
-    const model = matchModel(j.jobName, models);
+
+    // 精确匹配优先；精确不中再走「名字大致匹配」——分多次打印会让同一模型出现
+    // _plate_2 / (3) / 尾部编号等变体，只用精确匹配会全落空（用户 2026-11-24 反馈）。
+    let model = matchModel(j.jobName, models);
+    let score = model ? 1 : 0;
+    if (!model) {
+      const fuzzy = matchModelFuzzy(j.jobName, models);
+      if (fuzzy.model) { model = fuzzy.model; score = fuzzy.score; }
+    } else if (!j.jobName || /^(当前任务|未命名任务)$/.test(String(j.jobName).trim())) {
+      // 名字是兜底文案时不能拿去匹配，否则会随机关联到某个模型
+      model = null;
+      score = 0;
+    }
+
+    // 去重：掉线重连、重启补判都可能对同一次打印再发一次终态事件
+    const dup = this.receipts.findRecentJob(j.printerId, j.jobName, j.at);
+    if (dup) return dup;
 
     // 成本核算：先算一次快照，之后用户改耗材价格不影响历史回执
     let weightG = null;
@@ -579,13 +595,110 @@ class Services extends EventEmitter {
       cost: costTotal,
       filamentNames,
     });
+    // 自动关联也要把模型名快照写进去，否则卡片只剩 id，用户看不出连的是谁
+    if (model) {
+      try {
+        await this.receipts.linkModel(receipt.id,
+          model.id, model.title || model.fileName || '', { manual: false });
+        receipt.modelId = model.id;
+        receipt.modelTitle = model.title || model.fileName || '';
+      } catch (_) { /* 关联失败不影响回执本身 */ }
+    }
 
-    if (j.result === 'finished' && model) {
+    // 只有匹配很确定时才回写打印状态：模糊匹配只用来记账，不该动「已打印」标记
+    if (j.result === 'finished' && model && score >= 0.9) {
       try { await this.library.setPrintStatus([model.id], 'printed'); }
       catch (_) { /* 状态回写失败不影响回执本身 */ }
     }
     this.emitToRenderer('receipts:changed', { id: receipt.id, result: j.result });
     return receipt;
+  }
+
+  /**
+   * 补录历史漏记的回执：从监控采样里找「最后一个点 ≥95% 但没对应回执」的 session。
+   * 只补最近 7 天，且同一任务 30 分钟内已有回执就跳过——宁可少补，不能补出重复账。
+   * 补出来的回执 note 标明来源，方便用户判断要不要改。
+   */
+  async receiptsBackfillFromMonitor() {
+    let list = [];
+    try { list = this.monitor.missedCompletions(120) || []; } catch (_) { return { ok: false, created: 0 }; }
+    const models = this.store.getLibrary().models || {};
+    const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+    let created = 0;
+    for (const s of list) {
+      if (!s || !s.endedAt || s.endedAt < cutoff) continue;
+      // 6 小时窗口和实时去重保持一致：同一个任务被切成多段 session 时，
+      // 阈值太小会给同一次打印补出两三条账。
+      if (this.receipts.findRecentJob(s.printerId, s.jobName, s.endedAt, 6 * 3600 * 1000)) continue;
+      let model = matchModel(s.jobName, models);
+      if (!model) {
+        const f = matchModelFuzzy(s.jobName, models);
+        if (f.model) model = f.model;
+      }
+      let weightG = null;
+      let costTotal = 0;
+      let filamentNames = [];
+      if (model) {
+        try {
+          const c = cost.costOf(model, this.filaments.list());
+          weightG = c.weightG;
+          costTotal = c.total;
+          filamentNames = c.parts.map((p) => p.name).filter(Boolean);
+        } catch (_) { /* 成本算不出来也照补 */ }
+      }
+      const rec = await this.receipts.add({
+        jobName: s.jobName,
+        printerId: s.printerId,
+        printerName: s.printerName,
+        result: 'finished',
+        startedAt: s.startedAt,
+        endedAt: s.endedAt,
+        modelId: model ? model.id : null,
+        weightG,
+        cost: costTotal,
+        filamentNames,
+        note: '由打印监控补录（完成时未记录回执）',
+      });
+      if (model) {
+        try {
+          await this.receipts.linkModel(rec.id, model.id,
+            model.title || model.fileName || '', { manual: false });
+        } catch (_) { /* 忽略 */ }
+      }
+      created++;
+    }
+    if (created) this.emitToRenderer('receipts:changed', { backfilled: created });
+    return { ok: true, created };
+  }
+
+  /**
+   * 给还没关联模型的回执补做自动关联（设置页/回执页的「自动关联」按钮，以及启动后台跑一次）。
+   * 只写 modelId/modelTitle，不动成本与用料快照——那些是打印当时的事实。
+   */
+  async receiptsAutoLink() {
+    const models = this.store.getLibrary().models || {};
+    const items = this.receipts.list();
+    const pending = items.filter((r) => r && !r.modelId && r.jobName);
+    let linked = 0;
+    const ambiguous = [];
+    for (const r of pending) {
+      const m = matchModel(r.jobName, models);
+      if (m) {
+        await this.receipts.linkModel(r.id, m.id, m.title || m.fileName || '', { manual: false });
+        linked++;
+        continue;
+      }
+      const fuzzy = matchModelFuzzy(r.jobName, models);
+      if (fuzzy.model) {
+        await this.receipts.linkModel(r.id, fuzzy.model.id,
+          fuzzy.model.title || fuzzy.model.fileName || '', { manual: false });
+        linked++;
+      } else if (fuzzy.ambiguous) {
+        ambiguous.push(r.id);
+      }
+    }
+    if (linked) this.emitToRenderer('receipts:changed', { autoLinked: linked });
+    return { ok: true, checked: pending.length, linked, ambiguous: ambiguous.length };
   }
 
   filamentsList() { return this.filaments.list(); }
@@ -611,6 +724,37 @@ class Services extends EventEmitter {
   }
   async filamentSetImage(id, filePath) {
     const r = await this.filaments.setImage(id, filePath);
+    this.emitToRenderer('filaments:changed', { action: 'image', id });
+    return r;
+  }
+  /**
+   * 导出原图给渲染层做裁剪 / 缩放预览（渲染层没有 Node 权限，读不了磁盘）。
+   * 直接返回 data URL：图片本来就要整段送进 <img>，省一次 blob 生命周期管理。
+   * 上限与落盘一致（8MB 原图），避免把几十 MB 的图塞进 IPC。
+   */
+  async filamentReadImage(filePath) {
+    const src = String(filePath || '');
+    if (!src) throw new Error('没有选择图片');
+    const st = await fs.promises.stat(src);
+    if (!st.isFile()) throw new Error('选择的不是文件');
+    if (st.size > 8 * 1024 * 1024) throw new Error('原图超过 8MB，请先压缩后再导入');
+    const buf = await fs.promises.readFile(src);
+    const ext = sniffImageExt(buf);
+    if (!ext) throw new Error('只支持 PNG / JPG 图片');
+    return {
+      name: path.basename(src),
+      size: buf.length,
+      mime: ext === '.png' ? 'image/png' : 'image/jpeg',
+      dataUrl: 'data:' + (ext === '.png' ? 'image/png' : 'image/jpeg') + ';base64,' + buf.toString('base64'),
+    };
+  }
+  /** 保存裁剪 / 缩放后的图片（前端 canvas 导出的 data URL）。 */
+  async filamentSetImageData(id, dataUrl) {
+    const s = String(dataUrl || '');
+    const m = /^data:image\/(png|jpe?g);base64,([A-Za-z0-9+/=\s]+)$/i.exec(s);
+    if (!m) throw new Error('图片数据格式不对');
+    const buf = Buffer.from(m[2], 'base64');
+    const r = await this.filaments.setImageBuffer(id, buf);
     this.emitToRenderer('filaments:changed', { action: 'image', id });
     return r;
   }
@@ -647,6 +791,25 @@ class Services extends EventEmitter {
   async receiptsDelete(ids) {
     const r = await this.receipts.delete(ids);
     this.emitToRenderer('receipts:changed', { deleted: r.deleted });
+    return r;
+  }
+  /**
+   * 手动把回执关联到模型库里的某个模型；传 null 则清除关联。
+   * 自动匹配不上或匹配错时由用户自己纠正，不改写原任务名、成本与用量快照。
+   */
+  async receiptsLinkModel(id, modelId) {
+    if (!this.receipts.get(id)) throw new Error('找不到这条打印回执');
+    const key = modelId ? String(modelId) : '';
+    let model = null;
+    if (key) {
+      const models = this.store.getLibrary().models || {};
+      model = models[key] || null;
+      if (!model) throw new Error('找不到这个模型，请重新选择');
+    }
+    const r = await this.receipts.linkModel(
+      id, key || null, model ? (model.title || model.fileName) : null
+    );
+    this.emitToRenderer('receipts:changed', { linked: r.ok, modelId: r.modelId });
     return r;
   }
   /** 已完成打印视图：回执 + 对应模型记录，供渲染层一次拿到 */

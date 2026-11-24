@@ -10,7 +10,7 @@
  *  2. withThumbnail:false —— 不解压 PNG，单文件实测 2~13ms。
  *  3. 每 12 条让出一次事件循环，并有 8 秒总预算；超预算只写回已解析部分，剩余记录下次启动继续。
  *  4. 所有结果收集完一次性 updateLibrary()，因此只触发一次 lib:changed / 一次界面刷新。
- *  5. 解析失败也写入空数组做「已处理」标记，避免每次启动都重试同一个坏文件。
+ *  5. 解析失败不写终态：原来写空数组当「已处理」，坏一次就永久跳过（P1-7）。
  *  6. 只合并三个颜色字段：withThumbnail:false 下 hasThumbnail / objectCount 会降级，
  *     整体替换 meta 会把已有数据打坏。
  *
@@ -28,6 +28,8 @@ const yieldTick = () => new Promise((resolve) => setImmediate(resolve));
 
 /** 由旧 meta + 新解析结果生成合并后的 meta（导出便于单测）。 */
 function colorPatch(oldMeta, freshMeta) {
+  // 解析失败：原样返回，绝不能把「无颜色」写成终态。
+  if (!freshMeta) return { ...(oldMeta || {}) };
   const patch = {};
   for (const k of COLOR_KEYS) {
     patch[k] = freshMeta && freshMeta[k] != null
@@ -82,12 +84,20 @@ async function backfillFilamentColors(store, options = {}) {
       const res = await parse3mf(r.path, { withThumbnail: false, withMeta: true });
       if (res && res.ok && res.meta) fresh = res.meta;
     } catch (_) { /* 单文件失败只降级 */ }
-    if (!fresh) out.failed++;
-    patches.push({ id: r.id, meta: colorPatch(r.meta, fresh) });
     out.scanned++;
+    if (!fresh) {
+      out.failed++;   // 失败不进 patches，下次启动继续尝试
+      continue;
+    }
+    patches.push({ id: r.id, meta: colorPatch(r.meta, fresh) });
     if ((i + 1) % YIELD_EVERY === 0) await yieldTick();
   }
 
+  if (!patches.length) {
+    // 全失败时一次库写入都不做，留待下次启动重试。
+    out.duration = Date.now() - startedAt;
+    return out;
+  }
   try {
     await store.updateLibrary((target) => {
       for (const p of patches) {
