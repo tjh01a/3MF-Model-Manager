@@ -52,8 +52,9 @@ function tsStamp(d) {
 /** 损坏文件留底：原 library.json 一个字节都不能丢。 */
 function corruptBackupPath(file) {
   const d = new Date();
-  const p = (n) => String(n).padStart(2, '0');
-  const stamp = tsStamp(d) + '-' + p(d.getMilliseconds());
+  // 毫秒固定 3 位：否则 -57 会排在 -570 前后错位，备份名也不再定宽。
+  const ms = (n) => String(n).padStart(3, '0');
+  const stamp = tsStamp(d) + '-' + ms(d.getMilliseconds());
   return `${file}.corrupt-${stamp}`;
 }
 

@@ -65,7 +65,7 @@ function simpleStore(models = {}) {
 async function testDataFiles() {
   section('1. filaments / receipts 损坏与不可读');
   const { FilamentService, normalizeFilament, corruptBackupPath } = require('../src/core/filaments');
-  const { ReceiptService, normalizeReceipt } = require('../src/core/receipts');
+  const { ReceiptService, normalizeReceipt, corruptBackupPath: receiptsBackupPath } = require('../src/core/receipts');
 
   const dir = path.join(tmp, 'datafiles');
   paths.setDataDir(dir);
@@ -116,6 +116,9 @@ async function testDataFiles() {
   await svc.init();
   ok('receipts 损坏留底', svc.recovery && svc.recovery.kind === 'corrupt'
     && fs.readFileSync(svc.recovery.backup, 'utf8') === 'not json at all');
+  ok('receipts 备份名毫秒补 3 位', /\.corrupt-\d{8}-\d{6}-\d{3}$/.test(svc.recovery.backup), svc.recovery.backup);
+  ok('receipts 备份名生成函数可用',
+    /\.corrupt-\d{8}-\d{6}-\d{3}$/.test(receiptsBackupPath(rFile)));
   ok('receipts 从空列表启动', svc.list().length === 0);
 }
 
@@ -134,6 +137,7 @@ async function testStore() {
     && store.recovery.source === 'fresh');
   ok('store 原文件字节留底',
     store.recovery.backup && fs.readFileSync(store.recovery.backup, 'utf8') === '{this is broken');
+  ok('store 备份名毫秒补 3 位', /\.corrupt-\d{8}-\d{6}-\d{3}$/.test(store.recovery.backup), store.recovery.backup);
   ok('store 重置后的库文件合法', !!store.getLibrary().models);
 
   const store2 = new Store({});
