@@ -48,8 +48,10 @@ npx esbuild src/lib/node-entry.ts --bundle --platform=node --format=cjs \
    而用户库里 180 MB 级的 3MF 解压后普遍在 850 MB ~ 1.2 GB，原值会直接判失败。
    调用方在 `src/core/u1convert.js` 里设置上限。
 
-2. **`retargetThreeMF` 加了 `export`**，只为能被入口文件引用（不导出也能打包，但显式些更清楚）。
-   注意：真正的公开入口是 `cleanThreeMF`，`retargetThreeMF` 只处理「同族换机」，不要直接调。
+2. **`retargetThreeMF` 加到导出表**（2026-11-24）：排查 A1 mini 错位时需要在 Node 侧做「同族换机」实测，
+   esbuild 产物默认不导出它，这里在 `__export(node_entry_exports, {...})` 里补一行。
+   注意：它的入参是 `entries`（路径 → Uint8Array），返回 `{ blob, ... }`，不是 Buffer。
+   目前只用于走查脚本，正式转换流程没有调用；生产路径的床位补偿在我们自己的 `src/core/u1bedshift.js`。
 
 ## 已知缺陷（我们在调用侧补齐，未改上游）
 
