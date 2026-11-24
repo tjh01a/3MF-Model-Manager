@@ -9,8 +9,8 @@
 - ✅ `.gitignore` 已排除 `data/`（你的真实模型库、打印机访问码）、`dist/`、`node_modules/`
 - ✅ 源码 / README / 文档里的真实内网 IP、设备型号已全部换成示例值（2026-11-21 复查通过）
 - ✅ `LICENSE`（MIT）和第三方许可声明已就位
-- ✅ 完整测试通过：12 套 / 507 条断言 / 0 失败
-- ✅ 发布包已生成：`dist/PrintShelf-1.0.0-portable.zip`（113 MB）、绿色版目录（270 MB）
+- ✅ 完整测试通过：12 套 / 507 条断言 / 0 失败（**历史基线数字，以当前 `npm run selftest` 实际输出为准**；当前 IPC 契约口径为 **127 方法 / 20 事件**）
+- ✅ 发布包已生成：`dist/3MF模型管理器-1.1.0-portable.zip`（约 113 MB）与 `dist/3MF模型管理器-1.1.0-setup.exe`；绿色版目录为 `dist/3MF模型管理器-1.1.0-win-x64/`。版本号取自 `package.json` 的 `version`，1.0.x 的英文命名产物属历史遗留。
 
 ### 你需要提前准备的东西
 
@@ -60,7 +60,8 @@
 现在提交记录里显示的是占位符 `PrintShelf`。注册完 GitHub 后，改成你自己的名字和邮箱：
 
 ```bash
-cd /d/AI工具workbuddy/PrintShelf
+# 进入你克隆下来的项目目录（路径按自己的实际情况调整）
+cd <项目目录>
 
 git config user.name "你的GitHub用户名"
 git config user.email "你的注册邮箱"
@@ -73,7 +74,7 @@ git rebase --root --exec "git commit --amend --reset-author --no-edit"
 
 > 如果不想公开你的真实邮箱，GitHub 提供隐私邮箱：在 GitHub → Settings → Emails → 勾选 "Keep my email addresses private"，会给你一个类似 `12345678+yourname@users.noreply.github.com` 的地址，用它代替上面的注册邮箱。
 >
-> 注意：`v1.0.0` 标签是在改写作者之前打的。如果希望标签也指向改写后的提交，改完作者后执行一次：`git tag -f -a v1.0.0 -m "PrintShelf v1.0.0 — 首个公开版本"`。
+> 注意：`v1.0.0` 标签是在改写作者之前打的（历史标签）。如果希望它也指向改写后的提交，改完作者后执行一次：`git tag -f -a v1.0.0 -m "PrintShelf v1.0.0 — 首个公开版本"`。发布当前 1.1.0 版本时请另打 `v1.1.0` 标签，不要复用旧标签。
 
 ### 2.2 关联远程仓库并推送
 
@@ -86,7 +87,7 @@ https://github.com/你的用户名/PrintShelf.git
 然后在终端（Git Bash / PowerShell 都行）执行：
 
 ```bash
-cd /d/AI工具workbuddy/PrintShelf
+cd <项目目录>
 
 # 关联远程仓库（把 URL 换成你自己的）
 git remote add origin https://github.com/你的用户名/PrintShelf.git
@@ -121,9 +122,9 @@ git push origin v1.0.0
 GitHub 的 Release 可以放安装包，别人不用装 Node 也能用：
 
 1. 仓库页面右侧 **Releases** → **Create a new release**
-2. **Choose a tag** 里选已经存在的 `v1.0.0`（本地已经打好并会随下面命令推上去）
-3. Title 填 `PrintShelf 1.0.0`
-4. 把 `dist/PrintShelf-1.0.0-portable.zip`（113 MB）拖进附件区
+2. **Choose a tag** 里选当前版本对应的 tag（如 `v1.1.0`；若尚未创建，先在 GitHub 上新建该 tag 并把本地标签推上去。仓库里已有的 `v1.0.0` 是历史标签）
+3. Title 填 `3MF模型管理器 1.1.0`
+4. 把 `dist/3MF模型管理器-1.1.0-portable.zip`（约 113 MB）拖进附件区；也可以同时附上 `dist/3MF模型管理器-1.1.0-setup.exe`
 5. 写几句说明，点 **Publish release**
 
 关于大小限制，说清楚免得担心：
@@ -140,7 +141,7 @@ GitHub 的 Release 可以放安装包，别人不用装 Node 也能用：
 每次改完代码，执行三条命令：
 
 ```bash
-cd /d/AI工具workbuddy/PrintShelf
+cd <项目目录>
 
 git add -A
 git commit -m "简单描述这次改了什么"
@@ -177,7 +178,7 @@ git push
 ## 检查清单（推送前对照）
 
 ```bash
-cd /d/AI工具workbuddy/PrintShelf
+cd <项目目录>
 git status --short    # 应该没有 data/ dist/ node_modules/ 开头的文件
 git log --oneline -3  # 应该看到 3 个提交
 git tag -l            # 应该看到 v1.0.0
