@@ -102,7 +102,9 @@ function testRecenter() {
   const U1 = ['0.5x1', '270.5x1', '270.5x271', '0.5x271'];
 
   const d = recenterDelta(A1M, U1);
-  ok('每轴补 45 mm', d.dx === 45 && d.dy === 45, JSON.stringify(d));
+  // 方向由拓竹实测确定：A1 mini→A1（180→256）是 −38，正好 (180−256)/2
+  ok('每轴 −45 mm（与拓竹换机同向）', d.dx === -45 && d.dy === -45, JSON.stringify(d));
+  ok('A1 mini→A1 复现拓竹的 −38', recenterDelta(A1M, ['0x0', '256x0', '256x256', '0x256']).dx === -38);
   ok('同尺寸床不补', recenterDelta(U1, U1).dx === 0 && recenterDelta(U1, U1).dy === 0);
 
   const src = path.join(tmp, 'recenter-in.3mf');
@@ -120,8 +122,8 @@ function testRecenter() {
   const z2 = new AdmZip(r.buffer);
   const model = z2.readAsText('3D/3dmodel.model');
   const ms = z2.readAsText('Metadata/model_settings.config');
-  ok('build item 平移 +45', model.includes('105.5 145 -2'), model.match(/transform="([^"]*)"/)[1]);
-  ok('assemble 平移 +45', ms.includes('105.5 145 -2'), ms.match(/transform="([^"]*)"/)[1]);
+  ok('build item 平移 −45', model.includes('15.5 55 -2'), model.match(/transform="([^"]*)"/)[1]);
+  ok('assemble 平移 −45', ms.includes('15.5 55 -2'), ms.match(/transform="([^"]*)"/)[1]);
   ok('z 轴不动', model.includes('-2') && !model.includes('43'));
 
   const same = applyBedRecenter(fs.readFileSync(src), { srcArea: U1, dstArea: U1 });

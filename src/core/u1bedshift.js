@@ -39,15 +39,22 @@ function bedRect(area) {
 }
 
 /**
- * 需要额外平移多少：让「源床坐标里的内容」在「目标床」上保持同样的居中程度。
- * 只算尺寸差的一半——原点差上游引擎已经补过（见文件头说明）。
+ * 需要额外平移多少：床变大时对象坐标要**变小**，因为盘坐标以床中心为基准。
+ *
+ * 方向由拓竹自己的行为实测确定（2026-11-24）：同一个项目在 Bambu Studio 里
+ * 把打印机从 A1 mini（180）换成 A1（256）后另存，87 个对象的 assemble 平移
+ * **全部**是 −38.00 —— 正好等于 (180 − 256) / 2。所以公式是 (源床 − 目标床) / 2，
+ * 不是反过来；上一版用了正号，往错的方向推了 90 mm，看起来比不补还歪。
+ *
+ * 于是 A1 mini → U1 直接转换得到 −45，与「先用拓竹换成 A1（−38）再转 U1（−7）」
+ * 两段相加完全一致，不需要多一步中转。
  */
 function recenterDelta(srcArea, dstArea) {
   const a = bedRect(srcArea);
   const b = bedRect(dstArea);
   if (!a || !b) return { dx: 0, dy: 0, reason: '缺少 printable_area' };
-  const dx = +(((b.w - a.w) / 2)).toFixed(4);
-  const dy = +(((b.h - a.h) / 2)).toFixed(4);
+  const dx = +(((a.w - b.w) / 2)).toFixed(4);
+  const dy = +(((a.h - b.h) / 2)).toFixed(4);
   return { dx, dy, src: a, dst: b };
 }
 

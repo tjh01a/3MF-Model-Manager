@@ -27,7 +27,9 @@ __export(node_entry_exports, {
   dropRangeLayerHeights: () => dropRangeLayerHeights,
   getMachine: () => getMachine,
   normalizeHex: () => normalizeHex2,
-  u1NozzleVariant: () => u1NozzleVariant
+  u1NozzleVariant: () => u1NozzleVariant,
+  // PrintShelf 追加：同族换机（拓竹→拓竹）用它先重排盘位，见 SOURCE.md
+  retargetThreeMF: () => retargetThreeMF
 });
 module.exports = __toCommonJS(node_entry_exports);
 
