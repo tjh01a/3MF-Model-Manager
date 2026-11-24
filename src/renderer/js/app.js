@@ -25,6 +25,7 @@ import { isModalOpen, confirmDialog, promptDialog } from './components/modal.js'
 import { openClassifyPrompt } from './components/classify-prompt.js';
 import { mountMenu, closeMenu, isMenuOpen } from './components/menu.js';
 import { mountBulkbar, syncBulkbar } from './components/bulkbar.js';
+import { mountSiteLinks } from './components/site-links.js';
 import { openModelsWithChoice } from './components/openwith.js';
 import { pickModelsForCategory } from './components/assign.js';
 import { mountMeshOpt } from './components/meshopt.js';
@@ -83,6 +84,7 @@ export function init() {
 
     bindRefresh();
     bindWebLinks();
+    mountSiteLinks().catch(() => {});
     bindGlobalKeys();
     bindDragDrop();
     bindTitlebar();

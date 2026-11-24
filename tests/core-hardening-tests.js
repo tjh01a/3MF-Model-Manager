@@ -81,7 +81,8 @@ async function testDataFiles() {
   ok('filaments 原文件字节已另存 .corrupt-*',
     fs1.recovery.backup.indexOf('.corrupt-') > 0 && fs.readFileSync(fs1.recovery.backup, 'utf8') === broken);
   ok('filaments 从空库启动', fs1.list().items.length === 0);
-  ok('备份名生成函数可用', /\.corrupt-\d{8}-\d{6}-\d{3}$/.test(corruptBackupPath(fFile)));
+  const backupName = corruptBackupPath(fFile);
+  ok('备份名生成函数可用', /\.corrupt-\d{8}-\d{6}-\d{3}$/.test(backupName), backupName);
 
   // 读取失败（把文件位置做成目录）：一字不写，抛中文错误
   const dirAsFile = path.join(dir, 'unreadable');

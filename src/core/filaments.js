@@ -131,7 +131,9 @@ function sniffImageExt(buf) {
 function corruptBackupPath(file) {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
-  const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${p(d.getMilliseconds())}`;
+  // 毫秒必须补到 3 位：补不齐时 "...-57" 会和 "...-570" 排错序，备份名也不再定宽
+  const ms = (n) => String(n).padStart(3, '0');
+  const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${ms(d.getMilliseconds())}`;
   return `${file}.corrupt-${stamp}`;
 }
 

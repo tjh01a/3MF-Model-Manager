@@ -2332,3 +2332,26 @@ html[data-theme="dark"] .dev-cam-note { background: #3a2a14; color: #fbbf24; }
   .imged-stage { width: 100%; height: 280px; }
   .imged-side { flex: 0 0 auto; width: 100%; }
 }
+
+/* ---------- 常用模型网站：用户自添加（创想云等） ---------- */
+.stats-site-add { padding: 0 6px; color: var(--text-mute); }
+.stats-site-add:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.stats-site .stats-site-name { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 弹窗内的「已添加」列表 */
+.site-form { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; margin-bottom: 4px; }
+.site-list-wrap { margin-top: 8px; max-height: 220px; overflow: auto; }
+.site-list { display: flex; flex-direction: column; gap: 6px; }
+.site-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+}
+.site-row-name { font-size: 13px; font-weight: 600; color: var(--text); flex: 0 0 auto; max-width: 40%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.site-row-url { font-size: 12px; color: var(--text-mute); flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.site-row .btn { flex: 0 0 auto; }
+
+@media (max-width: 720px) {
+  .site-form { grid-template-columns: 1fr; }
+}
