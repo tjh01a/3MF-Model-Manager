@@ -186,6 +186,7 @@ function renderU1() {
     : (cur.filamentPreset ? '预设已选中，但没能解析出参数（会只写入名字）' : '不选则沿用 U1 样板自带的耗材参数');
 
   const openWith = cur.openWith || 'ask';
+  const keepAll = cur.keepAllColours !== false;
   const owOpts = [
     ['ask', '每次询问（推荐）'],
     ['bambu', '总是用拓竹打开'],
@@ -207,6 +208,12 @@ function renderU1() {
     ) +
     row(field('打开模型时', '<select class="input" data-u1="openWith">' + owOpts + '</select>',
       '「每次询问」会在打开时弹一句，可勾选记住；官方 Orca 需先装 Snapmaker U1 共享配置')) +
+    row(field('颜色超过 4 色时',
+      '<select class="input" data-u1="keepAllColours">' +
+        '<option value="1"' + (keepAll ? ' selected' : '') + '>保留全部颜色（推荐）</option>' +
+        '<option value="0"' + (keepAll ? '' : ' selected') + '>自动压到 4 色</option>' +
+      '</select>',
+      'U1 只有 4 个工具头：保留全部颜色时，多出来的颜色要在 Orca 里手动换料；自动压色能直接打，但可能把某种颜色并掉')) +
     orcaLine +
     '<div class="btn-row">' +
       actionBtn('u1-open-cache', 'i-folder-open', '打开缓存目录') +
@@ -1149,6 +1156,7 @@ async function refreshU1(force) {
 }
 
 async function updateU1(key, value) {
+  if (key === 'keepAllColours') value = value === '1' || value === 'true';
   const cur = (state.settings && state.settings.u1) || {};
   const patch = Object.assign({}, cur, { [key]: value });
   try {

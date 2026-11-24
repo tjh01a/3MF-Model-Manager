@@ -59,6 +59,10 @@ class U1Converter extends EventEmitter {
       filamentPreset: u1.filamentPreset || '',
       processPreset: u1.processPreset || '',
       cacheKeepDays: Number.isFinite(u1.cacheKeepDays) ? u1.cacheKeepDays : 30,
+      // 源文件超过 4 色时：默认保留全部颜色（用户 2026-11-24 决定）。
+      // 引擎默认会把颜色压到 4 槽，而它对「整模涂色」的模型只能按对象级 extruder 统计，
+      // 用量全是 0，于是按顺序把白色/橙色这类大面积色并掉，转换后颜色明显对不上。
+      keepAllColours: u1.keepAllColours !== false,
     };
   }
 
@@ -76,13 +80,15 @@ class U1Converter extends EventEmitter {
    * 缓存键：源路径 + 修改时间 + 大小 + 两个预设名。
    * 源文件被重新下载/编辑，或换了预设，键就变，自动失效。
    */
-  cacheKey(srcPath, { filamentPreset, processPreset }) {
+  cacheKey(srcPath, { filamentPreset, processPreset, keepAllColours }) {
     let mtime = 0, size = 0;
     try {
       const st = fs.statSync(srcPath);
       mtime = st.mtimeMs; size = st.size;
     } catch (_) { /* 不存在时由上层报错 */ }
-    return sha1([srcPath, mtime, size, filamentPreset || '', processPreset || ''].join('|')).slice(0, 16);
+    // keepAllColours 必须进键：以前生成的「压成 4 色」缓存不能当成「保留全部颜色」的结果复用。
+    const keep = keepAllColours === false ? 'reduce' : 'keep';
+    return sha1([srcPath, mtime, size, filamentPreset || '', processPreset || '', keep].join('|')).slice(0, 16);
   }
 
   cachePathFor(srcPath, key) {
@@ -150,11 +156,12 @@ class U1Converter extends EventEmitter {
     const cfg = this.settings();
     const filamentPreset = opts.filamentPreset != null ? opts.filamentPreset : cfg.filamentPreset;
     const processPreset = opts.processPreset != null ? opts.processPreset : cfg.processPreset;
+    const keepAllColours = opts.keepAllColours != null ? !!opts.keepAllColours : cfg.keepAllColours;
 
     if (!srcPath || !fs.existsSync(srcPath)) throw new Error('模型文件不存在：' + srcPath);
     if (!/\.3mf$/i.test(srcPath)) throw new Error('只有 .3mf 文件需要转换（当前文件：' + path.basename(srcPath) + '）');
 
-    const plan = { filamentPreset, processPreset };
+    const plan = { filamentPreset, processPreset, keepAllColours };
     if (!opts.force) {
       const hit = this.cachedFor(srcPath, plan);
       if (hit) {
@@ -172,7 +179,7 @@ class U1Converter extends EventEmitter {
     // 轻则白做功，重则拿到半写文件；cancel() 也会终止错的那一个。
     const running = this._inflight.get(key);
     if (running) return running;
-    const task = this._runConvert({ srcPath, outPath, key, opts, filamentPreset, processPreset, timeoutMs: Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : DEFAULT_TIMEOUT_MS });
+    const task = this._runConvert({ srcPath, outPath, key, opts, filamentPreset, processPreset, keepAllColours, timeoutMs: Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : DEFAULT_TIMEOUT_MS });
     this._inflight.set(key, task);
     try {
       return await task;
@@ -182,7 +189,7 @@ class U1Converter extends EventEmitter {
   }
 
   /** 真正起 worker 的那一段（已被 convert 的 in-flight 表串行化） */
-  async _runConvert({ srcPath, outPath, key, opts, filamentPreset, processPreset, timeoutMs }) {
+  async _runConvert({ srcPath, outPath, key, opts, filamentPreset, processPreset, keepAllColours, timeoutMs }) {
 
     // 预设展开：槽位数取 U1 的工具头数 4
     const fil = this._presetValues('filament', filamentPreset, 4);
@@ -206,6 +213,7 @@ class U1Converter extends EventEmitter {
             filamentValues: fil.values,
             processPreset: processPreset || '',
             processValues: proc.values,
+            keepAllColours: keepAllColours !== false,
           },
         },
         resourceLimits: { maxOldGenerationSizeMb: 4096 },

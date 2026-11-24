@@ -426,6 +426,12 @@ async function testReal() {
   ok('转换不改源文件（转换期间）',
     r.report && Math.abs(Number(r.report.sourceBytes) - before.size) < 1, String(r.report && r.report.sourceBytes));
 
+  if (r.report && r.report.colorsTotal > 4) {
+    ok('源文件超过 4 色时全部保留（默认策略）',
+      r.report.colorsKept === r.report.colorsTotal,
+      r.report.colorsTotal + '→' + r.report.colorsKept);
+  }
+
   const cfg = readCfg(r.outPath);
   ok('产物声明 U1 兼容',
     JSON.stringify(cfg.print_compatible_printers) === JSON.stringify(['Snapmaker U1 (0.4 nozzle)']),
@@ -457,6 +463,19 @@ async function testReal() {
   const again = await C.convert(sample);
   ok('二次转换命中缓存', again.cached === true && again.outPath === r.outPath, String(again.cached));
   ok('缓存统计有计数', C.cacheStats().count >= 1);
+}
+
+// ============================================================ [7] 颜色策略
+function testColorPolicy() {
+  console.log('\n[7] 颜色策略（默认保留全部颜色）');
+  const C = new U1Converter({ store: { getSettings: () => ({ u1: {} }) } });
+  ok('默认 keepAllColours=true', C.settings().keepAllColours === true);
+  const C2 = new U1Converter({ store: { getSettings: () => ({ u1: { keepAllColours: false } }) } });
+  ok('显式关掉时为 false', C2.settings().keepAllColours === false);
+  const k1 = C.cacheKey(__filename, { keepAllColours: true });
+  const k2 = C.cacheKey(__filename, { keepAllColours: false });
+  ok('两种策略缓存键不同', k1 !== k2, k1 + ' / ' + k2);
+  ok('只给预设不给策略时按保留算', C.cacheKey(__filename, {}) === k1);
 }
 
 // ============================================================ [4] 打开路径
@@ -546,6 +565,7 @@ async function testOpenPath() {
   try {
     testPatch();
     testRecenter();
+    testColorPolicy();
     testPresets();
     await testReal();
     await testOpenPath();

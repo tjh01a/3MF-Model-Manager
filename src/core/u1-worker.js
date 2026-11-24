@@ -60,7 +60,13 @@ async function run() {
 
   send({ stage: 'convert', message: '重新生成快造配置…' });
   const t0 = Date.now();
-  const result = await engine.cleanThreeMF(file, 'u1', { mode: 'stamp' });
+  const result = await engine.cleanThreeMF(file, 'u1', {
+    mode: 'stamp',
+    // 默认保留源文件所有颜色（用户 2026-11-24 决定）。引擎默认压到 4 槽时，
+    // 对整模涂色（paint_color）的模型会按对象级 extruder 用量选色——用量全是 0，
+    // 于是把白色/橙色这类大面积色按顺序并掉，转完颜色明显不对。
+    keepAllColours: opts.keepAllColours !== false,
+  });
   const bytes = Buffer.from(await result.blob.arrayBuffer());
 
   send({ stage: 'patch', message: '应用你的耗材与进程预设…' });
