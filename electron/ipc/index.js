@@ -112,7 +112,7 @@ function registerIpc(services, { getWindow = () => null } = {}) {
       let target = u;
       try {
         const s = store().getSettings() || {};
-        if (s.ui && s.ui.makerWorldCn === true) target = cnMakerWorldUrl(u) || u;
+        if (!s.ui || s.ui.makerWorldCn !== false) target = cnMakerWorldUrl(u) || u;
       } catch (_) { /* 读设置失败就按原链接打开 */ }
       await shell.openExternal(target);
     },

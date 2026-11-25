@@ -325,6 +325,7 @@ function group(name) { console.log('\n' + name); }
     ok(fs.existsSync(paths.getLibraryPath()), 'library.json 未创建');
     ok(fs.existsSync(paths.getSettingsPath()), 'settings.json 未创建');
     eq(store.getSettings().ui.view, 'grid');
+    eq(store.getSettings().ui.makerWorldCn, true, 'MakerWorld 应默认自动打开中国站');
     ok(store.getLibrary().categories.length >= 4, '默认分类未生成');
   });
   await t('updateLibrary 原子写入并落盘', async () => {

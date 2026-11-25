@@ -73,10 +73,12 @@ async function backfillSourceUrls(store) {
 
 /**
  * 国际站链接 → 中国站同路径链接（保留路径 / query / 锚点）。
- * 注意：两站是**独立的模型库，ID 不通用**，多数情况下中国站没有这个 ID。
- * 曾经试过「探测中国站页面是否存在再决定」，实测两站对非浏览器请求都返回 403、
- * 国服搜索 URL 也 404，所以改成了设置里的显式开关 ui.makerWorldCn：
- * 用户自己决定要不要换域名，换过去是否存在由站点自己提示。
+ * 注意：两站是**独立的模型库，ID 不通用**，少数国际站模型在国服不存在。
+ * 默认开启自动换站（ui.makerWorldCn），用户可以自己关掉回到国际站；
+ * 换过去是否存在由站点自己提示。
+ *
+ * 语言段也一起归一：makerworld.com/en/models/... → makerworld.com.cn/zh/models/...
+ * 只换域名的话，国服可能停在英文界面或再弹一次站点提示。
  * 非 makerworld.com 域名返回 null（不需要转换）。
  */
 function cnMakerWorldUrl(rawUrl) {
@@ -84,6 +86,11 @@ function cnMakerWorldUrl(rawUrl) {
     const u = new URL(String(rawUrl || ''));
     if (!/(^|\.)makerworld\.com$/i.test(u.hostname)) return null;
     u.hostname = 'makerworld.com.cn';
+    // /en/、/es/、/zh-cn/ 等语言前缀统一成国服默认的 /zh/；
+    // 没有语言段的 /models/... 保持原样。
+    if (/^\/[a-z]{2}(?:-[a-z]{2})?(?:\/|$)/i.test(u.pathname)) {
+      u.pathname = u.pathname.replace(/^\/[a-z]{2}(?:-[a-z]{2})?/i, '/zh');
+    }
     return u.toString();
   } catch (_) { return null; }
 }

@@ -70,6 +70,16 @@ ok('保留路径与 profileId 锚点',
   cnMakerWorldUrl('https://makerworld.com/zh/models/1-a#profileId-2'));
 ok('www 前缀也能转',
   cnMakerWorldUrl('https://www.makerworld.com/models/9') === 'https://makerworld.com.cn/models/9');
+ok('英文语言段切到国服 /zh',
+  cnMakerWorldUrl('https://makerworld.com/en/models/9-x?from=search#profileId-3')
+    === 'https://makerworld.com.cn/zh/models/9-x?from=search#profileId-3',
+  cnMakerWorldUrl('https://makerworld.com/en/models/9-x?from=search#profileId-3'));
+ok('西语语言段也切到 /zh',
+  cnMakerWorldUrl('https://makerworld.com/es/models/9') === 'https://makerworld.com.cn/zh/models/9');
+ok('/en 根路径也归一到 /zh',
+  cnMakerWorldUrl('https://makerworld.com/en') === 'https://makerworld.com.cn/zh');
+ok('没有语言段的路径保持原样',
+  cnMakerWorldUrl('https://makerworld.com/models/9') === 'https://makerworld.com.cn/models/9');
 ok('本来就是国服，不转',
   cnMakerWorldUrl('https://makerworld.com.cn/zh/models/1') === null);
 ok('其它站点不碰',

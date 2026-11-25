@@ -255,3 +255,4 @@ node launch.js --capture=data/ui-xxx.png --ui-script=tools/probe-xxx.js
 | 2026-11-24 | 重复文件一键清除 | 新增「每组留 1 个」批量清理：优先留有备注/评分等人工信息的副本，其余进回收站；疑似重复不参与；重复徽标改为「组内 ≥2」口径 |
 | 2026-11-25 | 通用耗材随包分发 | 3 条通用耗材及图片放进 `resources/builtin-filaments/`，首次启动写入用户耗材库；按「品牌+名称+类型」去重，老数据不覆盖、重启不重复塞入 |
 | 2026-11-25 | 开发版任务栏图标 | 源码模式不再直接启动 `electron.exe`；先在 Electron 目录生成写入 `app.ico` 的 `PrintShelf-dev.exe` 再启动，任务栏不再显示 Electron 原子图标 |
+| 2026-11-25 | 来源链接默认跳国内站 | MakerWorld 国际站链接默认换成 `makerworld.com.cn`，语言段统一 `/zh`；老设置一次性迁移，关掉开关可回国际站 |

@@ -97,7 +97,8 @@ const DEFAULT_SETTINGS = {
     // 是否让系统的「减少动态效果」压制应用内档位。默认 false：应用设置优先，
     // 系统偏好只作为建议（游戏、多数桌面软件都不跟随）。需要无障碍降级的用户可打开。
     motionFollowSystem: false,
-    makerWorldCn: false,     // 打开 MakerWorld 链接时把域名换成 .com.cn（两站模型库独立，ID 不通用）
+    makerWorldCn: true,      // 打开 MakerWorld 链接时自动换成 .com.cn（两站模型库独立，ID 不通用）
+    makerWorldCnMigrated: true, // 老版本默认 false，升级时一次性切到 true；之后用户手动关掉不再翻回来
     monitorBar: true,        // 主界面常驻打印监控条（可在设置 → 打印监控里关掉）
   },
   // 首次启动向导（docs/16）：done 一旦为真就不再自动弹；skipped 只用于区分「跳过」与「走完」

@@ -291,6 +291,12 @@ class Store extends EventEmitter {
     const rawSettings = (sread.exists && !sread.corrupt && sread.value
       && typeof sread.value === 'object' && !Array.isArray(sread.value)) ? sread.value : {};
     this._settings = mergeSettings(deepClone(C.DEFAULT_SETTINGS), rawSettings);
+    // 老版本把「MakerWorld 优先中国站」默认关着。升级时只把从没动过这个开关的
+    // 老用户切到默认开启；已经有 makerWorldCnMigrated 标记的，尊重用户手动关闭。
+    const rawUi = rawSettings && rawSettings.ui;
+    if (rawUi && rawUi.makerWorldCn === false && rawUi.makerWorldCnMigrated !== true) {
+      this._settings.ui.makerWorldCn = true;
+    }
     if (!sread.exists || sread.corrupt
       || JSON.stringify(rawSettings) !== JSON.stringify(this._settings)) {
       this._atomicWrite(p.settings, this._settings);

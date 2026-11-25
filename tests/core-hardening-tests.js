@@ -152,6 +152,22 @@ async function testStore() {
   try { await store2.importFrom(bad, { merge: false }); } catch (e) { err = e; }
   ok('坏记录导入被拒绝', !!err && /无效记录/.test(err.message), err && err.message);
   ok('拒绝导入后旧库未被替换', Object.keys(store2.getLibrary().models).length === before);
+
+  // 老版本默认 makerWorldCn=false；升级时只迁移一次，用户手动关掉后不能又翻回去
+  const migDir = path.join(tmp, 'store-makerworld');
+  mkdirp(migDir);
+  paths.setDataDir(migDir);
+  fs.writeFileSync(paths.getSettingsPath(), JSON.stringify({ ui: { makerWorldCn: false } }), 'utf8');
+  const s3 = new Store({});
+  await s3.init();
+  ok('老设置升级后默认切到中国站',
+    s3.getSettings().ui.makerWorldCn === true && s3.getSettings().ui.makerWorldCnMigrated === true,
+    JSON.stringify(s3.getSettings().ui));
+  await s3.updateSettings({ ui: { makerWorldCn: false } });
+  const s4 = new Store({});
+  await s4.init();
+  ok('用户手动关闭后不被迁移翻回', s4.getSettings().ui.makerWorldCn === false,
+    JSON.stringify(s4.getSettings().ui));
 }
 
 // ============================================================ 3. 扫描并发合并
