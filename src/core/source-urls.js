@@ -45,7 +45,10 @@ async function backfillSourceUrls(store) {
       const m = todo[cursor++];
       try {
         const r = await parse3mf(m.path, { withThumbnail: false, withMeta: true });
-        const url = r && r.meta && r.meta.sourceUrl;
+        const meta = (r && r.meta) || {};
+        let url = meta.sourceUrl || null;
+        // 描述里没有链接时，用 DesignProfileId 反查国服作品页（仅 CN 项目）
+        if (!url) url = await resolveMakerWorldSource(meta);
         if (url) hits.push({ id: m.id, url });
       } catch (_) { /* 单个文件坏了就跳过，不影响整批 */ }
     }
@@ -95,4 +98,56 @@ function cnMakerWorldUrl(rawUrl) {
   } catch (_) { return null; }
 }
 
-module.exports = { backfillSourceUrls, cnMakerWorldUrl };
+// DesignModelId -> 作品页 URL / null；映射稳定，进程内缓存，避免重复请求。
+const modelUrlCache = new Map();
+
+/**
+ * 用 3MF 里的 DesignModelId 反查 MakerWorld 国服作品页。
+ *
+ * 背景：部分 MakerWorld 下载的 3MF 只在 Description 里写介绍，不写 URL；
+ * 但 3D/3dmodel.model 里有 DesignModelId（例如 CN43896f4bbe0ae7）。
+ * Bambu Studio 自己用 v1/design-service/model/{DesignModelId} 拿到数值 id，
+ * 再拼成 /models/{id} 作品页；这里复用同一路径，不需要登录。
+ *
+ * 走 api.bambulab.cn（国服），不会被 makerworld.com.cn 的 Cloudflare 挑战拦；
+ * 失败/超时一律返回 null，不阻断扫描或回填。只处理 DesignRegion=CN
+ *（或 DesignModelId 以 CN 开头）的项目。
+ */
+async function resolveMakerWorldSource(meta, opts = {}) {
+  const modelId = String((meta && meta.designModelId) || '').trim();
+  const region = String((meta && meta.designRegion) || '').trim().toUpperCase();
+  if (!modelId) return null;
+  if (region && region !== 'CN' && !/^CN/i.test(modelId)) return null;
+
+  if (modelUrlCache.has(modelId)) return modelUrlCache.get(modelId);
+  if (opts.cache === false) modelUrlCache.delete(modelId);
+
+  const fetchImpl = opts.fetchImpl || globalThis.fetch;
+  if (typeof fetchImpl !== 'function') return null;
+  const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 4500;
+  const endpoint = 'https://api.bambulab.cn/v1/design-service/model/'
+    + encodeURIComponent(modelId);
+
+  let timer = null;
+  try {
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    if (ctrl) timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const r = await fetchImpl(endpoint, {
+      headers: { accept: 'application/json', 'user-agent': 'PrintShelf/1.0' },
+      signal: ctrl ? ctrl.signal : undefined,
+    });
+    if (!r || r.ok === false) return null;
+    const j = await r.json();
+    const designId = Number(j && j.id);
+    if (!Number.isFinite(designId) || designId <= 0) return null;
+    const url = 'https://makerworld.com.cn/zh/models/' + designId;
+    modelUrlCache.set(modelId, url);
+    return url;
+  } catch (_) {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+module.exports = { backfillSourceUrls, cnMakerWorldUrl, resolveMakerWorldSource };

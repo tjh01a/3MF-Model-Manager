@@ -30,6 +30,8 @@ function emptyMeta() {
     filamentColors: [], filamentTypes: [], colorSource: null,
     objNames: [],
     sourceUrl: null,
+    // MakerWorld 项目身份：有些 3MF 的描述里没链接，但带 DesignProfileId；可用它反查作品页
+    designModelId: null, designProfileId: null, designRegion: null,
     // 成本账本（13）：切片重量 + 逐耗材用量；没有切片数据时为 null
     weightG: null, weightSource: null, filamentUsages: [],
   };
@@ -490,6 +492,11 @@ function extractMeta(entries, opts, thumbnailName) {
       }
       const t = gm('Title'); if (t) meta.title = t;
       const d = gm('Designer'); if (d) meta.designer = d;
+      // MakerWorld 项目身份：Bambu Studio 的「项目信息」超链接有时不写 URL，
+      // 只写 DesignModelId；先留着，回填时再用国服 design-service/model 反查。
+      const dm = gm('DesignModelId'); if (dm) meta.designModelId = dm;
+      const dp = gm('DesignProfileId'); if (dp) meta.designProfileId = dp;
+      const dr = gm('DesignRegion'); if (dr) meta.designRegion = dr;
       // 作品页链接：Bambu Studio「项目信息」里那个可点的地址就来自这里
       const su = extractSourceUrl(xml);
       if (su) meta.sourceUrl = su;

@@ -63,7 +63,7 @@ ok('跳过前面无关链接，命中第一个作品页',
   extractSourceUrl(multi) === 'https://makerworld.com/en/models/9', extractSourceUrl(multi));
 
 console.log('\n[4. 国际站 → 中国站候选地址]');
-const { cnMakerWorldUrl } = require('../src/core/source-urls');
+const { cnMakerWorldUrl, resolveMakerWorldSource } = require('../src/core/source-urls');
 ok('保留路径与 profileId 锚点',
   cnMakerWorldUrl('https://makerworld.com/zh/models/1-a#profileId-2')
     === 'https://makerworld.com.cn/zh/models/1-a#profileId-2',
@@ -101,9 +101,33 @@ ok('图片 URL 会被 looksBrokenUrl 识别',
 ok('正常作品页不会被 looksBrokenUrl 误杀',
   looksBrokenUrl('https://makerworld.com/es/models/1-x') === false);
 
-console.log('\n[6. 真实样本（本机有文件才跑）]');
 const sample = 'C:\\Users\\10104\\Downloads\\ocarina_simbolo_Zelda.3mf';
 (async () => {
+  console.log('\n[5b. 用 DesignModelId 反查作品页]');
+  let asked = '';
+  const fakeFetch = async (url) => {
+    asked = url;
+    return { ok: true, json: async () => ({ id: 1781480, title: '448-Mega Lucario' }) };
+  };
+  const resolved = await resolveMakerWorldSource({
+    designModelId: 'CN43896f4bbe0ae7', designProfileId: '99980830', designRegion: 'CN',
+  }, { fetchImpl: fakeFetch });
+  ok('DesignModelId 能反查出国服作品页',
+    resolved === 'https://makerworld.com.cn/zh/models/1781480', String(resolved));
+  ok('请求的是国服 design-service/model 接口',
+    /api\.bambulab\.cn\/v1\/design-service\/model\/CN43896f4bbe0ae7/.test(asked), asked);
+  const cached = await resolveMakerWorldSource({
+    designModelId: 'CN43896f4bbe0ae7', designProfileId: '99980830', designRegion: 'CN',
+  }, { fetchImpl: async () => { throw new Error('不应重复请求'); } });
+  ok('同一 DesignModelId 进程内缓存', cached === resolved);
+  const intl = await resolveMakerWorldSource({
+    designModelId: 'US1234567890', designProfileId: '12345678', designRegion: 'US',
+  }, { fetchImpl: fakeFetch });
+  ok('非 CN 项目不反查', intl === null);
+  const noId = await resolveMakerWorldSource({ designRegion: 'CN' }, { fetchImpl: fakeFetch });
+  ok('没有 DesignModelId 不反查', noId === null);
+
+  console.log('\n[6. 真实样本（本机有文件才跑）]');
   if (!fs.existsSync(sample)) {
     console.log('  - 跳过：样本文件不存在');
   } else {
