@@ -783,7 +783,6 @@
 }
 .card-price.is-unknown { color: var(--text-mute); background: var(--bg-soft); font-weight: 500; }
 .card-sub   { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
-.card-stars { margin-left: auto; font-size: 11px; letter-spacing: 1px; color: var(--star); white-space: nowrap; }
 
 /* ---- 列表模式：同一 DOM 改为行布局 ---- */
 .content-list .card {

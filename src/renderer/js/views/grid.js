@@ -2,7 +2,7 @@
 /** 网格 / 列表渲染：卡片结构严格照 DOM CONTRACT，事件委托 + 多选 + 懒加载。 */
 import { state, setState } from '../state.js';
 import { api, emitRefresh, emitToast } from '../api.js';
-import { escapeHtml, icon, fmtBytes, fmtRelative, plural, qs, qsa } from '../utils.js';
+import { escapeHtml, icon, fmtBytes, fmtRelative, qs, qsa } from '../utils.js';
 import { openDetail } from './detail.js';
 import { openLightbox } from './lightbox.js';
 import { openMenu } from '../components/menu.js';
@@ -75,16 +75,6 @@ function nextStatus(cur) {
 function findItem(id) {
   return (state.items || []).find((m) => m && m.id === id) || null;
 }
-function starsHtml(rating) {
-  const r = Math.max(0, Math.min(5, Number(rating) || 0));
-  let html = '<span class="card-stars" title="点击星级评分">';
-  for (let i = 1; i <= 5; i++) {
-    html += '<span class="star' + (i <= r ? ' on' : '') + '" data-act="rate" data-rate="' + i + '">' +
-      (i <= r ? '★' : '☆') + '</span>';
-  }
-  return html + '</span>';
-}
-
 /**
  * 缩略图右下角的耗材色板：不用点进详情就知道这个模型用了几色、分别是什么颜色。
  * 数据来自 meta.filamentColors（core/model3mf.js 按零件 extruder 映射槽位色得到），
@@ -299,10 +289,8 @@ function cardHtml(m) {
   const src = escapeHtml(m.thumbnail ? 'shelf://thumbs/' + m.thumbnail : 'assets/placeholder.svg');
   const st = PRINT_STATUS[m.printStatus] ? m.printStatus : 'unprinted';
   const meta = m.meta || {};
-  const metaBits = [fmtBytes(m.size)];
-  if (meta.objectCount) metaBits.push(plural(meta.objectCount, '个对象'));
-  else if (meta.plateCount) metaBits.push(plural(meta.plateCount, '个盘子'));
-  metaBits.push(fmtRelative(m.createdAt));
+  // 卡片只保留大小 + 时间；对象数/盘数属于详情信息，不挤在卡片上（用户 2026-11-25 要求）
+  const metaBits = [fmtBytes(m.size), fmtRelative(m.createdAt)];
   const cat = (state.categories || []).find((c) => c.id === m.categoryId);
   const chip = cat ? '<span class="chip">' + escapeHtml(cat.name) + '</span>' : '';
   // 卡片底色要用分类色：只接受安全的 #RRGGBB，非法值一律不写变量（color-mix 会回落到原底色）
@@ -350,7 +338,7 @@ function cardHtml(m) {
       '<div class="card-title" title="' + title + '">' + title + '</div>' +
       '<div class="card-meta"><span class="card-meta-text">' + escapeHtml(metaBits.join(' · ')) + '</span>' +
         priceHtml(m) + '</div>' +
-      '<div class="card-sub">' + chip + starsHtml(m.rating) + '</div>' +
+      (chip ? '<div class="card-sub">' + chip + '</div>' : '') +
     '</div>' +
   '</article>';
 }
@@ -375,8 +363,7 @@ function cardSig(m) {
     cat ? cat.name : '', cat ? (cat.color || '') : '',
     // 来源链接也要进指纹：填了/改了 URL，卡片上的浏览器按钮才会更新 data-url
     m.sourceUrl || '',
-    m.favorite ? 1 : 0, m.rating || 0, m.createdAt, dupGroupSize(m),
-    meta.objectCount || 0, meta.plateCount || 0,
+    m.favorite ? 1 : 0, m.createdAt, dupGroupSize(m),
     colors, colorTypes, colorShares, meta.colorSource || '',
     // 价格是派生值但会显示：priceHtml 读到的每个字段都要进指纹——
     // 手填重量只改 weightG、切换来源只改 source，漏掉这两项卡片文本就不会更新（docs/14）
@@ -618,11 +605,6 @@ function handleAct(act, el, card, e) {
       break;
     }
     case 'more': openMenu(e.clientX, e.clientY, menuItemsFor(state.selection.has(id) ? Array.from(state.selection) : [id])); break;
-    case 'rate': {
-      const r = Number(el.dataset.rate) || 0;
-      api.update(id, { rating: r }).then(() => emitRefresh('rating')).catch(() => {});
-      break;
-    }
     default: break;
   }
 }
