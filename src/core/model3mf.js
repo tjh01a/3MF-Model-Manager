@@ -28,6 +28,8 @@ function emptyMeta() {
     // 卡片色板：filamentColors 恒为数组（旧库没有这个 key，回填据此判断），
     // colorSource = objects（按零件 extruder 映射，最准）/ project（只有切片配置色）/ none。
     filamentColors: [], filamentTypes: [], colorSource: null,
+    // 没有切片逐色克数时的估算依据：每个挤出机槽位的三角面数（用于悬停占比）
+    filamentFaceCounts: [],
     objNames: [],
     sourceUrl: null,
     // MakerWorld 项目身份：有些 3MF 的描述里没链接，但带 DesignProfileId；可用它反查作品页
@@ -462,6 +464,7 @@ function extractMeta(entries, opts, thumbnailName) {
   let allColors = [];       // 按槽位下标对齐的颜色数组（无效槽位为 null）
   let allTypes = [];        // 与 allColors 同下标
   const extruderIdx = [];   // 零件实际使用的挤出机槽位（1-based）
+  const faceByExtruder = new Map(); // 槽位 -> 三角面数（无切片克数时做占比估算）
 
   // 3D/3dmodel.model：仅当 header.size <= maxModelBytes 才读取统计
   try {
@@ -584,6 +587,22 @@ function extractMeta(entries, opts, thumbnailName) {
           let em;
           while ((em = re.exec(txt)) !== null) collectExtruderIndices(extruderIdx, em[1]);
         }
+        // object 级 extruder + face_count：Mega_Lucario 这类未切片 3MF 没有克数，
+        // 但每个零件都有三角面数，可按颜色算一个诚实的「面数占比」。
+        let ob;
+        const obRe = /<object\b[^>]*>([\s\S]*?)<\/object>/gi;
+        while ((ob = obRe.exec(txt)) !== null) {
+          const body = ob[1];
+          const ex = /key\s*=\s*["']extruder["']\s+value\s*=\s*["'](\d+)["']/i.exec(body)
+            || /value\s*=\s*["'](\d+)["']\s+key\s*=\s*["']extruder["']/i.exec(body)
+            || /\bextruder\s*=\s*["'](\d+)["']/i.exec(body);
+          const fc = /<metadata\b[^>]*\bface_count\s*=\s*["'](\d+)["'][^>]*\/?>/i.exec(body);
+          if (!ex || !fc) continue;
+          const slot = Number(ex[1]) === 0 ? 1 : Number(ex[1]);
+          const faces = Number(fc[1]);
+          if (!Number.isFinite(slot) || slot < 1 || !Number.isFinite(faces) || faces <= 0) continue;
+          faceByExtruder.set(slot, (faceByExtruder.get(slot) || 0) + faces);
+        }
         if (!allColors.length) {
           const hex = txt.match(/#[0-9a-f]{6}\b/gi);
           if (hex) allColors = firstColorArray(hex);
@@ -612,6 +631,22 @@ function extractMeta(entries, opts, thumbnailName) {
     meta.weightSource = w.weightSource;
     meta.filamentUsages = w.filamentUsages;
   } catch (_) { /* 单条目降级 */ }
+
+  // 没有真实逐色用量时，用 object 级三角面数估算颜色占比。
+  // 只按颜色聚合（同色多槽位合并），并保留耗材类型给悬停浮层显示。
+  if ((!meta.filamentUsages || !meta.filamentUsages.length) && faceByExtruder.size) {
+    const byColor = new Map();
+    for (const [slot, faces] of faceByExtruder) {
+      const color = normalizeColor(allColors[slot - 1]);
+      if (!color) continue;
+      const type = allTypes[slot - 1] == null ? '' : String(allTypes[slot - 1]);
+      const cur = byColor.get(color) || { color, type, faces: 0 };
+      cur.faces += faces;
+      if (!cur.type && type) cur.type = type;
+      byColor.set(color, cur);
+    }
+    meta.filamentFaceCounts = Array.from(byColor.values()).filter((x) => x.faces > 0);
+  }
 
   // 汇总
   if (plateFromSeq > 0) meta.plateCount = plateFromSeq;

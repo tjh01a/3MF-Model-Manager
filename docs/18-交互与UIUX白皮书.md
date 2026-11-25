@@ -257,3 +257,5 @@ node launch.js --capture=data/ui-xxx.png --ui-script=tools/probe-xxx.js
 | 2026-11-25 | 开发版任务栏图标 | 源码模式不再直接启动 `electron.exe`；先在 Electron 目录生成写入 `app.ico` 的 `PrintShelf-dev.exe` 再启动，任务栏不再显示 Electron 原子图标 |
 | 2026-11-25 | 来源链接默认跳国内站 | MakerWorld 国际站链接默认换成 `makerworld.com.cn`，语言段统一 `/zh`；老设置一次性迁移，关掉开关可回国际站 |
 | 2026-11-25 | 无链接 3MF 反查来源 | 描述里没有 URL 时用 `DesignModelId` 调 `api.bambulab.cn/v1/design-service/model/{id}`，反查数值作品 id 并写入国服作品页；Mega_Lucario 实测命中 1781480 |
+| 2026-11-25 | 色板悬停占比 | 鼠标移到卡片右下角色板，浮层展开全部颜色与占比；有切片逐色克数按克数算，没有则按对象三角面数估算并明确标注；浮层挂 body 避免被卡片 overflow 裁切 |
+| 2026-11-25 | 卡片信息行换行 | 网格卡片的大小/对象数/尺寸等信息不再省略号截断，按分隔符换行显示，价格仍保持右侧 |

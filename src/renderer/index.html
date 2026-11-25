@@ -196,7 +196,9 @@
       <label class="card-check"><input type="checkbox" class="card-cb"></label>
       <button class="card-fav" data-act="fav" title="收藏"><svg><use href="#i-star"/></svg></button>
       <div class="card-badges"><span class="badge status-unprinted" data-act="status">未打印</span></div>
-      <div class="card-colors" role="img" title="零件用到的耗材颜色：PLA #FFFFFF、ABS #FF0000">
+      <div class="card-colors" role="group" tabindex="0"
+           aria-label="零件用到的耗材颜色：PLA #FFFFFF、ABS #FF0000；悬停查看各色占比"
+           data-color-tip="{&quot;basisLabel&quot;:&quot;按耗材用量&quot;,&quot;rows&quot;:[...]}">
         <span class="card-color" style="background:#FFFFFF"></span>
         <span class="card-color" style="background:#FF0000"></span>
       </div>
@@ -229,12 +231,14 @@
   「用切片软件打开」按钮常态高亮，悬停时由 components/quickopen.js 在 body 上弹出 .qpop 二层菜单。
 
   缩略图耗材色板：cardHtml() 读 m.meta.filamentColors / filamentTypes / colorSource，
-  在 .card-media 右下角渲染 .card-colors（最多 6 个 .card-color 圆点 + "+N"）。
+  在 .card-media 右下角渲染 .card-colors（最多 6 个 .card-color 圆点 + "+N"）；
+  鼠标移入时由 grid.js 把 data-color-tip 渲染成挂 body 的 .color-tip 浮层，显示每个颜色占比。
   颜色由 src/core/model3mf.js 解析 3MF：优先按 Metadata/model_settings.config 里每个零件的
   extruder 槽位去映射 Metadata/project_settings.config 的 filament_colour；找不到零件映射时
   退回展示全部配置色并标 colorSource='project'。色值在进 style 前必须匹配 /^#[0-9a-fA-F]{6}$/。
-  旧库记录由 src/core/colors.js 的 backfillFilamentColors() 在启动后异步回填（只合并颜色字段、
-  一次写库触发一次刷新），capture 模式下会在 app:ready 之前先跑完以便走查看色板。
+  旧库记录由 src/core/colors.js 的 backfillFilamentColors() 在启动后异步回填（颜色字段 +
+  无克数时的 filamentFaceCounts 面数占比，一次写库触发一次刷新），
+  capture 模式下会在 app:ready 之前先跑完以便走查看色板。
   网格模式 hover 时工具条从底部盖满，色板用 transform 上移 30px 让开按钮区（不淡出，
   这样鼠标停在圆点上还能看到「PLA · #FFFFFF」提示）；列表模式常显且不上移。
 

@@ -90,7 +90,98 @@ function starsHtml(rating) {
  * 数据来自 meta.filamentColors（core/model3mf.js 按零件 extruder 映射槽位色得到），
  * colorSource='project' 表示没找到零件映射、展示的是切片配置里的全部 AMS 槽位色。
  */
+function colorShareData(meta) {
+  const raw = Array.isArray(meta.filamentColors) ? meta.filamentColors : [];
+  const colors = raw.filter((c) => typeof c === 'string' && SAFE_HEX.test(c)).map((c) => c.toLowerCase());
+  const types = Array.isArray(meta.filamentTypes) ? meta.filamentTypes : [];
+  const typeFor = (color, type) => {
+    if (type) return String(type);
+    const i = colors.indexOf(color);
+    return i >= 0 && types[i] ? String(types[i]) : '';
+  };
+  const values = new Map();
+  const add = (color, type, amount) => {
+    if (!SAFE_HEX.test(color) || !(amount > 0)) return;
+    const cur = values.get(color) || { color, type: typeFor(color, type), amount: 0 };
+    cur.amount += amount;
+    if (!cur.type) cur.type = typeFor(color, type);
+    values.set(color, cur);
+  };
+
+  let basis = 'none';
+  const usages = Array.isArray(meta.filamentUsages) ? meta.filamentUsages : [];
+  for (const u of usages) {
+    const color = typeof (u && u.color) === 'string' ? u.color.toLowerCase() : '';
+    const g = Number(u && u.usedG);
+    if (color && Number.isFinite(g) && g > 0) add(color, u.type, g);
+  }
+  if (values.size) basis = 'usage';
+
+  if (!values.size) {
+    const faces = Array.isArray(meta.filamentFaceCounts) ? meta.filamentFaceCounts : [];
+    for (const f of faces) {
+      const color = typeof (f && f.color) === 'string' ? f.color.toLowerCase() : '';
+      const n = Number(f && f.faces);
+      if (color && Number.isFinite(n) && n > 0) add(color, f.type, n);
+    }
+    if (values.size) basis = 'faces';
+  }
+
+  if (!values.size) {
+    return {
+      basisLabel: '暂无数据',
+      note: '这个 3MF 没有逐色克数，也没有可用的对象面数；切片后重新导入可显示真实占比。',
+      rows: colors.map((c, i) => ({
+        color: c, type: types[i] || '', pct: '—', amount: '',
+      })),
+    };
+  }
+
+  // 按色板顺序排列，保证浮层和圆点一一对应；色板里没有的用量颜色补在后面。
+  const ordered = [];
+  const rest = new Map(values);
+  for (const c of colors) {
+    const v = rest.get(c);
+    if (!v) continue;
+    ordered.push(v);
+    rest.delete(c);
+  }
+  for (const v of rest.values()) ordered.push(v);
+  const total = ordered.reduce((s, v) => s + v.amount, 0);
+  if (!(total > 0)) {
+    return {
+      basisLabel: '暂无数据',
+      note: '这个 3MF 没有可用的逐色用量数据。',
+      rows: colors.map((c, i) => ({ color: c, type: types[i] || '', pct: '—', amount: '' })),
+    };
+  }
+
+  const pcts = ordered.map((v) => Math.round((v.amount / total) * 1000) / 10);
+  const diff = Math.round((100 - pcts.reduce((s, n) => s + n, 0)) * 10) / 10;
+  if (pcts.length) pcts[pcts.length - 1] = Math.max(0, Math.round((pcts[pcts.length - 1] + diff) * 10) / 10);
+  const fmtPct = (n) => {
+    if (n > 0 && n < 0.1) return '<0.1%';
+    const s = n >= 10 ? n.toFixed(0) : n.toFixed(1);
+    return s.replace(/\.0$/, '') + '%';
+  };
+  return {
+    basisLabel: basis === 'usage' ? '按耗材用量' : '按三角面估算',
+    note: basis === 'usage'
+      ? '按切片逐色克数计算。'
+      : '未切片，按对象三角面数估算，仅用于比较各色大致比例。',
+    rows: ordered.map((v, i) => ({
+      color: v.color,
+      type: v.type || '',
+      pct: fmtPct(pcts[i]),
+      amount: basis === 'usage'
+        ? (Math.round(v.amount * 10) / 10).toFixed(1) + ' g'
+        : Math.round(v.amount).toLocaleString('zh-CN') + ' 面',
+    })),
+  };
+}
+
 function colorsHtml(meta) {
+  const shares = colorShareData(meta);
   const raw = Array.isArray(meta.filamentColors) ? meta.filamentColors : [];
   const colors = raw.filter((c) => typeof c === 'string' && SAFE_HEX.test(c));
   if (!colors.length) return '';
@@ -101,10 +192,11 @@ function colorsHtml(meta) {
     ? '切片配置中的耗材颜色（未找到零件挤出机映射）'
     : '零件用到的耗材颜色') + '：' +
     colors.map((c, i) => (types[i] ? types[i] + ' ' : '') + c).join('、') +
-    (more ? '，共 ' + colors.length + ' 色' : '');
+    (more ? '，共 ' + colors.length + ' 色' : '') + '；悬停查看各色占比';
   const label = escapeHtml(desc);
-  let html = '<div class="card-colors" role="img" title="' + label +
-    '" aria-label="' + label + '">';
+  const payload = escapeHtml(JSON.stringify(shares));
+  let html = '<div class="card-colors" role="group" tabindex="0" aria-label="' + label +
+    '" data-color-tip="' + payload + '">';
   for (let i = 0; i < shown.length; i++) {
     const tip = escapeHtml((types[i] ? types[i] + ' · ' : '') + shown[i]);
     html += '<span class="card-color" style="background:' + shown[i] +
@@ -112,6 +204,65 @@ function colorsHtml(meta) {
   }
   if (more) html += '<span class="card-color-more">+' + more + '</span>';
   return html + '</div>';
+}
+
+// 全局色板浮层：卡片和 .card-media 都有 overflow:hidden，浮层必须挂到 body 才不会被裁掉。
+let colorTipEl = null;
+let colorTipOwner = null;
+
+function ensureColorTip() {
+  if (colorTipEl && document.body.contains(colorTipEl)) return colorTipEl;
+  colorTipEl = document.createElement('div');
+  colorTipEl.className = 'color-tip';
+  colorTipEl.setAttribute('role', 'tooltip');
+  document.body.appendChild(colorTipEl);
+  return colorTipEl;
+}
+
+function hideColorTip() {
+  colorTipOwner = null;
+  if (colorTipEl) colorTipEl.classList.remove('is-on');
+}
+
+function showColorTip(el) {
+  if (!el || !el.dataset || !el.dataset.colorTip) return;
+  if (colorTipOwner === el && colorTipEl && colorTipEl.classList.contains('is-on')) return;
+  let data = null;
+  try { data = JSON.parse(el.dataset.colorTip); } catch (_) { return; }
+  if (!data || !Array.isArray(data.rows) || !data.rows.length) return;
+
+  const tip = ensureColorTip();
+  const rows = data.rows.map((r) => {
+    const color = SAFE_HEX.test(String(r.color || '')) ? String(r.color) : '#999999';
+    return '<div class="color-tip-row">' +
+      '<i class="color-tip-dot" style="background:' + color + '"></i>' +
+      '<div class="color-tip-main"><span class="color-tip-type">' + escapeHtml(r.type || '耗材') + '</span>' +
+        '<span class="color-tip-hex">' + escapeHtml(color.toUpperCase()) + '</span></div>' +
+      '<b class="color-tip-pct">' + escapeHtml(r.pct || '—') + '</b>' +
+      (r.amount ? '<small class="color-tip-amount">' + escapeHtml(r.amount) + '</small>' : '') +
+      '</div>';
+  }).join('');
+  tip.innerHTML = '<div class="color-tip-head"><span>耗材颜色占比</span>' +
+    '<span class="color-tip-basis">' + escapeHtml(data.basisLabel || '') + '</span></div>' +
+    rows + (data.note ? '<div class="color-tip-note">' + escapeHtml(data.note) + '</div>' : '');
+  tip.classList.add('is-on');
+  colorTipOwner = el;
+
+  const r = el.getBoundingClientRect();
+  const tw = tip.offsetWidth;
+  const th = tip.offsetHeight;
+  let left = r.left;
+  left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
+  let top = r.top - th - 8;
+  if (top < 8) top = r.bottom + 8;
+  if (top + th > window.innerHeight - 8) top = Math.max(8, window.innerHeight - th - 8);
+  tip.style.left = left + 'px';
+  tip.style.top = top + 'px';
+}
+
+function bindColorTip() {
+  window.addEventListener('scroll', hideColorTip, true);
+  window.addEventListener('resize', hideColorTip);
 }
 
 /**
@@ -211,6 +362,13 @@ function cardSig(m) {
   // 色板字段必须进指纹：旧库回填是异步写库后再刷新的，漏掉就不会重画卡片。
   const colors = Array.isArray(meta.filamentColors) ? meta.filamentColors.join(',') : '';
   const colorTypes = Array.isArray(meta.filamentTypes) ? meta.filamentTypes.join(',') : '';
+  // 悬停占比也会读这两个字段；只补了克数/面数但色板没变时，卡片也必须重画。
+  const colorShares = [
+    ...(Array.isArray(meta.filamentUsages) ? meta.filamentUsages : [])
+      .map((u) => (u && u.color ? u.color + ':' + (u.usedG || 0) : '')),
+    ...(Array.isArray(meta.filamentFaceCounts) ? meta.filamentFaceCounts : [])
+      .map((f) => (f && f.color ? f.color + ':' + (f.faces || 0) : '')),
+  ].join(',');
   return [m.id, m.title || m.fileName || '', m.thumbnail || '', m.size,
     m.printStatus, m.status, m.duplicateGroup || '', m.categoryId || '',
     // 分类色也要进指纹：卡片底色读的是 --cat-color，改颜色但不改名字时必须重画这张卡
@@ -219,7 +377,7 @@ function cardSig(m) {
     m.sourceUrl || '',
     m.favorite ? 1 : 0, m.rating || 0, m.createdAt, dupGroupSize(m),
     meta.objectCount || 0, meta.plateCount || 0,
-    colors, colorTypes, meta.colorSource || '',
+    colors, colorTypes, colorShares, meta.colorSource || '',
     // 价格是派生值但会显示：priceHtml 读到的每个字段都要进指纹——
     // 手填重量只改 weightG、切换来源只改 source，漏掉这两项卡片文本就不会更新（docs/14）
     (state.costs && state.costs[m.id] && state.costs[m.id].total) || 0,
@@ -274,6 +432,7 @@ if (typeof window !== 'undefined') {
 export function renderGrid() {
   const content = qs('#content');
   if (!content) return;
+  hideColorTip();
   const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
   const cls = state.view === 'list' ? 'content-list' : 'content-grid';
   const prev = lastRender;
@@ -567,6 +726,8 @@ function onPointerUp() { cancelPress(); }
 
 // ---------- 切片软件打开：悬停弹出「拓竹 / Orca 快造 / Orca 官方」 ----------
 function onMouseOver(e) {
+  const colorEl = e.target && e.target.closest ? e.target.closest('.card-colors') : null;
+  if (colorEl) { showColorTip(colorEl); return; }
   const btn = e.target && e.target.closest ? e.target.closest('.card-quick [data-act="open"]') : null;
   if (!btn) return;
   const card = btn.closest('.card');
@@ -577,6 +738,12 @@ function onMouseOver(e) {
   showQuickOpen(btn, ids, (pick) => { openModels(ids, pick); });
 }
 function onMouseOut(e) {
+  const colorEl = e.target && e.target.closest ? e.target.closest('.card-colors') : null;
+  if (colorEl) {
+    const to = e.relatedTarget;
+    if (to && colorEl.contains(to)) return;
+    hideColorTip();
+  }
   const btn = e.target && e.target.closest ? e.target.closest('.card-quick [data-act="open"]') : null;
   if (!btn) return;
   const to = e.relatedTarget;
@@ -646,6 +813,7 @@ export function mountGrid() {
   const content = qs('#content');
   if (!content) return;
   mounted = true;
+  bindColorTip();
   content.addEventListener('click', onClick);
   content.addEventListener('dblclick', onDblClick);
   content.addEventListener('contextmenu', onContextMenu);

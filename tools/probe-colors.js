@@ -57,8 +57,8 @@ const out = {
   visiblePalettes: palettes.filter(visible).length,
   // 色值会拼进 style，必须严格匹配 #RRGGBB，杜绝导入 JSON 里的任意字符串
   unsafeStyles: dots.filter((d) => !SAFE_STYLE.test((d.getAttribute('style') || '').trim())).length,
-  titlesWithoutColor: palettes.filter((p) => !(p.getAttribute('title') || '').includes('#')).length,
-  roleImg: palettes.every((p) => p.getAttribute('role') === 'img'),
+  labelsWithoutColor: palettes.filter((p) => !(p.getAttribute('aria-label') || '').includes('#')).length,
+  roleGroup: palettes.every((p) => p.getAttribute('role') === 'group'),
   tooManyDots: palettes.filter((p) => p.querySelectorAll('.card-color').length > 6).length,
   allDotsHaveColor: dots.every((d) => {
     const c = getComputedStyle(d).backgroundColor;
@@ -66,8 +66,36 @@ const out = {
   }),
   sampleColors: dots.slice(0, 6).map((d) => getComputedStyle(d).backgroundColor),
   noBadgeOverlap: (sample && badges) ? !overlap(sample, badges) : null,
-  sampleTitle: sample ? sample.getAttribute('title') : null,
+  sampleLabel: sample ? sample.getAttribute('aria-label') : null,
 };
+
+// 悬停占比：选一个在视口内、带 data-color-tip 的色板，派发 mouseover 看浮层
+const parseTip = (el) => {
+  try { return JSON.parse(el.getAttribute('data-color-tip') || ''); } catch (_) { return null; }
+};
+const tipPalette = palettes.find((p) => visible(p) && parseTip(p) && parseTip(p).rows && parseTip(p).rows.length)
+  || palettes.find((p) => parseTip(p) && parseTip(p).rows && parseTip(p).rows.length)
+  || null;
+let tipData = tipPalette ? parseTip(tipPalette) : null;
+if (tipPalette) {
+  tipPalette.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+  await sleep(140);
+  const tip = q('.color-tip.is-on');
+  const tr = tip ? tip.getBoundingClientRect() : null;
+  out.tip = {
+    rows: tip ? tip.querySelectorAll('.color-tip-row').length : 0,
+    expectedRows: tipData.rows.length,
+    pcts: tip ? Array.from(tip.querySelectorAll('.color-tip-pct')).map((x) => x.textContent) : [],
+    hasBasis: !!(tip && tip.querySelector('.color-tip-basis')),
+    inViewport: !!tr && tr.left >= -1 && tr.right <= window.innerWidth + 1 &&
+      tr.top >= -1 && tr.bottom <= window.innerHeight + 1,
+    visible: !!tip && getComputedStyle(tip).visibility === 'visible',
+  };
+  // 先收起来，后面的列表/深色检查不受它干扰
+  if (tip) tip.classList.remove('is-on');
+} else {
+  out.tip = { rows: 0, expectedRows: 0, pcts: [], hasBasis: false, inViewport: false, visible: false };
+}
 
 // 列表模式：同一份 DOM 改成行布局，色板要常显且取消网格模式的上移
 const content = q('#content');
@@ -100,14 +128,22 @@ html.setAttribute('data-theme', wasTheme || 'light');
 await sleep(40);
 out.restoredTheme = html.getAttribute('data-theme');
 
+// 最后把浮层留在截图里，方便人工核对
+if (tipPalette) {
+  tipPalette.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+  await sleep(120);
+}
+
 out.ok = ready && out.cards > 0 && out.palettes > 0 && out.dots > 0 &&
-  out.visiblePalettes > 0 && out.unsafeStyles === 0 && out.titlesWithoutColor === 0 &&
-  out.roleImg && out.tooManyDots === 0 && out.allDotsHaveColor &&
+  out.visiblePalettes > 0 && out.unsafeStyles === 0 && out.labelsWithoutColor === 0 &&
+  out.roleGroup && out.tooManyDots === 0 && out.allDotsHaveColor &&
   out.noBadgeOverlap === true &&
   out.list.palettes === out.palettes && out.list.dots === out.dots &&
   out.list.visibleDots > 0 && out.list.position === 'static' &&
   (out.list.transform === 'none' || out.list.transform === null) &&
   out.restoredViewClass === wasCls &&
   out.dark.theme === 'dark' && out.dark.paletteVisible && out.dark.visibleDots > 0 &&
-  out.restoredTheme === (wasTheme || 'light');
+  out.restoredTheme === (wasTheme || 'light') &&
+  out.tip.rows === out.tip.expectedRows && out.tip.rows > 0 &&
+  out.tip.visible && out.tip.inViewport && out.tip.hasBasis;
 return out;

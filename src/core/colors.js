@@ -22,9 +22,16 @@ const { parse3mf } = require('./model3mf');
 const YIELD_EVERY = 12;
 // 超大库不能让后台回填一直占着主进程；超预算就写回已解析的部分，剩下的下次启动继续。
 const MAX_PARSE_MS = 8000;
-const COLOR_KEYS = ['filamentColors', 'filamentTypes', 'colorSource'];
+const COLOR_KEYS = ['filamentColors', 'filamentTypes', 'colorSource', 'filamentFaceCounts'];
 
 const yieldTick = () => new Promise((resolve) => setImmediate(resolve));
+
+/** 色板、逐色克数或面数估算至少有一种，就算「已补过」。 */
+function hasColorMeta(meta) {
+  if (!meta || !Array.isArray(meta.filamentColors)) return false;
+  if (Array.isArray(meta.filamentUsages) && meta.filamentUsages.length) return true;
+  return Array.isArray(meta.filamentFaceCounts);
+}
 
 /** 由旧 meta + 新解析结果生成合并后的 meta（导出便于单测）。 */
 function colorPatch(oldMeta, freshMeta) {
@@ -67,7 +74,7 @@ async function backfillFilamentColors(store, options = {}) {
       out.skipped++; continue;
     }
     if (!fs.existsSync(r.path)) { out.skipped++; continue; }
-    if (r.meta && Array.isArray(r.meta.filamentColors)) { out.skipped++; continue; }
+    if (hasColorMeta(r.meta)) { out.skipped++; continue; }
     if (targets.length >= limit) break;
     targets.push(r);
   }
@@ -104,7 +111,7 @@ async function backfillFilamentColors(store, options = {}) {
         const rec = target.models && target.models[p.id];
         if (!rec) continue;
         // 并发写入可能已经抢先补过，别用旧结果覆盖新数据
-        if (rec.meta && Array.isArray(rec.meta.filamentColors)) continue;
+        if (hasColorMeta(rec.meta)) continue;
         rec.meta = p.meta;
         out.updated++;
       }

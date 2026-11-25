@@ -683,7 +683,9 @@
   border-radius: 999px;
   box-shadow: var(--shadow-sm);
   transition: transform var(--t) var(--ease);
+  cursor: help;
 }
+.card-colors:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* hover 时底部工具条会盖满该区域。色板上移 30px 让开按钮，而不是淡出 ——
    这样鼠标停在圆点上仍能读到「PLA · #FFFFFF」提示，30px 也不会撞到右上角收藏按钮。 */
 .card:hover .card-colors, .card:focus-within .card-colors { transform: translateY(-30px); }
@@ -756,6 +758,17 @@
 .card-title { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-meta  { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-mute); overflow: hidden; }
 .card-meta-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 网格卡片允许信息行换行：文件大小 / 对象数 / 尺寸等信息不再被省略号吃掉 */
+.content-grid .card-meta { align-items: flex-start; overflow: visible; }
+.content-grid .card-meta-text {
+  flex: 1 1 auto;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+  line-height: 1.45;
+}
 /* docs/14：卡片价格徽标。列表模式 .card-meta 固定 130px，文字先收缩、价格始终可见。 */
 .card-price {
   flex: 0 0 auto;
@@ -2354,4 +2367,59 @@ html[data-theme="dark"] .dev-cam-note { background: #3a2a14; color: #fbbf24; }
 
 @media (max-width: 720px) {
   .site-form { grid-template-columns: 1fr; }
+}
+
+/* ---------- 色板悬停：各色占比浮层（挂 body，避免被卡片 overflow 裁掉） ---------- */
+.color-tip {
+  position: fixed;
+  z-index: 90;
+  min-width: 218px;
+  max-width: 300px;
+  padding: 9px 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 12px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(3px);
+  transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease), visibility var(--t-fast);
+  pointer-events: none;
+}
+.color-tip.is-on { opacity: 1; visibility: visible; transform: none; }
+.color-tip-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 6px; font-weight: 600;
+}
+.color-tip-basis {
+  flex: 0 0 auto; padding: 1px 6px; border-radius: 999px;
+  background: var(--bg-soft); color: var(--text-mute);
+  font-size: 10px; font-weight: 500; white-space: nowrap;
+}
+.color-tip-row {
+  display: grid; grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center; column-gap: 7px; padding: 3px 0;
+}
+.color-tip-dot {
+  width: 11px; height: 11px; border-radius: 50%;
+  border: 1px solid rgba(15, 23, 42, .3);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .32);
+}
+html[data-theme="dark"] .color-tip-dot { border-color: rgba(255, 255, 255, .24); }
+.color-tip-main { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.color-tip-type { color: var(--text-dim); font-size: 11px; flex: 0 0 auto; }
+.color-tip-hex {
+  color: var(--text-mute); font-size: 10px; font-family: var(--mono, monospace);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.color-tip-pct { color: var(--text); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.color-tip-amount {
+  grid-column: 2 / -1; margin-top: -2px;
+  color: var(--text-mute); font-size: 10px; line-height: 1.35;
+}
+.color-tip-note {
+  margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border);
+  color: var(--text-mute); font-size: 10px; line-height: 1.5;
 }

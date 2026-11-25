@@ -109,7 +109,9 @@ function makeColorSample(dir, name, opts = {}) {
     const xml = '<?xml version="1.0"?><config>' +
       (opts.extruders || []).map((n, i) => '<object id="' + (i + 1) +
         '"><metadata key="name" value="part' + (i + 1) + '"/>' +
-        '<metadata key="extruder" value="' + n + '"/></object>').join('') +
+        '<metadata key="extruder" value="' + n + '"/>' +
+        (opts.faceCounts && opts.faceCounts[i] ? '<metadata face_count="' + opts.faceCounts[i] + '"/>' : '') +
+        '</object>').join('') +
       '</config>';
     zip.addFile('Metadata/model_settings.config', Buffer.from(xml, 'utf8'));
   }
@@ -259,6 +261,19 @@ function group(name) { console.log('\n' + name); }
     eq(JSON.stringify(r.meta.filamentColors), JSON.stringify(['#FFFFFF', '#000000']));
     eq(JSON.stringify(r.meta.filamentTypes), JSON.stringify(['PLA', 'PETG']));
   });
+  await t('无切片克数时按对象面数生成占比估算', async () => {
+    const f = makeColorSample(path.join(tmp, 'colors'), 'faces.3mf', {
+      colors: ['#FFFFFF', '#000000'], types: ['PLA', 'PLA'],
+      extruders: [1, 2], faceCounts: [100, 300],
+    });
+    const r = await M.parse3mf(f, { withThumbnail: false });
+    ok(r.ok);
+    eq(JSON.stringify(r.meta.filamentFaceCounts),
+      JSON.stringify([
+        { color: '#FFFFFF', type: 'PLA', faces: 100 },
+        { color: '#000000', type: 'PLA', faces: 300 },
+      ]));
+  });
   await t('畸形 project_settings.config 不抛异常且色板为空', async () => {
     const f = makeColorSample(path.join(tmp, 'colors'), 'badmeta.3mf', { rawProject: '{not json' });
     const r = await M.parse3mf(f, { withThumbnail: false });
@@ -293,7 +308,7 @@ function group(name) { console.log('\n' + name); }
       lib: { models: {
         a: { id: 'a', path: f, status: 'ok', meta: { objectCount: 7, hasThumbnail: true } },
         b: { id: 'b', path: f, status: 'ok',
-          meta: { filamentColors: ['#123456'], filamentTypes: ['PLA'], colorSource: 'objects' } },
+          meta: { filamentColors: ['#123456'], filamentTypes: ['PLA'], colorSource: 'objects', filamentFaceCounts: [] } },
         c: { id: 'c', path: path.join(tmp, 'nope.3mf'), status: 'ok', meta: {} },
         d: { id: 'd', path: f, status: 'missing', meta: {} },
       } },
@@ -315,6 +330,30 @@ function group(name) { console.log('\n' + name); }
     const r2 = await Colors.backfillFilamentColors(mock);
     eq(r2.scanned, 0, '第二次应全部跳过');
     eq(mock.writes, 1, '第二次不应写库');
+  });
+  await t('backfillFilamentColors 给旧色板补面数占比', async () => {
+    const f = makeColorSample(path.join(tmp, 'colors'), 'backfill-faces.3mf', {
+      colors: ['#FFFFFF', '#000000'], types: ['PLA', 'PLA'],
+      extruders: [1, 2], faceCounts: [100, 300],
+    });
+    const mock = {
+      writes: 0,
+      lib: { models: {
+        a: { id: 'a', path: f, status: 'ok', meta: {
+          filamentColors: ['#FFFFFF', '#000000'], filamentTypes: ['PLA', 'PLA'],
+          colorSource: 'objects', filamentUsages: [],
+        } },
+      } },
+      getLibrary() { return this.lib; },
+      async updateLibrary(fn) { this.writes++; await fn(this.lib); },
+    };
+    const r = await Colors.backfillFilamentColors(mock);
+    eq(r.scanned, 1);
+    eq(r.updated, 1);
+    eq(mock.lib.models.a.meta.filamentFaceCounts.length, 2, '应补出 2 个颜色的面数');
+    eq(mock.lib.models.a.meta.filamentFaceCounts[1].faces, 300);
+    const r2 = await Colors.backfillFilamentColors(mock);
+    eq(r2.scanned, 0, '补过面数后不应再解析');
   });
 
   // ---------------------------------------------------------------- 存储
