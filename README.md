@@ -17,8 +17,8 @@
 
 到本仓库 **Releases** 页面下载：
 
-- **安装版**：`3MF-Model-Manager-1.1.7-setup.exe`，双击按向导安装，自动建快捷方式。
-- **绿色版**：`3MF-Model-Manager-1.1.7-portable.zip`，解压到固定文件夹后双击 `3MF模型管理器.exe` 就能用。
+- **安装版**：`3MF-Model-Manager-1.1.8-setup.exe`，双击按向导安装，自动建快捷方式。
+- **绿色版**：`3MF-Model-Manager-1.1.8-portable.zip`，解压到固定文件夹后双击 `3MF模型管理器.exe` 就能用。
 
 > 附件名只能用英文（GitHub 限制），软件名、窗口标题和快捷方式都是中文「3MF模型管理器」。版本号随 `package.json` 的 `version` 变化；1.0.x 时期的产物属历史遗留。
 

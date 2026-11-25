@@ -417,6 +417,9 @@ function main() {
     for (const name of fs.readdirSync(ELECTRON_DIST)) {
       const src = path.join(ELECTRON_DIST, name);
       if (name === 'electron.exe') continue;
+      // launch.js 在开发模式下会生成带图标的 PrintShelf-dev.exe；
+      // 它只是本机调试用的副本（约 180MB），绝不能进发布包。
+      if (/^PrintShelf-dev.*\.exe$/i.test(name)) continue;
       if (name === 'resources') continue;
       copyTree(src, path.join(OUT_DIR, name), { skipRoot: true });
     }
@@ -494,6 +497,9 @@ function main() {
   const missing = required.filter((p) => !fs.existsSync(p));
   if (missing.length) {
     throw new Error('产物缺少关键文件：\n  ' + missing.map((p) => path.relative(OUT_DIR, p)).join('\n  '));
+  }
+  if (fs.existsSync(path.join(OUT_DIR, 'PrintShelf-dev.exe'))) {
+    throw new Error('发布包混入了开发启动器 PrintShelf-dev.exe，构建应排除它');
   }
 
   const size = dirSize(OUT_DIR);
