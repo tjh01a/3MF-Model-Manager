@@ -135,6 +135,10 @@ function normalizeFilament(rec) {
     note: typeof r.note === 'string' ? r.note : '',
     params: typeof r.params === 'string' ? r.params : '',
     isPreset: !!r.isPreset,
+    // 耗材库（选购参考）与耗材库存（真正拥有）分开：旧数据按是否填了剩余克数推断
+    kind: r.kind === 'owned' || r.kind === 'catalog'
+      ? r.kind
+      : (r.stockG != null && r.stockG !== '' ? 'owned' : 'catalog'),
     // D · 库存（docs/22 D）：null = 不管理库存；lowG 默认整卷 10%
     stockG: r.stockG == null || r.stockG === '' ? null : (Number.isFinite(Number(r.stockG)) && Number(r.stockG) >= 0 ? Number(r.stockG) : null),
     fullG: Number.isFinite(Number(r.fullG)) && Number(r.fullG) > 0 ? Number(r.fullG) : 1000,
@@ -373,13 +377,22 @@ class FilamentService {
   }
 
   async create(data) {
-    const name = safeName(data && data.name);
+    data = data || {};
+    const name = safeName(data.name);
     if (!name) throw new Error('耗材名称不能为空');
     const id = newId();
     const t = Date.now();
+    const stockG = data.stockG == null || data.stockG === ''
+      ? null
+      : (Number.isFinite(Number(data.stockG)) && Number(data.stockG) >= 0 ? Number(data.stockG) : null);
+    const fullG = Number.isFinite(Number(data.fullG)) && Number(data.fullG) > 0 ? Number(data.fullG) : 1000;
+    const lowG = Number.isFinite(Number(data.lowG)) && Number(data.lowG) >= 0
+      ? Number(data.lowG) : Math.round(fullG * 0.1);
+    const kind = data.kind === 'owned' || stockG != null ? 'owned' : 'catalog';
     const rec = {
       id,
       name,
+      kind,
       brand: safeName(data.brand) || '其他 / 自定义',
       type: TYPES.includes(data.type) ? data.type : 'PLA',
       color: normalizeColor(data.color),
@@ -388,7 +401,12 @@ class FilamentService {
       note: String(data.note == null ? '' : data.note).slice(0, 2000),
       params: String(data.params == null ? '' : data.params).slice(0, 2000),
       isPreset: !!data.isPreset,
-      stockG: null, fullG: 1000, lowG: 100, spools: 0, buyUrl: '', lowNotifiedAt: 0,
+      stockG,
+      fullG,
+      lowG,
+      spools: Math.max(0, Math.floor(Number.isFinite(Number(data.spools)) ? Number(data.spools) : 0)),
+      buyUrl: String(data.buyUrl == null ? '' : data.buyUrl).slice(0, 500),
+      lowNotifiedAt: 0,
       createdAt: t, updatedAt: t,
     };
     await this._mutate((d) => { d.items[id] = rec; });
@@ -400,6 +418,7 @@ class FilamentService {
     return this._mutate((d) => {
       const rec = d.items[id];
       if (!rec) throw new Error('找不到这个耗材');
+      if (p.kind === 'owned' || p.kind === 'catalog') rec.kind = p.kind;
       if (Object.prototype.hasOwnProperty.call(p, 'name')) {
         const n = safeName(p.name);
         if (!n) throw new Error('耗材名称不能为空');

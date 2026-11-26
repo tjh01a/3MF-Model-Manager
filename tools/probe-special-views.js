@@ -65,27 +65,12 @@ if (dup) {
   out.dup.headStyled = head ? getComputedStyle(head).display === 'flex' : false;
 }
 
-// ---- 失效文件 ----
-out.missingNav = await openSmart('missing');
-const mi = q('.missing-item');
-out.missing = { nav: out.missingNav, hasItem: !!mi };
-if (mi) {
-  const main = q('.missing-item .missing-main');
-  const box = mi.getBoundingClientRect();
-  const parent = mi.parentElement.getBoundingClientRect();
-  out.missing.layout = {
-    hasMain: !!main,
-    mainGrow: main ? getComputedStyle(main).flexGrow : null,
-    insideParent: box.right <= parent.right + 1,
-  };
-  out.missing.styled = !!main && getComputedStyle(main).display === 'flex';
-} else {
-  // 没有失效文件是正常状态：只要有空状态文案就算通过
-  out.missing.empty = ((q('#content') || {}).textContent || '').length > 0;
-}
+// ---- 失效文件：2026-11-26 起侧栏入口已移除 ----
+out.missingNav = await openSmart('missing');   // 入口不存在时返回 false
+out.missing = { nav: out.missingNav, removed: !out.missingNav };
 
 const dupOk = !!out.dup.hasItem ? (out.dup.styled && out.dup.layout.insideParent && out.dup.headStyled) : true;
-const missOk = !!out.missing.hasItem ? (out.missing.styled && out.missing.layout.insideParent) : true;
+const missOk = out.missing.removed;
 out.checks = { dupOk, missOk };
 out.toastErrors = Array.from(new Set(toastErrors));
 out.ok = !out.toastErrors.length && dupOk && missOk;

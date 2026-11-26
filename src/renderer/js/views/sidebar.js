@@ -23,12 +23,11 @@ const SMART_VIEWS = [
   { key: 'duplicates',    label: tr('重复文件'),   icon: 'i-copy',      group: 'quality' },
   { key: 'variants',      label: tr('同款变体'),   icon: 'i-layers',    group: 'quality' },
   { key: 'broken',        label: tr('损坏文件'),   icon: 'i-wrench',    group: 'quality' },
-  { key: 'missing',       label: tr('失效文件'),   icon: 'i-alert',     group: 'quality' },
 ];
 /** 非 smart 的模块入口：点击直接触发动作，不改 state.query */
 const ACTION_VIEWS = [
-  { key: 'filaments', label: tr('耗材库'), icon: 'i-box', group: 'cost', act: 'open-filaments',
-    title: tr('管理耗材、单价、颜色与图片（成本账本的基础）') },
+  { key: 'filaments', label: tr('耗材管理'), icon: 'i-box', group: 'cost', act: 'open-filaments',
+    title: tr('管理耗材库存（真正拥有的）与耗材库（选购参考）') },
 ];
 const GROUPS = [
   { key: 'library', label: tr('模型库') },

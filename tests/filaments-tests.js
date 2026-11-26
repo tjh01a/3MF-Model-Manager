@@ -172,6 +172,18 @@ paths.setDataDir(tmp);
     ok('非法颜色被拒绝（不进 CSS）', b.color === null, String(b.color));
     ok('清单按更新时间倒序返回', svc.list().items.length === 4 && svc.list().items[0].id === a.id);
 
+    // 耗材管理：耗材库（选购参考）与耗材库存（真正拥有）分开
+    ok('普通新建归入耗材库', a.kind === 'catalog');
+    const owned = await svc.create({
+      kind: 'owned', name: '我的 PETG', type: 'PETG', color: '#112233',
+      pricePerKg: 75, stockG: 620, fullG: 1000, lowG: 100, spools: 1,
+    });
+    ok('新建库存耗材保留克数与类型', owned.kind === 'owned' && owned.stockG === 620 && owned.fullG === 1000 && owned.type === 'PETG');
+    ok('库存与选购库都能在列表里取到',
+      svc.list().items.some((x) => x.id === owned.id && x.kind === 'owned') &&
+      svc.list().items.some((x) => x.id === a.id && x.kind === 'catalog'));
+    await svc.remove(owned.id);   // 后面的「删完只剩 3 条内置」按原口径继续
+
     // 默认耗材：内置库自带一个默认，不为老的“无默认”逻辑留空窗
     ok('初始默认耗材来自内置库',
       svc.list().defaultId === 'builtin-yuguo-petg' && svc.getDefault().name === '遇果PETG');

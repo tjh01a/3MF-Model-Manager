@@ -18,7 +18,7 @@ const DEFAULT_COLOR = '#94a3b8';
 
 let mounted = false;
 let open = false;
-let loading = false;
+let refreshSeq = 0;   // 用序号丢弃过期响应；不要用 loading 直接 return，否则打开面板时可能永远拿不到新数据
 const st = {
   items: [],
   brands: [],
@@ -27,6 +27,7 @@ const st = {
   keyword: '',
   filterType: '',
   defaultId: null,
+  tab: 'stock',          // stock = 真正拥有的耗材；catalog = 市面选购参考
 };
 
 // ------------------------------------------------------------------ 工具
@@ -66,9 +67,14 @@ function yuan(n) {
   return '¥' + (Number.isFinite(v) ? v.toFixed(2) : '0.00');
 }
 
+function itemsOf(kind) {
+  return st.items.filter((f) => (f.kind === 'owned' ? 'owned' : 'catalog') === kind);
+}
+
 function filtered() {
   const kw = st.keyword.trim().toLowerCase();
-  return st.items.filter((f) => {
+  const base = st.tab === 'stock' ? 'owned' : 'catalog';
+  return itemsOf(base).filter((f) => {
     if (st.filterType && f.type !== st.filterType) return false;
     if (!kw) return true;
     return [f.name, f.brand, f.type, f.note, f.params].some((v) => String(v || '').toLowerCase().includes(kw));
@@ -106,90 +112,153 @@ function cardHtml(f) {
   '</button>';
 }
 
-function detailHtml(f) {
+function detailHtml(f, kind) {
+  const owned = kind === 'owned';
   if (!f) {
     return '<div class="fil-detail-empty">' + icon('i-box') +
-      tr('<strong>还没有选中耗材</strong><span>点左侧卡片查看和编辑参数</span></div>');
+      (owned
+        ? tr('<strong>还没有选中耗材</strong><span>点左侧库存里的耗材查看和编辑</span>')
+        : tr('<strong>还没有选中耗材</strong><span>点左侧卡片查看和编辑参数</span>')) + '</div>';
   }
   const typeOpts = st.types.map((t) =>
     '<option value="' + esc(t) + '"' + (f.type === t ? ' selected' : '') + '>' + esc(t) + '</option>').join('');
+  const defaultBtn = owned
+    ? '<button type="button" class="btn btn-sm btn-ghost' + (f.id === st.defaultId ? ' is-default' : '') + '" data-act="set-default" title="' +
+        (f.id === st.defaultId ? tr('已设为默认耗材，模型没分配耗材时按它的单价估算') : tr('设为默认：模型没分配耗材时按它的单价估算成本')) + '">' +
+        icon('i-star') + (f.id === st.defaultId ? tr('已是默认') : tr('设为默认')) + '</button>'
+    : '';
   return '' +
     '<div class="fil-detail-head">' +
       '<div class="fil-detail-hero"><img src="' + thumbSrc(f) + '" alt=""></div>' +
       '<div class="fil-detail-actions">' +
-        '<button type="button" class="btn btn-sm btn-primary" data-act="save">' + icon('i-check') + tr('保存</button>') +
-        '<button type="button" class="btn btn-sm btn-ghost' + (f.id === st.defaultId ? ' is-default' : '') + '" data-act="set-default" title="' +
-          (f.id === st.defaultId ? tr('已设为默认耗材，模型没分配耗材时按它的单价估算') : tr('设为默认：模型没分配耗材时按它的单价估算成本')) + '">' +
-          icon('i-star') + (f.id === st.defaultId ? tr('已是默认') : tr('设为默认')) + '</button>' +
-        '<button type="button" class="btn btn-sm btn-ghost" data-act="upload">' + icon('i-image') + tr('换图片</button>') +
-        tr('<button type="button" class="icon-btn" data-act="delete" title="删除耗材">') + icon('i-trash') + '</button>' +
+        '<button type="button" class="btn btn-sm btn-primary" data-act="save">' + icon('i-check') + tr('保存') + '</button>' +
+        defaultBtn +
+        '<button type="button" class="btn btn-sm btn-ghost" data-act="upload">' + icon('i-image') + tr('换图片') + '</button>' +
+        '<button type="button" class="icon-btn" data-act="delete" title="' + tr('删除耗材') + '">' + icon('i-trash') + '</button>' +
       '</div>' +
     '</div>' +
     '<div class="fil-detail-fields">' +
-      tr('<label class="fil-field"><span>名称</span><input type="text" data-field="name" value="') + esc(f.name) + '" maxlength="120"></label>' +
-      tr('<label class="fil-field"><span>品牌</span><input type="text" data-field="brand" value="') + esc(f.brand || '') + '" list="fil-brand-list" maxlength="80"></label>' +
+      '<label class="fil-field"><span>' + tr('名称') + '</span><input type="text" data-field="name" value="' + esc(f.name) + '" maxlength="120"></label>' +
+      '<label class="fil-field"><span>' + tr('品牌') + '</span><input type="text" data-field="brand" value="' + esc(f.brand || '') + '" list="fil-brand-list" maxlength="80"></label>' +
       '<datalist id="fil-brand-list">' + st.brands.map((b) => '<option value="' + esc(b) + '"></option>').join('') + '</datalist>' +
-      tr('<label class="fil-field"><span>耗材类型</span><select data-field="type">') + typeOpts + '</select></label>' +
+      '<label class="fil-field"><span>' + tr('耗材类型') + '</span><select data-field="type">' + typeOpts + '</select></label>' +
       '<div class="fil-field-row">' +
-        tr('<label class="fil-field"><span>颜色</span><span class="fil-color-wrap">') +
+        '<label class="fil-field"><span>' + tr('颜色') + '</span><span class="fil-color-wrap">' +
           '<input type="color" data-field="color" value="' + esc(safeColor(f.color)) + '">' +
           '<input type="text" data-field="colorText" value="' + esc(safeColor(f.color)) + '" maxlength="7" class="fil-hex"></span></label>' +
-        tr('<label class="fil-field"><span>单价（元 / kg）</span><input type="number" data-field="pricePerKg" min="0" step="0.01" value="') + esc(f.pricePerKg || 0) + '"></label>' +
+        '<label class="fil-field"><span>' + tr('单价（元 / kg）') + '</span><input type="number" data-field="pricePerKg" min="0" step="0.01" value="' + esc(f.pricePerKg || 0) + '"></label>' +
       '</div>' +
-      // D · 库存：stockG 留空 = 不管理
-      '<div class="fil-field-row">' +
-        '<label class="fil-field"><span>' + tr('剩余克数（留空 = 不管理库存）') + '</span><input type="number" data-field="stockG" min="0" step="1" placeholder="' + tr('例如 620') + '" value="' +
-          esc(f.stockG == null ? '' : f.stockG) + '"></label>' +
-        '<label class="fil-field"><span>' + tr('整卷克数') + '</span><input type="number" data-field="fullG" min="1" step="1" value="' + esc(f.fullG || 1000) + '"></label>' +
-      '</div>' +
-      '<div class="fil-field-row">' +
-        '<label class="fil-field"><span>' + tr('低库存阈值（克）') + '</span><input type="number" data-field="lowG" min="0" step="1" value="' + esc(f.lowG == null ? 100 : f.lowG) + '"></label>' +
-        '<label class="fil-field"><span>' + tr('备用整卷') + '</span><input type="number" data-field="spools" min="0" step="1" value="' + esc(f.spools || 0) + '"></label>' +
-      '</div>' +
+      (owned
+        ? '<div class="fil-field-row">' +
+            '<label class="fil-field"><span>' + tr('剩余克数') + '</span><input type="number" data-field="stockG" min="0" step="1" placeholder="' + tr('例如 620') + '" value="' +
+              esc(f.stockG == null ? '' : f.stockG) + '"></label>' +
+            '<label class="fil-field"><span>' + tr('整卷克数') + '</span><input type="number" data-field="fullG" min="1" step="1" value="' + esc(f.fullG || 1000) + '"></label>' +
+          '</div>' +
+          '<div class="fil-field-row">' +
+            '<label class="fil-field"><span>' + tr('低库存阈值（克）') + '</span><input type="number" data-field="lowG" min="0" step="1" value="' + esc(f.lowG == null ? 100 : f.lowG) + '"></label>' +
+            '<label class="fil-field"><span>' + tr('备用整卷') + '</span><input type="number" data-field="spools" min="0" step="1" value="' + esc(f.spools || 0) + '"></label>' +
+          '</div>'
+        : '') +
       '<label class="fil-field"><span>' + tr('购买链接') + '</span><input type="url" data-field="buyUrl" value="' + esc(f.buyUrl || '') + '" placeholder="https://…"></label>' +
-      '<div class="fil-stock-actions">' +
-        '<button type="button" class="btn btn-sm btn-ghost" data-act="stock-log">' + icon('i-clock') + '<span>' + tr('库存流水') + '</span></button>' +
-        '<button type="button" class="btn btn-sm btn-ghost" data-act="stock-shopping">' + icon('i-box') + '<span>' + tr('采购清单') + '</span></button>' +
-      '</div>' +
-      tr('<label class="fil-field"><span>备注</span><textarea data-field="note" rows="3" maxlength="2000">') + esc(f.note || '') + '</textarea></label>' +
-      tr('<label class="fil-field"><span>耗材参数</span><textarea data-field="params" rows="3" maxlength="2000" placeholder="例如：打印温度 220°C / 热床 60°C / 收缩率 0.4% 等">') + esc(f.params || '') + '</textarea></label>' +
+      (owned
+        ? '<div class="fil-stock-actions">' +
+            '<button type="button" class="btn btn-sm btn-ghost" data-act="stock-log">' + icon('i-clock') + '<span>' + tr('库存流水') + '</span></button>' +
+            '<button type="button" class="btn btn-sm btn-ghost" data-act="stock-shopping">' + icon('i-box') + '<span>' + tr('采购清单') + '</span></button>' +
+          '</div>'
+        : '') +
+      '<label class="fil-field"><span>' + tr('备注') + '</span><textarea data-field="note" rows="3" maxlength="2000">' + esc(f.note || '') + '</textarea></label>' +
+      '<label class="fil-field"><span>' + tr('耗材参数') + '</span><textarea data-field="params" rows="3" maxlength="2000" placeholder="' + tr('例如：打印温度 220°C / 热床 60°C / 收缩率 0.4% 等') + '">' + esc(f.params || '') + '</textarea></label>' +
     '</div>';
+}
+
+function tabsHtml() {
+  const n = (k) => itemsOf(k === 'stock' ? 'owned' : 'catalog').length;
+  const tab = (key, label) =>
+    '<button type="button" class="fil-tab' + (st.tab === key ? ' is-active' : '') + '" data-tab="' + key + '" role="tab" aria-selected="' +
+      (st.tab === key ? 'true' : 'false') + '">' + tr(label) + '<span class="fil-tab-count">' + n(key) + '</span></button>';
+  return '<div class="fil-tabs" role="tablist">' + tab('stock', '耗材库存') + tab('catalog', '耗材库') + '</div>';
+}
+
+function stockRowHtml(f) {
+  const fullG = Number(f.fullG) > 0 ? Number(f.fullG) : 1000;
+  const stockG = f.stockG == null ? 0 : Number(f.stockG);
+  const lowG = Number(f.lowG) >= 0 ? Number(f.lowG) : fullG * 0.1;
+  const low = stockG <= lowG;
+  const pct = Math.max(0, Math.min(100, Math.round((stockG / fullG) * 100)));
+  const meta = [f.type, f.brand, yuan(f.pricePerKg) + '/kg'].filter(Boolean).join(' · ');
+  return '<div class="inv-row' + (f.id === st.selectedId ? ' is-selected' : '') + '" data-id="' + esc(f.id) + '" role="button" tabindex="0">' +
+    '<span class="inv-name-cell">' +
+      '<i class="inv-swatch" style="background:' + esc(safeColor(f.color)) + '"></i>' +
+      '<span class="inv-name-block"><b>' + esc(f.name) + '</b><small>' + esc(meta) + '</small></span>' +
+    '</span>' +
+    '<span class="inv-remain' + (low ? ' is-low' : '') + '">' +
+      '<span class="inv-grams">' + Math.round(stockG) + ' g / ' + Math.round(fullG) + ' g' + (f.spools ? tr(' · 备用 ') + f.spools + tr(' 卷') : '') + '</span>' +
+      '<span class="inv-bar"><span style="width:' + pct + '%"></span></span>' +
+    '</span>' +
+    '<span class="inv-ops">' +
+      '<button type="button" class="icon-btn inv-act" data-act="inv-edit" data-id="' + esc(f.id) + '" title="' + tr('编辑这个耗材') + '">' + icon('i-edit') + '</button>' +
+      '<button type="button" class="icon-btn inv-act" data-act="delete" data-id="' + esc(f.id) + '" title="' + tr('删除这个耗材') + '">' + icon('i-trash') + '</button>' +
+    '</span>' +
+  '</div>';
+}
+
+function invRowsHtml(list) {
+  return list.length
+    ? list.map(stockRowHtml).join('')
+    : '<div class="fil-empty">' + tr('还没有在库耗材。点「添加耗材」，把手上真正有的耗材记进来。') + '</div>';
 }
 
 function render() {
   const body = document.getElementById('filaments-body');
   if (!body) return;
   const list = filtered();
-  const sel = st.items.find((f) => f.id === st.selectedId) || null;
-  body.innerHTML = '' +
-    '<div class="fil-toolbar">' +
-      '<div class="fil-toolbar-left">' +
-        '<button type="button" class="btn btn-sm btn-primary" data-act="new">' + icon('i-plus') + tr('新建耗材</button>') +
-        tr('<select class="fil-filter" data-act-filter="type" aria-label="按类型筛选">') +
-          tr('<option value="">全部类型</option>') +
-          st.types.map((t) => '<option value="' + esc(t) + '"' + (st.filterType === t ? ' selected' : '') + '>' + esc(t) + '</option>').join('') +
-        '</select>' +
-      '</div>' +
-      '<div class="fil-toolbar-right">' +
-        tr('<input type="search" class="fil-search" data-act-input="keyword" placeholder="搜索名称 / 品牌 / 类型" value="') + esc(st.keyword) + '">' +
-        tr('<button type="button" class="icon-btn" data-act="open-dir" title="打开耗材图片目录">') + icon('i-folder') + '</button>' +
-      '</div>' +
-    '</div>' +
-    '<div class="fil-main">' +
-      '<div class="fil-grid-wrap">' +
+  const wantedKind = st.tab === 'stock' ? 'owned' : 'catalog';
+  let sel = st.items.find((f) => f.id === st.selectedId) || null;
+  if (!sel || (sel.kind === 'owned' ? 'owned' : 'catalog') !== wantedKind) {
+    st.selectedId = list.length ? list[0].id : null;
+    sel = list.length ? list[0] : null;
+  }
+  const stockView = st.tab === 'stock';
+  const left = stockView
+    ? '<button type="button" class="btn btn-sm btn-primary" data-act="new-owned">' + icon('i-plus') + tr('添加耗材') + '</button>' +
+      '<button type="button" class="btn btn-sm btn-ghost" data-act="stock-log">' + icon('i-clock') + '<span>' + tr('库存流水') + '</span></button>' +
+      '<button type="button" class="btn btn-sm btn-ghost" data-act="stock-shopping">' + icon('i-box') + '<span>' + tr('采购清单') + '</span></button>'
+    : '<button type="button" class="btn btn-sm btn-primary" data-act="new">' + icon('i-plus') + tr('新建耗材</button>') +
+      '<select class="fil-filter" data-act-filter="type" aria-label="' + tr('按类型筛选') + '">' +
+        '<option value="">' + tr('全部类型') + '</option>' +
+        st.types.map((t) => '<option value="' + esc(t) + '"' + (st.filterType === t ? ' selected' : '') + '>' + esc(t) + '</option>').join('') +
+      '</select>';
+  const main = stockView
+    ? '<div class="inv-wrap">' +
+        '<div class="inv-head"><span>' + tr('耗材') + '</span><span>' + tr('剩余') + '</span><span>' + tr('操作') + '</span></div>' +
+        '<div class="inv-rows" id="inv-rows">' + invRowsHtml(list) + '</div>' +
+        '<div class="fil-count" id="inv-count">' + tr('共 ') + list.length + ' ' + tr('种在库耗材') + '</div>' +
+      '</div>'
+    : '<div class="fil-grid-wrap">' +
         '<div class="fil-grid">' + (list.length ? list.map(cardHtml).join('') :
           tr('<div class="fil-empty">还没有耗材，点「新建耗材」添加一个</div>')) + '</div>' +
         tr('<div class="fil-count">共 ') + list.length + tr(' 种耗材</div>') +
+      '</div>';
+  body.innerHTML = '' +
+    tabsHtml() +
+    '<div class="fil-toolbar">' +
+      '<div class="fil-toolbar-left">' + left + '</div>' +
+      '<div class="fil-toolbar-right">' +
+        '<input type="search" class="fil-search" data-act-input="keyword" placeholder="' + tr('搜索名称 / 品牌 / 类型') + '" value="' + esc(st.keyword) + '">' +
+        '<button type="button" class="icon-btn" data-act="open-dir" title="' + tr('打开耗材图片目录') + '">' + icon('i-folder') + '</button>' +
       '</div>' +
-      '<aside class="fil-detail" id="fil-detail">' + detailHtml(sel) + '</aside>' +
+    '</div>' +
+    '<div class="fil-main">' +
+      main +
+      '<aside class="fil-detail" id="fil-detail">' + detailHtml(sel, wantedKind) + '</aside>' +
     '</div>';
 }
 
 async function refresh() {
-  if (loading) return;
-  loading = true;
+  const seq = ++refreshSeq;
   try {
     const r = await api.filamentsList();
+    if (seq !== refreshSeq) return;   // 更晚的刷新已经回来了，丢掉这份旧数据
     st.items = (r && r.items) || [];
     st.brands = (r && r.brands) || [];
     st.defaultId = (r && r.defaultId) || null;
@@ -198,7 +267,6 @@ async function refresh() {
     if (!st.selectedId && st.items.length) st.selectedId = st.items[0].id;
     if (open) render();
   } catch (_) { /* api 层已 toast */ }
-  finally { loading = false; }
 }
 
 // ------------------------------------------------------------------ 交互
@@ -227,6 +295,13 @@ async function save() {
   if (!st.selectedId) return;
   const p = readForm();
   if (!p || !String(p.name || '').trim()) { emitToast('error', tr('名称不能为空')); return; }
+  // 耗材库详情没有库存字段，readForm 会拿到 undefined；不能把它们当「清空库存」提交
+  for (const k of Object.keys(p)) if (p[k] === undefined) delete p[k];
+  const cur = st.items.find((x) => x.id === st.selectedId);
+  if (cur && cur.kind === 'owned') {
+    if (p.stockG === '' || p.stockG == null) p.stockG = 0;   // 在库耗材至少记 0g，不留成「不管理」
+    if (!(Number(p.fullG) > 0)) { emitToast('error', tr('整卷克数要大于 0')); return; }
+  }
   // 后端会把非法颜色静默归一化成默认值，用户以为保存成功、再看却变了色。
   // 保存前在这里拦住，必须严格是 #RRGGBB。
   const color = String(p.color || '').trim();
@@ -245,11 +320,89 @@ async function save() {
 
 async function createWithName(name) {
   try {
-    const f = await api.filamentCreate({ name });
+    const f = await api.filamentCreate({ name, kind: 'catalog' });
     st.selectedId = f.id;
     emitToast('success', tr('已添加耗材「') + name + tr('」，记得填单价'));
     await refresh();
   } catch (_) { /* 已 toast */ }
+}
+
+/** 添加「真正拥有的耗材」：一次把类型、颜色、克数、单价填完，不用先建再改 */
+async function addOwned() {
+  const typeOpts = st.types.map((t) => '<option value="' + esc(t) + '">' + esc(t) + '</option>').join('');
+  const body =
+    '<div class="inv-form">' +
+      '<label class="fil-field"><span>' + tr('名称') + '</span><input class="input" data-role="name" maxlength="120" placeholder="' +
+        tr('例如：拓竹 PLA Basic 白色') + '"></label>' +
+      '<div class="fil-field-row">' +
+        '<label class="fil-field"><span>' + tr('品牌') + '</span><input class="input" data-role="brand" maxlength="80" list="fil-brand-list-modal" placeholder="' +
+          tr('可留空') + '"></label>' +
+        '<label class="fil-field"><span>' + tr('耗材类型') + '</span><select class="select" data-role="type">' + typeOpts + '</select></label>' +
+      '</div>' +
+      '<datalist id="fil-brand-list-modal">' + st.brands.map((b) => '<option value="' + esc(b) + '"></option>').join('') + '</datalist>' +
+      '<div class="fil-field-row">' +
+        '<label class="fil-field"><span>' + tr('颜色') + '</span><span class="fil-color-wrap">' +
+          '<input type="color" data-role="color" value="' + DEFAULT_COLOR + '">' +
+          '<input class="input fil-hex" data-role="colorText" maxlength="7" value="' + DEFAULT_COLOR + '"></span></label>' +
+        '<label class="fil-field"><span>' + tr('单价（元 / kg）') + '</span><input class="input" type="number" data-role="price" min="0" step="0.01" value="0"></label>' +
+      '</div>' +
+      '<div class="fil-field-row">' +
+        '<label class="fil-field"><span>' + tr('剩余克数') + '</span><input class="input" type="number" data-role="stockG" min="0" step="1" value="1000"></label>' +
+        '<label class="fil-field"><span>' + tr('整卷克数') + '</span><input class="input" type="number" data-role="fullG" min="1" step="1" value="1000"></label>' +
+      '</div>' +
+      '<p class="hint">' + tr('这里记录的是你手上真正有的耗材；打印成功后会按这里的剩余克数自动扣减。') + '</p>' +
+    '</div>';
+  customDialog({
+    title: tr('添加耗材'),
+    body,
+    onMount: (modal, close) => {
+      const q = (sel) => modal.querySelector(sel);
+      const color = q('[data-role="color"]');
+      const colorText = q('[data-role="colorText"]');
+      color.addEventListener('input', () => { colorText.value = color.value; });
+      colorText.addEventListener('input', () => {
+        if (HEX.test(colorText.value.trim())) color.value = colorText.value.trim();
+      });
+      const foot = modal.querySelector('.modal-foot') || modal;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-primary';
+      btn.textContent = tr('添加');
+      btn.addEventListener('click', async () => {
+        const name = q('[data-role="name"]').value.trim();
+        if (!name) { emitToast('error', tr('名称不能为空')); return; }
+        const c = colorText.value.trim();
+        if (!HEX.test(c)) { emitToast('error', tr('颜色格式不对，请填写 #RRGGBB')); return; }
+        const fullG = Number(q('[data-role="fullG"]').value);
+        const stockG = Number(q('[data-role="stockG"]').value);
+        if (!(fullG > 0)) { emitToast('error', tr('整卷克数要大于 0')); return; }
+        if (!(stockG >= 0)) { emitToast('error', tr('剩余克数不能为负数')); return; }
+        btn.disabled = true;
+        try {
+          const f = await api.filamentCreate({
+            kind: 'owned',
+            name,
+            brand: q('[data-role="brand"]').value.trim(),
+            type: q('[data-role="type"]').value,
+            color: c,
+            pricePerKg: q('[data-role="price"]').value,
+            stockG,
+            fullG,
+            lowG: Math.round(fullG * 0.1),
+          });
+          st.selectedId = f.id;
+          st.tab = 'stock';
+          emitToast('success', tr('已添加耗材「') + name + '」');
+          close(null);
+          emitRefresh('filaments');
+          await refresh();
+        } catch (_) {
+          btn.disabled = false;   // api 层已 toast，允许改完重试
+        }
+      });
+      foot.appendChild(btn);
+    },
+  });
 }
 
 async function setDefault(f) {
@@ -342,80 +495,97 @@ async function onClick(e) {
   const t = e.target;
   if (!t || !t.closest) return;
 
-  const card = t.closest('.fil-card');
-  if (card) { st.selectedId = card.dataset.id; render(); return; }
-
-  // 筛选下拉框不能在 click 阶段处理：原生 select 的下拉刚弹出，
-  // 这里一 render() 就把整个面板 innerHTML 换掉，下拉框瞬间消失。
-  // 交给 change 事件（选中之后才触发），见 onChange。
+  const tabBtn = t.closest('[data-tab]');
+  if (tabBtn && tabBtn.closest('.fil-tabs')) {
+    const next = tabBtn.dataset.tab === 'catalog' ? 'catalog' : 'stock';
+    if (next !== st.tab) {
+      st.tab = next;
+      st.selectedId = null;
+      st.keyword = '';
+      st.filterType = '';
+    }
+    render();
+    return;
+  }
 
   const act = (t.closest('[data-act]') || {}).dataset;
-  if (!act) return;
-  switch (act.act) {
-    case 'new': {
-      let name;
-      try { name = await promptDialog({ title: tr('新建耗材'), label: tr('耗材名称'), placeholder: tr('例如：拓竹 PLA Basic 白色'), confirmText: tr('创建') }); }
-      catch (_) { return; }
-      if (name && name.trim()) await createWithName(name.trim());
-      break;
-    }
-    case 'set-default': {
-      const f = st.items.find((x) => x.id === st.selectedId);
-      await setDefault(f);
-      break;
-    }
-    case 'save': await save(); break;
-    case 'upload': {
-      let p;
-      try { p = await api.filamentPickImage(); } catch (_) { return; }
-      if (!p) return;
-      const f0 = st.items.find((x) => x.id === st.selectedId);
-      // 先读原图 -> 裁切/缩放 -> 再落盘。原图不直接入库，
-      // 手机拍的 4000px 大图会在卡片里当几百 KB 的装饰图，白占内存。
-      let raw;
-      try { raw = await api.filamentReadImage(p); } catch (_) { return; }
-      let edited;
-      try {
-        edited = await openImageEditor({ dataUrl: raw.dataUrl, fileName: raw.name, name: f0 ? f0.name : '' });
-      } catch (_) { return; }
-      if (!edited) return;
-      if (edited.error) { emitToast('error', edited.error); return; }
-      try {
-        const r = await api.filamentSetImageData(st.selectedId, edited.dataUrl);
-        emitToast('success', tr('图片已更新（') + edited.width + ' × ' + edited.height + '）');
+  if (act) {
+    switch (act.act) {
+      case 'new-owned': await addOwned(); return;
+      case 'new': {
+        let name;
+        try { name = await promptDialog({ title: tr('新建耗材'), label: tr('耗材名称'), placeholder: tr('例如：拓竹 PLA Basic 白色'), confirmText: tr('创建') }); }
+        catch (_) { return; }
+        if (name && name.trim()) await createWithName(name.trim());
+        return;
+      }
+      case 'inv-edit': {
+        if (act.id) { st.selectedId = act.id; render(); }
+        return;
+      }
+      case 'set-default': {
         const f = st.items.find((x) => x.id === st.selectedId);
-        if (f) f.image = r.image;
-        render();
-      } catch (_) { /* 已 toast */ }
-      break;
+        await setDefault(f);
+        return;
+      }
+      case 'save': await save(); return;
+      case 'upload': {
+        let p;
+        try { p = await api.filamentPickImage(); } catch (_) { return; }
+        if (!p) return;
+        const f0 = st.items.find((x) => x.id === st.selectedId);
+        // 先读原图 -> 裁切/缩放 -> 再落盘。原图不直接入库，
+        // 手机拍的 4000px 大图会在卡片里当几百 KB 的装饰图，白占内存。
+        let raw;
+        try { raw = await api.filamentReadImage(p); } catch (_) { return; }
+        let edited;
+        try {
+          edited = await openImageEditor({ dataUrl: raw.dataUrl, fileName: raw.name, name: f0 ? f0.name : '' });
+        } catch (_) { return; }
+        if (!edited) return;
+        if (edited.error) { emitToast('error', edited.error); return; }
+        try {
+          const r = await api.filamentSetImageData(st.selectedId, edited.dataUrl);
+          emitToast('success', tr('图片已更新（') + edited.width + ' × ' + edited.height + '）');
+          const f = st.items.find((x) => x.id === st.selectedId);
+          if (f) f.image = r.image;
+          render();
+        } catch (_) { /* 已 toast */ }
+        return;
+      }
+      case 'delete': {
+        const f = st.items.find((x) => x.id === (act.id || st.selectedId));
+        if (!f) return;
+        let yes = false;
+        try {
+          yes = await confirmDialog({
+            title: tr('删除耗材'), message: tr('确定删除耗材「') + f.name + tr('」吗？'),
+            detail: tr('已有模型引用的话，它们的成本会显示为「未分配耗材」；历史回执不受影响。'),
+            items: [f.name], danger: true, confirmText: tr('删除'),
+          });
+        } catch (_) { return; }
+        if (!yes) return;
+        try {
+          await api.filamentRemove(f.id);
+          if (st.selectedId === f.id) st.selectedId = null;
+          emitToast('success', tr('已删除'));
+          await refresh();
+        } catch (_) { /* 已 toast */ }
+        return;
+      }
+      case 'stock-log': await showStockLog(); return;
+      case 'stock-shopping': await showShopping(); return;
+      case 'open-dir':
+        try { await api.filamentsOpenDir(); } catch (_) { /* 已 toast */ }
+        return;
+      default: return;
     }
-    case 'delete': {
-      const f = st.items.find((x) => x.id === st.selectedId);
-      if (!f) return;
-      let yes = false;
-      try {
-        yes = await confirmDialog({
-          title: tr('删除耗材'), message: tr('确定删除耗材「') + f.name + tr('」吗？'),
-          detail: tr('已有模型引用的话，它们的成本会显示为「未分配耗材」；历史回执不受影响。'),
-          items: [f.name], danger: true, confirmText: tr('删除'),
-        });
-      } catch (_) { return; }
-      if (!yes) return;
-      try {
-        await api.filamentRemove(f.id);
-        st.selectedId = null;
-        emitToast('success', tr('已删除'));
-        await refresh();
-      } catch (_) { /* 已 toast */ }
-      break;
-    }
-    case 'stock-log': await showStockLog(); break;
-    case 'stock-shopping': await showShopping(); break;
-    case 'open-dir':
-      try { await api.filamentsOpenDir(); } catch (_) { /* 已 toast */ }
-      break;
-    default: break;
   }
+
+  const row = t.closest('.inv-row');
+  if (row && row.dataset.id) { st.selectedId = row.dataset.id; render(); return; }
+  const card = t.closest('.fil-card');
+  if (card) { st.selectedId = card.dataset.id; render(); return; }
 }
 
 function onChange(e) {
@@ -430,6 +600,14 @@ function onInput(e) {
   const t = e.target;
   if (t && t.matches && t.matches('[data-act-input="keyword"]')) {
     st.keyword = t.value || '';
+    const invRows = document.querySelector('#inv-rows');
+    if (invRows) {
+      const list = filtered();
+      invRows.innerHTML = invRowsHtml(list);
+      const cnt = document.querySelector('#inv-count');
+      if (cnt) cnt.textContent = tr('共 ') + list.length + ' ' + tr('种在库耗材');
+      return;
+    }
     const grid = document.querySelector('.fil-grid');
     if (grid) {
       const list = filtered();
@@ -479,6 +657,10 @@ export function openFilaments() {
   if (!panel) return;
   panel.hidden = false;
   open = true;
+  st.tab = 'stock';          // 「耗材管理」首先看自己真正拥有的库存
+  st.selectedId = null;
+  st.keyword = '';
+  st.filterType = '';
   render();
   refresh();
 }

@@ -162,7 +162,7 @@
   <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /> <path d="M2 12h20" /></symbol>
 </svg>
 
-<!-- ==================== DOM CONTRACT（E/F 只读，不得修改本文件） ====================
+<!-- ==================== DOM CONTRACT（结构 / 关键 id 只读；文案可按需求改，2026-11-26 耗材管理改名） ====================
 关键 id 清单：
   #titlebar #global-search #search-input #search-clear #btn-quick-add #btn-scan
   #btn-roulette #btn-theme #btn-settings #btn-win-min #btn-win-max #btn-win-close
@@ -310,7 +310,7 @@
       <button id="btn-devices" class="icon-btn dev-btn" data-i18n-title="设备：管理你的打印机" title="设备：管理你的打印机">
         <svg class="ico"><use href="#i-printer"/></svg><span class="dev-badge" hidden></span>
       </button>
-      <button id="btn-filaments" class="icon-btn" data-i18n-title="耗材库：管理耗材与单价" title="耗材库：管理耗材与单价"><svg class="ico"><use href="#i-box"/></svg></button>
+      <button id="btn-filaments" class="icon-btn" data-i18n-title="耗材管理：库存与选购库" title="耗材管理：库存与选购库"><svg class="ico"><use href="#i-box"/></svg></button>
       <button id="btn-roulette" class="icon-btn" data-i18n-title="打印轮盘：随机挑一个未打印模型" title="打印轮盘：随机挑一个未打印模型"><svg class="ico"><use href="#i-dice"/></svg></button>
       <button id="btn-language" class="icon-btn lang-btn" data-i18n-title="language.switchToEn" title="language.switchToEn" aria-label="Language"><span id="lang-label">中</span></button>
       <button id="btn-theme" class="icon-btn" data-i18n-title="切换深浅主题" title="切换深浅主题"><svg class="ico"><use href="#i-moon"/></svg></button>
@@ -515,8 +515,8 @@
 <div id="filaments-panel" class="overlay filaments-overlay" hidden>
   <div class="fil-window">
     <header class="fil-head">
-      <h2><svg class="ico"><use href="#i-box"/></svg><span data-i18n="耗材库">耗材库</span></h2>
-      <span class="fil-head-sub" data-i18n="价格 · 颜色 · 类型，成本账本的基础">价格 · 颜色 · 类型，成本账本的基础</span>
+      <h2><svg class="ico"><use href="#i-box"/></svg><span data-i18n="耗材管理">耗材管理</span></h2>
+      <span class="fil-head-sub" data-i18n="耗材库存记录你真正拥有的耗材；耗材库是选购与比价参考">耗材库存记录你真正拥有的耗材；耗材库是选购与比价参考</span>
       <button id="filaments-close" class="icon-btn" data-i18n-title="关闭 (Esc)" title="关闭 (Esc)"><svg class="ico"><use href="#i-close"/></svg></button>
     </header>
     <div id="filaments-body" class="fil-body"></div>

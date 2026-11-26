@@ -32,7 +32,10 @@ try {
   await until(() => q('#sidebar') && (q('#content .card') || q('#content .empty')), 15000);
 
   // ---------- D · 库存 ----------
-  const f = await window.shelf.filamentCreate({ name: '探针 PLA 白' });
+  const f = await window.shelf.filamentCreate({
+    kind: 'owned', name: '探针 PLA 白', type: 'PLA', color: '#f2f2f2',
+    pricePerKg: 99, stockG: 620, fullG: 1000,
+  });
   await window.shelf.stockAdjust({ filamentId: f.id, stockG: 620, addSpools: 1 });
   out.info.stock = await window.shelf.stockStatus(f.id);
   ok(out.info.stock && out.info.stock.stockG === 620, '库存写入 620g');
@@ -42,14 +45,30 @@ try {
 
   q('#btn-filaments').click();
   const fid = out.info.stock.id;
-  await until(() => q('.fil-card[data-id="' + fid + '"]'), 10000);
-  const card = q('.fil-card[data-id="' + fid + '"]');
+  await until(() => q('.inv-row[data-id="' + fid + '"]'), 10000);
+  const card = q('.inv-row[data-id="' + fid + '"]');
   card.click();
   await until(() => q('[data-field="stockG"]') && q('[data-field="stockG"]').value === '620', 8000);
-  ok(!!card && !!card.querySelector('.fil-stock'), '耗材卡片显示库存条');
-  ok(card && /620/.test(card.textContent), '卡片显示约剩 620g');
+  ok(!!card && !!card.querySelector('.inv-bar'), '库存表显示剩余进度条');
+  ok(card && /620/.test(card.textContent), '库存表显示约剩 620g');
   const sinput = q('[data-field="stockG"]');
   ok(!!sinput && sinput.value === '620', '详情里有剩余克数输入框且值正确');
+  ok(!!q('[data-tab="catalog"]'), '耗材管理里有「耗材库」选购参考 tab');
+  const rowsBefore = document.querySelectorAll('.inv-row').length;
+  q('[data-act="new-owned"]').click();
+  await until(() => q('.modal [data-role="name"]'), 6000);
+  ok(!!q('.modal [data-role="name"]') && !!q('.modal [data-role="stockG"]'), '「添加耗材」弹窗含名称与克数字段');
+  if (q('.modal [data-role="name"]')) {
+    q('.modal [data-role="name"]').value = 'UI 添加的 PETG';
+    q('.modal [data-role="price"]').value = '88';
+    q('.modal [data-role="stockG"]').value = '500';
+    q('.modal [data-role="type"]').value = 'PETG';
+    q('.modal .modal-foot .btn-primary').click();
+    await until(() => document.querySelectorAll('.inv-row').length > rowsBefore, 8000);
+    ok(document.querySelectorAll('.inv-row').length > rowsBefore, '从弹窗添加后库存表多一行');
+    ok(!!q('.inv-row.is-selected') && /UI 添加的 PETG/.test(q('.inv-row.is-selected').textContent), '新增耗材自动选中');
+  }
+  esc(); await sleep(300);
   q('#filaments-close').click();
   await sleep(300);
 
@@ -69,19 +88,22 @@ try {
   const hs = await window.shelf.imgHashStatus();
   ok(hs && typeof hs.total === 'number' && typeof hs.pending === 'number', '指纹索引导出状态');
 
-  // ---------- I · 周报 / 成就 ----------
+  // ---------- I · 周报（打印回执页） / 成就（设置） ----------
+  q('#sidebar [data-smart="printed"]').click();
+  await until(() => q('.rc-summary'), 8000);
+  ok(!!q('[data-act="rc-weekly"]'), '打印回执页右上角有「本周周报」按钮');
+  q('[data-act="rc-weekly"]').click();
+  await until(() => q('.wk-grid'), 6000);
+  ok(qa('.wk-kpi').length >= 6, '周报弹窗有 6 个 KPI');
+  esc(); await sleep(400);
+
+  q('#sidebar [data-smart="all"]').click();
   q('#btn-settings').click();
   await until(() => q('#settings-content .settings-nav, #settings-nav'), 6000);
   const navData = q('#settings-nav [data-tab="data"]');
   ok(!!navData, '设置页有「数据管理」标签');
   if (navData) navData.click();
-  await until(() => q('[data-act="weekly-report"]'), 6000);
-  ok(!!q('[data-act="weekly-report"]'), '数据管理里有「本周周报」按钮');
-  q('[data-act="weekly-report"]').click();
-  await until(() => q('.wk-grid'), 6000);
-  ok(qa('.wk-kpi').length >= 6, '周报弹窗有 6 个 KPI');
-  esc(); await sleep(400);
-
+  await until(() => q('[data-act="achievements"]'), 6000);
   q('[data-act="achievements"]').click();
   await until(() => q('.ach-grid'), 6000);
   out.info.achCards = qa('.ach-card').length;

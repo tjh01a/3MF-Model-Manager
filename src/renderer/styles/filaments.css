@@ -184,6 +184,86 @@
 .fil-color-wrap input[type="color"] { width: 38px; height: 32px; padding: 2px; cursor: pointer; }
 .fil-hex { font-family: var(--mono, monospace); }
 
+/* 耗材管理：库存 / 耗材库 两个 tab，以及拓竹式库存表 */
+.fil-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 18px 0;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.fil-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px 9px;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 7px 7px 0 0;
+}
+.fil-tab:hover { color: var(--text); background: var(--hover); }
+.fil-tab.is-active { color: var(--accent); font-weight: 600; background: var(--accent-soft); }
+.fil-tab.is-active::after {
+  content: "";
+  position: absolute; left: 12px; right: 12px; bottom: -1px; height: 2px;
+  background: var(--accent); border-radius: 2px;
+}
+.fil-tab-count {
+  min-width: 18px; padding: 1px 5px; border-radius: 999px;
+  background: var(--bg-sunken, #eef1f5); color: var(--text-dim);
+  font-size: 10px; text-align: center; font-variant-numeric: tabular-nums;
+}
+.fil-tab.is-active .fil-tab-count { background: var(--accent); color: #fff; }
+
+.inv-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 12px 18px 16px; overflow: hidden; }
+.inv-head, .inv-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 250px 74px;
+  align-items: center;
+  gap: 14px;
+}
+.inv-head {
+  padding: 8px 12px;
+  color: var(--text-mute);
+  font-size: 11px;
+  border-bottom: 1px solid var(--border);
+}
+.inv-head span:nth-child(2) { text-align: left; }
+.inv-head span:nth-child(3) { text-align: right; }
+.inv-rows { flex: 1; min-height: 0; overflow-y: auto; }
+.inv-row {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  border-radius: 8px;
+}
+.inv-row:hover { background: var(--hover); }
+.inv-row.is-selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.inv-name-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.inv-swatch {
+  width: 28px; height: 28px; flex: 0 0 28px; border-radius: 6px;
+  border: 1px solid rgba(15, 23, 42, .12); background: #94a3b8;
+}
+.inv-name-block { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.inv-name-block b { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inv-name-block small { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inv-remain { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.inv-grams { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inv-remain.is-low .inv-grams { color: #b45309; }
+.inv-bar { height: 4px; border-radius: 999px; background: var(--bg-sunken, #eef1f5); overflow: hidden; }
+.inv-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.inv-remain.is-low .inv-bar > span { background: #f59e0b; }
+.inv-ops { display: flex; justify-content: flex-end; gap: 2px; }
+.inv-act { width: 30px; height: 30px; }
+.inv-act .ico { width: 15px; height: 15px; }
+.inv-form { display: flex; flex-direction: column; gap: 12px; }
+.inv-wrap .fil-empty { padding: 46px 12px; }
+
 html[data-theme="dark"] .fil-window { box-shadow: 0 24px 80px rgba(0, 0, 0, .5); }
 html[data-theme="dark"] .fil-dot { border-color: rgba(255,255,255,.2); }
 
@@ -191,6 +271,7 @@ html[data-theme="dark"] .fil-dot { border-color: rgba(255,255,255,.2); }
   .fil-main { flex-direction: column; }
   .fil-detail { width: 100%; flex: 0 0 auto; max-height: 45%; border-left: none; border-top: 1px solid var(--border); }
   .fil-toolbar { flex-wrap: wrap; }
+  .inv-head, .inv-row { grid-template-columns: minmax(0, 1fr) 150px 64px; gap: 8px; }
 }
 
 /* ==========================================================================
@@ -211,7 +292,7 @@ html[data-theme="dark"] .fil-dot { border-color: rgba(255,255,255,.2); }
 .rc-stat span { font-size: 11px; color: var(--text-dim); }
 .rc-stat-cost { margin-left: auto; align-items: flex-end; }
 .rc-stat-cost strong { color: var(--accent); }
-.rc-summary-act { display: flex; align-items: center; padding-left: 12px; border-left: 1px solid var(--border); }
+.rc-summary-act { display: flex; align-items: center; gap: 8px; padding-left: 12px; border-left: 1px solid var(--border); }
 
 .rc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
 .rc-card {

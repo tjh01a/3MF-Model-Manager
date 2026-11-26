@@ -545,11 +545,10 @@ function renderData() {
     ) +
     sec(tr('统计与导出'),
       '<div class="btn-row">' +
-        actionBtn('weekly-report', 'i-clock', tr('本周周报'), 'btn btn-primary btn-sm') +
         actionBtn('achievements', 'i-star', tr('成就')) +
         actionBtn('passport-csv', 'i-download', tr('导出模型护照 CSV')) +
       '</div>' +
-      '<p class="hint">' + tr('周报按回执与入库时间统计（周一到周日）；护照 CSV 含作者、许可、来源与商用判断，方便核对素材能不能商用。') + '</p>'
+      '<p class="hint">' + tr('护照 CSV 含作者、许可、来源与商用判断，方便核对素材能不能商用。打印周报在「打印回执 · 成本账本」页右上角打开。') + '</p>'
     ) +
     sec(tr('缩略图缓存'),
       '<div class="btn-row">' +
@@ -1110,35 +1109,7 @@ async function openDataDir() {
 }
 
 // ---------- 事件分发 ----------
-// ---------- I · 周报 / 成就 / 护照 ----------
-async function showWeekly() {
-  let r;
-  try { r = await api.weeklyReport(0); } catch (_) { return; }
-  const t = r.totals || {};
-  const bars = (r.days || []).map((d) => {
-    const max = Math.max(1, ...(r.days || []).map((x) => x.prints));
-    const h = Math.round(((d.prints || 0) / max) * 100);
-    return '<div class="wk-day"><span class="wk-bar-wrap"><span class="wk-bar" style="height:' + h + '%"></span></span>' +
-      '<span class="wk-day-label">' + escapeHtml(d.label) + '</span>' +
-      '<span class="wk-day-num">' + d.prints + '</span></div>';
-  }).join('');
-  const top = (r.topModels || []).length
-    ? '<ol class="wk-top">' + r.topModels.map((m) => '<li><span>' + escapeHtml(m.name) + '</span>' +
-      tr('打印 ') + m.prints + tr(' 次 · ') + Math.round(m.grams) + ' g · ¥' + Number(m.cost || 0).toFixed(2) + '</li>').join('') + '</ol>'
-    : tr('<p class="muted">本周还没有完成的打印</p>');
-  customDialog({
-    title: tr('本周周报') + ' · ' + r.label,
-    body: '<div class="wk-grid">' +
-      '<div class="wk-kpi"><b>' + (t.finished || 0) + '</b><span>' + tr('完成打印') + '</span></div>' +
-      '<div class="wk-kpi"><b>' + (t.successRate == null ? '—' : t.successRate + '%') + '</b><span>' + tr('成功率') + '</span></div>' +
-      '<div class="wk-kpi"><b>' + (t.newModels || 0) + '</b><span>' + tr('新增模型') + '</span></div>' +
-      '<div class="wk-kpi"><b>' + Math.round(t.filamentG || 0) + ' g</b><span>' + tr('用料') + '</span></div>' +
-      '<div class="wk-kpi"><b>¥' + Number(t.cost || 0).toFixed(2) + '</b><span>' + tr('估算成本') + '</span></div>' +
-      '<div class="wk-kpi"><b>' + (t.failed || 0) + '</b><span>' + tr('失败') + '</span></div>' +
-      '</div><div class="wk-chart">' + bars + '</div><h4>' + tr('本周最常打印') + '</h4>' + top,
-  });
-}
-
+// ---------- I · 成就 / 护照（周报已移到打印回执页） ----------
 async function showAchievements() {
   let r;
   try { r = await api.achievementsList({ notify: false }); } catch (_) { return; }
@@ -1169,7 +1140,6 @@ async function dispatch(act, node) {
   switch (act) {
     case 'add-folder': return addFolder();
     case 'scan-all': return scanAll();
-    case 'weekly-report': return showWeekly();
     case 'achievements': return showAchievements();
     case 'passport-csv': return copyPassportCsv();
     case 'folder-remove': return folderRemove(d.id);

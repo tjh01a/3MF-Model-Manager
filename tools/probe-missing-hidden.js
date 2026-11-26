@@ -67,22 +67,11 @@ out.statHasMissingLabel = statHasMissingLabel;
 const allNav = q('#sidebar [data-smart="all"]');
 out.sidebarAllBadge = allNav ? Number(((allNav.querySelector('.nav-count') || {}).textContent || '0')) : null;
 
-// 维护视图：仍应列出失效记录
+// 2026-11-26 用户要求去掉侧栏「失效文件」入口：这里断言入口不存在，
+// 同时下面的 itemsWithMissing / missingBadges 仍要保证失效记录不混进主页。
 const missingNav = q('#sidebar [data-smart="missing"]');
-out.missingNavBadge = missingNav ? Number(((missingNav.querySelector('.nav-count') || {}).textContent || '0')) : 0;
-let missingViewCount = 0;
-if (missingNav && out.missingNavBadge > 0) {
-  missingNav.click();
-  await waitFor(() => q('#content .missing-list, #content .special-head'));
-  await sleep(300);
-  missingViewCount = qa('#content .missing-item').length;
-  out.missingViewCount = missingViewCount;
-  // 回到全部模型
-  const back = q('#sidebar [data-smart="all"]');
-  if (back) back.click();
-  await waitFor(() => qa('#content .card').length > 0);
-}
-out.missingViewWorks = out.missingNavBadge > 0 ? missingViewCount === out.missingNavBadge : true;
+out.missingNavExists = !!missingNav;
+out.missingViewWorks = !missingNav;
 
 // 卡片数会少于总数：内容相同的重复文件主页只显示一张（折叠），这里按同样的口径算期望值
 const byGroup = new Map();

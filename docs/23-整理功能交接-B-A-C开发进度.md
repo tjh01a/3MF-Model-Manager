@@ -117,3 +117,11 @@ node tests/shapeprint-tests.js --verbose   # 打印合成网格两两距离（�
 - I 周报/成就/护照：`report.js` / `achievements.js` / `passport.js`；周报周一为起点、用料成本只算成功回执；成就 11 条、解锁时间持久化；护照 CSV 带 BOM，许可 `commercialUse > 预设 > null`。
 - 契约：163 方法 / 23 事件；新增事件 `stock:changed / img:progress / img:changed`。四套单测已串入 `npm run selftest`；界面探针 `tools/probe-dfgi.js` 16 项全绿。
 - 未做：E 上料方案、H 多语言/无障碍；I 周报未生成 PNG 卡片（当前 HTML 弹窗），成就/护照无独立页；D 低库存未接系统通知。
+
+## 10. 耗材管理拆分 / 失效文件入口 / 周报迁移（2026-11-26）
+
+- 侧栏 `耗材库` → `耗材管理`，浮层两个 tab：库存（owned）、耗材库（catalog）。库存默认打开，表格 + 右侧详情，另可「添加耗材」弹窗。
+- 记录新增 `kind`；旧记录按 `stockG` 是否有值推断。`filamentCreate` 可直接带库存字段；耗材库详情不再显示库存输入，避免误清空。
+- 侧栏移除「失效文件」；`smart=missing` 数据与查询没删，只无入口。旧探针 `probe-missing-hidden` / `probe-special-views` 已改为断言入口不存在。
+- 「本周周报」从设置移到打印回执页右上角，逻辑抽到 `components/weekly-report.js`，设置只留成就与护照 CSV。
+- 验证：`node tests/filaments-tests.js` 95/0；`npm run selftest` 全绿；`tools/probe-dfgi.js` 20/0；契约仍 163 方法 / 23 事件。

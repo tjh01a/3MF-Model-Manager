@@ -15,6 +15,7 @@ import { api, emitToast, emitRefresh } from '../api.js';
 import { state, setState } from '../state.js';
 import { escapeHtml, icon, qs, qsa } from '../utils.js';
 import { confirmDialog, customDialog } from '../components/modal.js';
+import { showWeeklyReport } from '../components/weekly-report.js';
 import { enterEditMode, isEditMode, exitEditMode } from '../components/editmode.js';
 
 const esc = (v) => escapeHtml(v == null ? '' : String(v));
@@ -155,6 +156,7 @@ function render(snapshot) {
       '<div class="rc-stat"><strong>' + (Number(s.totalGrams) || 0).toFixed(0) + tr(' g</strong><span>累计用料</span></div>') +
       '<div class="rc-stat rc-stat-cost"><strong>¥' + (Number(s.totalCost) || 0).toFixed(2) + tr('</strong><span>累计成本</span></div>') +
       '<div class="rc-summary-act">' +
+        '<button type="button" class="btn btn-sm btn-primary" data-act="rc-weekly">' + icon('i-clock') + tr('本周周报') + '</button>' +
         (unlinkedCount
           ? '<button type="button" class="btn btn-sm btn-ghost" data-act="rc-autolink" ' +
             tr('title="按名字自动关联到模型库（分多次打印的后缀会自动忽略）">') +
@@ -403,6 +405,7 @@ function onClick(e) {
   }
   if (card && isEditMode()) { toggleSelect(card.dataset.id); return; }
   if (!node) return;
+  if (node.dataset.act === 'rc-weekly') { showWeeklyReport(0); return; }
   if (node.dataset.act === 'rc-autolink') { autoLink(); return; }
   if (node.dataset.act !== 'rc-clear') return;
   clearAll();
