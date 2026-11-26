@@ -113,12 +113,28 @@ function variantBadge(m) {
   return '<span class="badge warn">' + esc(tr('疑似')) + (pct != null ? ' · ' + tr('相似度') + ' ' + pct + '%' : '') + '</span>';
 }
 
+function newestMember(g) {
+  const list = (g && g.members) || [];
+  let best = null;
+  let bestAt = -1;
+  for (const m of list) {
+    // “最新版本”按文件修改时间判断；复制旧文件不会改 mtime，重新导出的新版本会更新。
+    const at = Number(m.mtime) || Number(m.createdAt) || 0;
+    if (at > bestAt || (at === bestAt && best && String(m.id) > String(best.id))) {
+      best = m;
+      bestAt = at;
+    }
+  }
+  return best;
+}
+
 function groupCard(g) {
   const isExact = g.kind === 'exact';
   const isVariant = g.kind === 'variant';
   const label = isExact ? tr('内容完全相同') : (isVariant ? tr('缩略图相同') : tr('疑似，请人工确认'));
   const cls = isExact ? '' : ' warn';
   const keeperId = pickFor(g);
+  const newest = isVariant ? newestMember(g) : null;
   const rows = g.members.map((m) => memberRow(g, m, m.id === keeperId)).join('');
   const note = isExact
     ? tr('每组的文件内容一模一样，可以放心合并。')
@@ -131,6 +147,11 @@ function groupCard(g) {
       tr('<span class="muted">共 ') + g.members.length + tr(' 个文件</span>') +
       (g.freedBytes ? tr('<span class="muted">合并后可释放约 ') + esc(fmtBytes(g.freedBytes)) + '</span>' : '') +
       '<span class="spacer"></span>' +
+      (isVariant && newest
+        ? '<button type="button" class="btn btn-ghost btn-sm" data-act="sp-keep-new" data-group="' + esc(g.key) +
+          '" data-keep="' + esc(newest.id) + '" title="' + esc(tr('保留文件修改时间最新的这一份，把其余旧版本移入系统回收站；会先弹确认框。')) + '">' +
+          icon('i-trash') + tr('<span>保留最新 · 删旧版</span></button>')
+        : '') +
       '<button type="button" class="btn btn-ghost btn-sm" data-act="sp-merge" data-group="' + esc(g.key) + '" title="' + esc(tr('其余文件降为这个主记录的「副本」，不再出现在列表里；磁盘文件保持不动')) + '">' +
         icon('i-copy') + tr('<span>合并 · 只标为副本</span></button>') +
       '<button type="button" class="btn btn-primary btn-sm" data-act="sp-merge-trash" data-group="' + esc(g.key) + '" title="' + esc(tr('其余文件降为副本，并把它们的文件移入系统回收站')) + '">' +
@@ -212,6 +233,8 @@ function stopShapePolling() {
 async function renderVariants() {
   const content = el('content');
   if (!content) return;
+  // 同款变体也有「合并」按钮：补拉一次分组索引，否则按钮拿不到成员/保留规则，点了没反应。
+  await loadGroups();
   let st = null;
   try { st = await api.shapeStatus(); } catch (_) { st = null; }
   if (state.contentMode !== 'variants' || !content) return;
@@ -367,30 +390,40 @@ function linesForMerge(selection) {
   return { lines, n };
 }
 
-/** 合并一组或几组。trash=true 时先把副本文件移入回收站。 */
-async function doMerge(keys, trash) {
+/** 合并一组或几组。trash=true 时先把副本文件移入回收站。keepNewest 时保留最新版本、删旧版。 */
+async function doMerge(keys, trash, opts = {}) {
   if (mergeBusy || !keys.length) return;
   const selection = {};
   for (const key of keys) {
     const g = groupIndex.get(key);
     if (!g) continue;
-    selection[key] = pickFor(g);
+    if (opts.keepNewest && keys.length === 1 && opts.keepId && g.members.some((m) => m.id === opts.keepId)) {
+      selection[key] = opts.keepId;
+    } else {
+      selection[key] = pickFor(g);
+    }
   }
   if (!Object.keys(selection).length) return;
   const { lines, n } = linesForMerge(selection);
   const freed = keys.reduce((s, key) => s + (Number((groupIndex.get(key) || {}).freedBytes) || 0), 0);
   const groupCount = Object.keys(selection).length;
+  const keepNewest = !!opts.keepNewest;
+  const keepName = keepNewest ? shortName((groupIndex.get(keys[0]) || {}).members.find((m) => m.id === selection[keys[0]])) : '';
   const ok = await confirmDialog({
-    title: trash ? tr('合并并移入回收站') : tr('合并 · 只标为副本'),
-    message: trash
-      ? tr('共 ') + groupCount + tr(' 组：保留 ') + groupCount + tr(' 个主记录，其余 ') + n + tr(' 个降为副本，并把它们的文件移入系统回收站（约 ') + esc(fmtBytes(freed)) + tr('）。如果系统回收站不可用，会保留文件、只标为副本，不会直接删除。')
-      : tr('共 ') + groupCount + tr(' 组：保留 ') + groupCount + tr(' 个主记录，其余 ') + n + tr(' 个降为副本。磁盘文件不动。'),
-    detail: tr('保留规则：优先留有缩略图、备注、打印记录的那份，其次留最早入库的。可在每组里手动改选。')
+    title: keepNewest ? tr('保留最新 · 删除旧版') : (trash ? tr('合并并移入回收站') : tr('合并 · 只标为副本')),
+    message: keepNewest
+      ? tr('将保留「') + keepName + tr('」（文件修改时间最新），其余 ') + n + tr(' 个旧版本降为副本，并把旧文件移入系统回收站（约 ') + esc(fmtBytes(freed)) + tr('）。如果系统回收站不可用，会保留文件、只标为副本，不会直接删除。')
+      : (trash
+        ? tr('共 ') + groupCount + tr(' 组：保留 ') + groupCount + tr(' 个主记录，其余 ') + n + tr(' 个降为副本，并把它们的文件移入系统回收站（约 ') + esc(fmtBytes(freed)) + tr('）。如果系统回收站不可用，会保留文件、只标为副本，不会直接删除。')
+        : tr('共 ') + groupCount + tr(' 组：保留 ') + groupCount + tr(' 个主记录，其余 ') + n + tr(' 个降为副本。磁盘文件不动。')),
+    detail: (keepNewest
+      ? tr('“最新版本”按文件修改时间判断，不看文件名。删除的是旧版本文件，不是整组；确认后可在系统回收站还原。')
+      : tr('保留规则：优先留有缩略图、备注、打印记录的那份，其次留最早入库的。可在每组里手动改选。'))
       + (trash
         ? tr('副本的备注和打印记录会保留在主记录的详情页。软件只能解除副本关系，不能把文件从回收站取回；要还原请到系统回收站操作。')
         : tr('副本的备注和打印记录会保留在主记录的详情页，随时可以解除。')),
     items: lines, danger: !!trash,
-    confirmText: trash ? tr('合并并移入回收站') : tr('合并'),
+    confirmText: keepNewest ? tr('保留最新 · 删旧版') : (trash ? tr('合并并移入回收站') : tr('合并')),
   });
   if (!ok) return;
   mergeBusy = true;
@@ -405,9 +438,11 @@ async function doMerge(keys, trash) {
         tr('已合并 ') + (r.merged || 0) + tr(' 组，') + failed.length + tr(' 个文件没能移入系统回收站')
         + (kept ? tr('；其中 ') + kept + tr(' 个文件保持原位、只标为副本（') + why + '）' : '（' + why + '）'));
     } else if (r.merged) {
-      emitToast('success', trash
-        ? tr('已合并 ') + r.merged + tr(' 组，') + (r.trashed || 0) + tr(' 个副本进了回收站，约释放 ') + esc(fmtBytes(r.freedBytes || 0))
-        : tr('已合并 ') + r.merged + tr(' 组，') + (r.shadow || 0) + tr(' 个降为副本'));
+      emitToast('success', keepNewest
+        ? tr('已保留最新版本，') + (r.trashed || 0) + tr(' 个旧版本进了回收站，约释放 ') + esc(fmtBytes(r.freedBytes || 0))
+        : (trash
+          ? tr('已合并 ') + r.merged + tr(' 组，') + (r.trashed || 0) + tr(' 个副本进了回收站，约释放 ') + esc(fmtBytes(r.freedBytes || 0))
+          : tr('已合并 ') + r.merged + tr(' 组，') + (r.shadow || 0) + tr(' 个降为副本')));
     } else {
       emitToast('info', tr('没有需要合并的文件'));
     }
@@ -415,7 +450,7 @@ async function doMerge(keys, trash) {
     toastErr(e);
   } finally {
     mergeBusy = false;
-    await refreshSpecial('duplicates');
+    await refreshSpecial(state.contentMode === 'variants' ? 'variants' : 'duplicates');
   }
 }
 
@@ -492,6 +527,7 @@ async function dispatch(act, d) {
     case 'sp-pick': pick(d); return;
     case 'sp-merge': return doMerge([d.group], false);
     case 'sp-merge-trash': return doMerge([d.group], true);
+    case 'sp-keep-new': return doMerge([d.group], true, { keepNewest: true, keepId: d.keep });
     case 'sp-merge-all': return doMerge(String(d.ids || '').split('|').filter(Boolean), true);
     case 'sp-shape-run': {
       try { const r = await api.shapeRun({ force: d.force === '1' }); if (r && r.started === false) emitToast('info', r.reason || tr('没有需要检查的缩略图')); }

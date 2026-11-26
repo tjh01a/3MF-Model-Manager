@@ -6,7 +6,7 @@
  *   node launch.js --capture=%TEMP%/probe-variants.png --ui-script=tools/probe-variants.js
  *
  * 断言重点：指纹计算状态可见（不是无限转圈）、分组卡片出来、
- * 同一模型/疑似徽标、推荐保留理由、两个合并按钮；空数据时不崩。
+ * 同一模型/疑似徽标、推荐保留理由、保留最新/两个合并按钮；空数据时不崩。
  */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const q = (s) => document.querySelector(s);
@@ -59,6 +59,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       ok((g0.querySelector('.dup-reasons') || {}).textContent.includes('最早'), '推荐理由包含「最早入库」');
       ok(g0.querySelectorAll('input[type="radio"]:checked').length === 1, '每组主记录唯一');
       ok((g0.querySelector('.dup-group-head') || {}).textContent.includes('缩略图相同'), '组头标「缩略图相同」');
+      ok(!!g0.querySelector('[data-act="sp-keep-new"]'), '有「保留最新 · 删旧版」按钮');
+      ok(!!g0.querySelector('[data-act="sp-keep-new"]').dataset.keep, '按钮带最新版本 id');
       ok(!!g0.querySelector('[data-act="sp-merge"]') && !!g0.querySelector('[data-act="sp-merge-trash"]'), '两个合并按钮都在');
     }
 

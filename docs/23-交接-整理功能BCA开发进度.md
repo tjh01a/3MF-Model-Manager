@@ -99,7 +99,8 @@ node launch.js --capture=%TEMP%/probe-variants.png --ui-script=tools/probe-varia
 
 ### 9.1 重复文件
 
-- 合并「已合并 0 组、5 个文件移入回收站失败」：统一 `_trashFile()`（先 Electron `shell.trashItem`，失败退 `slicer.trash`，错误带两层原因）；单个失败不再让整组卡死，文件留在原处、记录降为影子副本，`merged` 照常 +1，toast 说明失败原因。
+- 合并「已合并 0 组、5 个文件移入回收站失败」：**根因不是系统回收站拒绝**，而是 `merge.planMerge` 返回的 `aliasIds` 是 **id 字符串数组**，`mergeApply` 却按对象用了 `a.id`（字符串没有 `.id`），结果 `outcome[undefined]` 记了失败，`_trashFile` 根本没被调用。已改为按 `id` 取记录；统一 `_trashFile()`（先 Electron `shell.trashItem`，失败退 `slicer.trash`，错误带两层原因）；单个失败仍保留原处、记录降为影子副本，toast 说明原因。
+- 同款变体组头新增「保留最新 · 删旧版」：按 `mtime`（缺失回退 `createdAt`）保留最新文件，其余旧版降为副本并移入回收站；确认框写明判断依据，取消不执行。
 - 页头「共 1 个模型」与下面「6 组 16 文件」矛盾：新增 `state.specialMeta`，`setSpecialMeta(groups, files)` 同时写页头和底栏，统一「共 X 组 · Y 个文件」。
 - 「16 个文件却可释放 0 B」：页头释放空间改为 exact + similar 的 `freedBytes` 之和；「一键合并全部完全重复」仍只算 exact。
 - 疑似组被算成 1 个：`stats.duplicates` / `smartCounts.duplicates` 同时计入 `similarGroup`；`findSimilar()` 改为每条只和当前簇最小代表比，防链式扩散；精确组与疑似组去重，同一组不再两段都出现。

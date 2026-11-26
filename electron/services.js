@@ -1953,14 +1953,16 @@ class Services extends EventEmitter {
     let outcome = null;
     if (opts.trash) {
       outcome = {};
-      for (const a of plan.aliasIds) {
-        const rec = this.library.get(a.id);
-        if (!rec) { outcome[a.id] = { ok: false, error: '索引中找不到该模型' }; continue; }
+      // plan.aliasIds 是 id 字符串数组，不是 {id} 对象；用错会在 outcome[undefined] 里记失败，
+      // 导致「合并并移入回收站」整组 0 合并、文件也不动（2026-11-26 用户实测）。
+      for (const id of plan.aliasIds) {
+        const rec = this.library.get(id);
+        if (!rec) { outcome[id] = { ok: false, error: '索引中找不到该模型' }; continue; }
         const r = await this._trashFile(rec.path);
         // 回收站不可用（常见于提权启动、杀毒软件拦截）时不把整组卡死：
         // 文件原地保留，记录仍降为副本，界面明确提示「文件未移动」。
         // 这样不会静默删文件，也不会出现「已合并 0 组」。
-        outcome[a.id] = r.ok ? { ok: true } : { ok: false, shadow: true, error: r.error };
+        outcome[id] = r.ok ? { ok: true } : { ok: false, shadow: true, error: r.error };
       }
     }
     let result = null;
