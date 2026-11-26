@@ -160,6 +160,10 @@ const DEFAULT_SETTINGS = {
   },
   // B · 隔离区：dir 留空 = 数据目录下的 quarantine/
   quarantine: { dir: '' },
+  // D · 耗材库存
+  inventory: { lowStockNotify: true },
+  // F · 自然语言搜索（纯本地解析）
+  search: { naturalLanguage: true },
   data: { backupKeep: 10, lastBackupAt: null },
   updatedAt: 0,
 };

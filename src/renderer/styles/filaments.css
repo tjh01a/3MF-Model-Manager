@@ -116,6 +116,18 @@
 .fil-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; border: 1px solid rgba(15,23,42,.12); }
 .fil-card-type { background: var(--accent-soft, #eef2ff); color: var(--accent); border-radius: 4px; padding: 1px 5px; }
 .fil-card-price { margin-left: auto; white-space: nowrap; }
+/* D · 库存进度条 */
+.fil-stock { display: flex; flex-direction: column; gap: 3px; font-size: 10px; color: var(--text-dim); }
+.fil-stock.is-low { color: #b45309; }
+.fil-stock-bar { height: 4px; border-radius: 999px; background: var(--bg-sunken, #eef1f5); overflow: hidden; }
+.fil-stock-bar > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.fil-stock.is-low .fil-stock-bar > span { background: #f59e0b; }
+.fil-stock-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fil-stock-actions { display: flex; gap: 8px; margin-top: 4px; }
+.stock-log { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow-y: auto; }
+.stock-log-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.stock-log-main { flex: 1; min-width: 0; font-size: 12px; }
+.stock-log-delta { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
 
 .fil-detail {
   width: 340px;

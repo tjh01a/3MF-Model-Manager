@@ -108,3 +108,12 @@ node tests/shapeprint-tests.js --verbose   # 打印合成网格两两距离（�
 - #220 B 隔离区：核心 / 服务 / 测试完成，界面未接 → 保持进行中
 - #221 C 智能合并：同上
 - #222 A 几何指纹：同上
+
+## 9. D / F / G / I 交付交接（2026-11-26）
+
+- D 库存：`src/core/stock.js`；流水 `data/stock-log.json`；回执扣减幂等 `receiptId+filamentId`，扣到 0 只记实际克数（撤销不会虚增），同一笔只能撤销一次；低库存每卷每天一次 toast，设置项 `inventory.lowStockNotify`。
+- F 自然语言：`src/core/nlquery.js`；搜索框回车先解析，chips 可逐项移除；开关 `search.naturalLanguage`；纯本地规则。
+- G 以图搜图：`src/core/imghash.js` + `data/img-hash.json`；入口由 `toolbar.js` 动态插到搜索框前（`#btn-img-search`），不改 `index.html`；`imgHashRun` 停止/中断不 prune，只有 `done === total` 才剪。
+- I 周报/成就/护照：`report.js` / `achievements.js` / `passport.js`；周报周一为起点、用料成本只算成功回执；成就 11 条、解锁时间持久化；护照 CSV 带 BOM，许可 `commercialUse > 预设 > null`。
+- 契约：163 方法 / 23 事件；新增事件 `stock:changed / img:progress / img:changed`。四套单测已串入 `npm run selftest`；界面探针 `tools/probe-dfgi.js` 16 项全绿。
+- 未做：E 上料方案、H 多语言/无障碍；I 周报未生成 PNG 卡片（当前 HTML 弹窗），成就/护照无独立页；D 低库存未接系统通知。

@@ -4,7 +4,7 @@ import { t } from './i18n.js';
 
 const METHODS = [
   'bootstrap', 'getInfo', 'openDataDir',
-  'query', 'get', 'stats', 'smartCounts', 'update', 'bulk', 'rename', 'renameFile',
+  'query', 'nlParse', 'weeklyReport', 'achievementsList', 'passportGet', 'passportUpdate', 'passportCsv', 'imgHashStatus', 'imgHashRun', 'imgHashStop', 'imgFindSimilar', 'imgPickFile', 'get', 'stats', 'smartCounts', 'update', 'bulk', 'rename', 'renameFile',
   'remove', 'trash', 'relink', 'findRelinkCandidates', 'markOpened', 'setPrintStatus',
   'roulette', 'undo',
   'categories', 'categoryCreate', 'categoryUpdate', 'categoryDelete',
@@ -25,6 +25,8 @@ const METHODS = [
   'monitorHistory', 'monitorChart', 'monitorLatest', 'monitorStatus', 'monitorClear', 'notifyTest',
   'filamentsList', 'filamentCreate', 'filamentUpdate', 'filamentRemove', 'filamentSetDefault',
   'filamentPickImage', 'filamentSetImage', 'filamentReadImage', 'filamentSetImageData', 'filamentsOpenDir',
+  'stockOverview', 'stockStatus', 'stockLog', 'stockAdjust', 'stockUndo',
+  'stockLowList', 'stockShoppingList', 'stockShoppingCsv',
   'modelCost', 'modelsCosts', 'modelSetFilaments',
   'receiptsList', 'receiptsWithModels', 'receiptsClear', 'receiptsDelete', 'receiptsLinkModel',
   'receiptsAutoLink',
@@ -193,6 +195,10 @@ on('boot:stage', (p) => {
 });
 
 on('lib:changed', (p) => emitRefresh((p && p.reason) || 'lib:changed'));
+// D/G：库存变化、以图搜图索引变化 → 让耗材页/详情重新取数
+on('stock:changed', (p) => emitRefresh('stock:changed'));
+on('img:changed', (p) => emitRefresh('img:changed'));
+on('img:progress', () => {});   // 索引进度：目前没有常驻 UI，订阅只为契约与后续扩展
 
 on('scan:progress', (p) => {
   window.dispatchEvent(new CustomEvent('shelf:scanprogress', { detail: p || {} }));

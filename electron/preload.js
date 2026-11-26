@@ -7,7 +7,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const METHODS = [
   'bootstrap', 'getInfo', 'openDataDir',
-  'query', 'get', 'stats', 'smartCounts', 'update', 'bulk', 'rename', 'renameFile',
+  'query', 'nlParse', 'weeklyReport', 'achievementsList', 'passportGet', 'passportUpdate', 'passportCsv', 'imgHashStatus', 'imgHashRun', 'imgHashStop', 'imgFindSimilar', 'imgPickFile', 'get', 'stats', 'smartCounts', 'update', 'bulk', 'rename', 'renameFile',
   'remove', 'trash', 'relink', 'findRelinkCandidates', 'markOpened', 'setPrintStatus',
   'roulette', 'undo',
   'categories', 'categoryCreate', 'categoryUpdate', 'categoryDelete',
@@ -28,6 +28,8 @@ const METHODS = [
   'monitorHistory', 'monitorChart', 'monitorLatest', 'monitorStatus', 'monitorClear', 'notifyTest',
   'filamentsList', 'filamentCreate', 'filamentUpdate', 'filamentRemove', 'filamentSetDefault',
   'filamentPickImage', 'filamentSetImage', 'filamentReadImage', 'filamentSetImageData', 'filamentsOpenDir',
+  'stockOverview', 'stockStatus', 'stockLog', 'stockAdjust', 'stockUndo',
+  'stockLowList', 'stockShoppingList', 'stockShoppingCsv',
   'modelCost', 'modelsCosts', 'modelSetFilaments',
   'receiptsList', 'receiptsWithModels', 'receiptsClear', 'receiptsDelete', 'receiptsLinkModel',
   'receiptsAutoLink',
@@ -50,7 +52,7 @@ const EVENTS = [
   'mesh:progress', 'mesh:log', 'mesh:done', 'mesh:error',
   'u1:progress', 'u1:log', 'u1:cancelled',
   'printers:update', 'printers:changed', 'printers:notify',
-  'receipts:changed', 'filaments:changed',
+  'receipts:changed', 'filaments:changed', 'stock:changed', 'img:progress', 'img:changed',
 ];
 
 // 启动阶段信号早于渲染层模块加载是常态，缓存整段历史，订阅时按顺序补发，

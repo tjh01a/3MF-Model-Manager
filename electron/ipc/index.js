@@ -150,6 +150,26 @@ function registerIpc(services, { getWindow = () => null } = {}) {
 
     // ---------------- 查询 ----------------
     query: (q) => lib().query(q || {}),
+    nlParse: (text) => services.nlParse(text || ''),
+    // I · 周报 / 成就 / 护照
+    weeklyReport: (weekOffset) => services.weeklyReport(weekOffset),
+    achievementsList: (opts) => services.achievementsList(opts || {}),
+    passportGet: (id) => services.passportGet(id),
+    passportUpdate: (id, patch) => services.passportUpdate(id, patch || {}),
+    passportCsv: () => services.passportCsv(),
+    // G · 以图搜图
+    imgHashStatus: () => services.imgHashStatus(),
+    imgHashRun: (opts) => services.imgHashRun(opts || {}),
+    imgHashStop: () => services.imgHashStop(),
+    imgFindSimilar: (payload) => services.imgFindSimilar(payload || {}),
+    imgPickFile: async () => {
+      const r = await dialog.showOpenDialog(win(), {
+        title: '选择要搜索的图片',
+        filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+        properties: ['openFile'],
+      });
+      return (r && !r.canceled && r.filePaths && r.filePaths[0]) ? r.filePaths[0] : null;
+    },
     get: (id) => lib().get(id),
     stats: () => lib().stats(),
     smartCounts: () => lib().smartCounts(),
@@ -335,6 +355,15 @@ function registerIpc(services, { getWindow = () => null } = {}) {
 
     // ---------------- 13 · 耗材库 / 打印回执 / 成本账本 ----------------
     filamentsList: () => services.filamentsList(),
+    // D · 库存
+    stockOverview: () => services.stockOverview(),
+    stockStatus: (filamentId) => services.stockStatus(filamentId),
+    stockLog: (limit) => services.stockLog(limit),
+    stockAdjust: (payload) => services.stockAdjust(payload || {}),
+    stockUndo: (id) => services.stockUndo(id),
+    stockLowList: () => services.stockLowList(),
+    stockShoppingList: () => services.stockShoppingList(),
+    stockShoppingCsv: () => services.stockShoppingCsv(),
     filamentCreate: (data) => services.filamentCreate(data || {}),
     filamentUpdate: (id, patch) => services.filamentUpdate(id, patch || {}),
     filamentRemove: (id) => services.filamentRemove(id),

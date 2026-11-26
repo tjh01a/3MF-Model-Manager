@@ -9,7 +9,7 @@ import { applyMakerWorldLinks } from '../components/site-links.js';
 import { api, emitRefresh, emitToast } from '../api.js';
 import { state, setState } from '../state.js';
 import { escapeHtml, icon, fmtBytes, fmtDate } from '../utils.js';
-import { confirmDialog, selectDialog } from '../components/modal.js';
+import { confirmDialog, selectDialog, customDialog } from '../components/modal.js';
 import { applySidebar } from '../components/sidebar-state.js';
 import { applyIconSet } from '../components/icon-set.js';
 import { applyMotionPrefs, enterView } from '../components/motion.js';
@@ -418,6 +418,11 @@ function renderAppearance() {
       tr('「经典自绘图标」配合关闭动效可一键回到本次美化前的界面。') +
       tr('MakerWorld 站点选「跟随界面语言」时，英文界面打开国际站、中文界面打开中国站；') +
       tr('两个站是独立的模型库，ID 不通用，找不到对应模型时会自动回退到另一个站并提示。</p>')
+  ) +
+  sec(tr('搜索'),
+    row(sw(tr('启用自然语言搜索'), ((state.settings && state.settings.search) || {}).naturalLanguage !== false,
+      'data-bind="search.naturalLanguage" data-kind="bool"')) +
+    '<p class="hint">' + tr('开启后可以直接在搜索框里说条件，例如「上个月打印过的绿色收纳盒」「大于 50MB 的双色模型」，回车后条件会变成可移除的筛选标签。解析完全在本机完成，不联网；认不出来的词仍按普通关键字搜索。') + '</p>'
   );
 }
 
@@ -428,6 +433,7 @@ function renderMonitor() {
     (state.settings && state.settings.monitor) || {});
   const n = Object.assign({ enabled: true, onFinished: true, onError: true, onPaused: true, system: true },
     (state.settings && state.settings.notify) || {});
+  const inv = Object.assign({ lowStockNotify: true }, (state.settings && state.settings.inventory) || {});
   const statLine = monitorStatus
     ? tr('本机已记录 ') + monitorStatus.sessions + tr(' 次打印、') + monitorStatus.points + tr(' 个采样点，') +
       tr('采样间隔 ') + monitorStatus.intervalSec + tr(' 秒。文件：') + esc(monitorStatus.file)
@@ -455,6 +461,10 @@ function renderMonitor() {
       '<div class="btn-row">' + actionBtn('notify-test', 'i-info', tr('发一条测试通知')) + '</div>' +
       tr('<p class="hint">同一个任务的同一种提醒只发一次；打印机断线重连不会重复弹。') +
         tr('关掉「系统通知」后仍会在应用内弹提示，不会彻底收不到。</p>')
+    ) +
+    sec(tr('耗材库存'),
+      row(sw(tr('低库存时提醒我'), inv.lowStockNotify !== false, 'data-bind="inventory.lowStockNotify" data-kind="bool"')) +
+      '<p class="hint">' + tr('打印完成落到回执时，会按耗材分配自动扣库存；剩余低于阈值时每卷每天提醒一次。<br>某个耗材的剩余克数留空表示「不管理库存」，不参与扣减和提醒。库存只是估算，界面统一标「约」。') + '</p>'
     ) +
     sec(tr('温度与进度曲线'),
       row(
@@ -532,6 +542,14 @@ function renderData() {
         actionBtn('rerun-guide', 'i-info', tr('再看一遍新手引导'), 'btn btn-ghost btn-sm') +
       '</div>' +
       tr('<p class="hint">换电脑、换了模型盘，或者想重新选一次扫描范围时用这个。向导不会删除已有模型与分类。</p>')
+    ) +
+    sec(tr('统计与导出'),
+      '<div class="btn-row">' +
+        actionBtn('weekly-report', 'i-clock', tr('本周周报'), 'btn btn-primary btn-sm') +
+        actionBtn('achievements', 'i-star', tr('成就')) +
+        actionBtn('passport-csv', 'i-download', tr('导出模型护照 CSV')) +
+      '</div>' +
+      '<p class="hint">' + tr('周报按回执与入库时间统计（周一到周日）；护照 CSV 含作者、许可、来源与商用判断，方便核对素材能不能商用。') + '</p>'
     ) +
     sec(tr('缩略图缓存'),
       '<div class="btn-row">' +
@@ -1092,11 +1110,68 @@ async function openDataDir() {
 }
 
 // ---------- 事件分发 ----------
+// ---------- I · 周报 / 成就 / 护照 ----------
+async function showWeekly() {
+  let r;
+  try { r = await api.weeklyReport(0); } catch (_) { return; }
+  const t = r.totals || {};
+  const bars = (r.days || []).map((d) => {
+    const max = Math.max(1, ...(r.days || []).map((x) => x.prints));
+    const h = Math.round(((d.prints || 0) / max) * 100);
+    return '<div class="wk-day"><span class="wk-bar-wrap"><span class="wk-bar" style="height:' + h + '%"></span></span>' +
+      '<span class="wk-day-label">' + escapeHtml(d.label) + '</span>' +
+      '<span class="wk-day-num">' + d.prints + '</span></div>';
+  }).join('');
+  const top = (r.topModels || []).length
+    ? '<ol class="wk-top">' + r.topModels.map((m) => '<li><span>' + escapeHtml(m.name) + '</span>' +
+      tr('打印 ') + m.prints + tr(' 次 · ') + Math.round(m.grams) + ' g · ¥' + Number(m.cost || 0).toFixed(2) + '</li>').join('') + '</ol>'
+    : tr('<p class="muted">本周还没有完成的打印</p>');
+  customDialog({
+    title: tr('本周周报') + ' · ' + r.label,
+    body: '<div class="wk-grid">' +
+      '<div class="wk-kpi"><b>' + (t.finished || 0) + '</b><span>' + tr('完成打印') + '</span></div>' +
+      '<div class="wk-kpi"><b>' + (t.successRate == null ? '—' : t.successRate + '%') + '</b><span>' + tr('成功率') + '</span></div>' +
+      '<div class="wk-kpi"><b>' + (t.newModels || 0) + '</b><span>' + tr('新增模型') + '</span></div>' +
+      '<div class="wk-kpi"><b>' + Math.round(t.filamentG || 0) + ' g</b><span>' + tr('用料') + '</span></div>' +
+      '<div class="wk-kpi"><b>¥' + Number(t.cost || 0).toFixed(2) + '</b><span>' + tr('估算成本') + '</span></div>' +
+      '<div class="wk-kpi"><b>' + (t.failed || 0) + '</b><span>' + tr('失败') + '</span></div>' +
+      '</div><div class="wk-chart">' + bars + '</div><h4>' + tr('本周最常打印') + '</h4>' + top,
+  });
+}
+
+async function showAchievements() {
+  let r;
+  try { r = await api.achievementsList({ notify: false }); } catch (_) { return; }
+  const cards = (r.items || []).map((a) =>
+    '<div class="ach-card' + (a.unlocked ? ' is-unlocked' : '') + '">' +
+      '<div class="ach-title">' + icon(a.unlocked ? 'i-star' : 'i-circle') + escapeHtml(a.title) + '</div>' +
+      '<div class="ach-desc">' + escapeHtml(a.desc) + '</div>' +
+      '<div class="ach-bar"><span style="width:' + Math.round((a.ratio || 0) * 100) + '%"></span></div>' +
+      '<div class="ach-progress">' + a.progress + ' / ' + a.target + (a.unlocked ? tr(' · 已解锁') : '') + '</div>' +
+    '</div>').join('');
+  customDialog({
+    title: tr('成就') + ' · ' + r.unlockedCount + ' / ' + r.total,
+    body: '<div class="ach-grid">' + cards + '</div>',
+  });
+}
+
+async function copyPassportCsv() {
+  let r;
+  try { r = await api.passportCsv(); } catch (_) { return; }
+  try {
+    await navigator.clipboard.writeText(r.csv || '');
+    emitToast('success', tr('护照 CSV 已复制（') + r.count + tr(' 个模型），可直接粘贴到表格'));
+  } catch (_) { emitToast('error', tr('复制失败，请重试')); }
+}
+
 async function dispatch(act, node) {
   const d = node && node.dataset ? node.dataset : {};
   switch (act) {
     case 'add-folder': return addFolder();
     case 'scan-all': return scanAll();
+    case 'weekly-report': return showWeekly();
+    case 'achievements': return showAchievements();
+    case 'passport-csv': return copyPassportCsv();
     case 'folder-remove': return folderRemove(d.id);
     case 'detect-slicers': return detectSlicers();
     case 'slicer-add': return slicerAdd();

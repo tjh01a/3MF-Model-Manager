@@ -10,6 +10,8 @@ const path = require('path');
 
 const C = require('./constants');
 const U = require('./utils');
+const { hueOfHex } = require('./nlquery');
+const { isCommercial } = require('./passport');
 
 const DAY7 = 7 * 24 * 60 * 60 * 1000;
 const SMART_KEYS = [
@@ -37,6 +39,8 @@ const UPDATABLE_FIELDS = [
   'aliasOf', 'aliasState', 'aliasAt',
   // A · 几何指纹：同款变体
   'variantGroup', 'variantRole', 'variantScore', 'variantScale',
+  // I · 模型护照：许可 / 作者主页 / 商用判断
+  'license', 'licenseUrl', 'authorUrl', 'commercialUse',
 ];
 
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
@@ -65,6 +69,8 @@ function matchSmart(rec, key, now) {
     // A：几何指纹认出的同款变体
     case 'variants': return !!rec.variantGroup;
     case 'rated': return (Number(rec.rating) || 0) > 0;
+    // I：护照里明确允许商用的
+    case 'commercial': return isCommercial(rec);
     default: return true;
   }
 }
@@ -174,6 +180,51 @@ class LibraryService {
       if (printStatuses.length && !printStatuses.includes(rec.printStatus)) continue;
       if (Q.favoritesOnly && !rec.favorite) continue;
       if (ratingMin > 0 && (Number(rec.rating) || 0) < ratingMin) continue;
+
+      // F · 自然语言搜索解析出来的结构化条件
+      if (Number.isFinite(Number(Q.printedFrom)) || Number.isFinite(Number(Q.printedTo))) {
+        const at = Number(rec.lastPrintedAt) || 0;
+        if (!at) continue;
+        if (Number.isFinite(Number(Q.printedFrom)) && at < Number(Q.printedFrom)) continue;
+        if (Number.isFinite(Number(Q.printedTo)) && at > Number(Q.printedTo)) continue;
+      }
+      if (Number.isFinite(Number(Q.createdFrom)) || Number.isFinite(Number(Q.createdTo))) {
+        const at = Number(rec.createdAt) || 0;
+        if (Number.isFinite(Number(Q.createdFrom)) && at < Number(Q.createdFrom)) continue;
+        if (Number.isFinite(Number(Q.createdTo)) && at > Number(Q.createdTo)) continue;
+      }
+      if (Array.isArray(Q.colorHues) && Q.colorHues.length) {
+        const colors = (rec.meta && Array.isArray(rec.meta.filamentColors)) ? rec.meta.filamentColors : [];
+        const hues = colors.map(hueOfHex).filter((h) => h != null);
+        const hit = Q.colorHues.some((c) => {
+          const ch = Number(c && c.h);
+          const tol = Number(c && c.tol) || 25;
+          if (!Number.isFinite(ch)) return false;
+          return hues.some((h) => { const d = Math.abs(h - ch); return Math.min(d, 360 - d) <= tol; });
+        });
+        if (!hit) continue;
+      }
+      if (Array.isArray(Q.filamentTypes) && Q.filamentTypes.length) {
+        const types = []
+          .concat(Array.isArray(rec.meta && rec.meta.filamentTypes) ? rec.meta.filamentTypes : [])
+          .concat(Array.isArray(rec.filamentLinks) ? rec.filamentLinks.map((l) => l && l.type).filter(Boolean) : []);
+        const tset = new Set(types.map((x) => String(x).toUpperCase()));
+        if (!Q.filamentTypes.some((t) => tset.has(String(t).toUpperCase()))) continue;
+      }
+      if (Number.isFinite(Number(Q.minColors)) && Number(Q.minColors) > 0) {
+        const colors = (rec.meta && Array.isArray(rec.meta.filamentColors)) ? rec.meta.filamentColors : [];
+        if (colors.length < Number(Q.minColors)) continue;
+      }
+      if (Number.isFinite(Number(Q.colorsCount)) && Number(Q.colorsCount) > 0) {
+        const colors = (rec.meta && Array.isArray(rec.meta.filamentColors)) ? rec.meta.filamentColors : [];
+        if (colors.length !== Number(Q.colorsCount)) continue;
+      }
+      if (Number.isFinite(Number(Q.sizeMin)) && (Number(rec.size) || 0) < Number(Q.sizeMin)) continue;
+      if (Number.isFinite(Number(Q.sizeMax)) && (Number(rec.size) || 0) > Number(Q.sizeMax)) continue;
+      if (Q.author) {
+        const a = String(rec.author || (rec.meta && rec.meta.designer) || '').toLowerCase();
+        if (!a.includes(String(Q.author).toLowerCase())) continue;
+      }
       if (kw) {
         const hay = [rec.title, rec.fileName, rec.note, rec.author, rec.sourceUrl]
           .map((x) => String(x == null ? '' : x)).join(' ').toLowerCase();

@@ -168,6 +168,8 @@ function render(m) {
   // 副本（C · 智能合并）：合并后降级的记录不再出现在列表里，只在这里列出来。
   // 需要异步从 dupAliases 取（state.items 默认不含别名），先占位、拿到再填。
   parts.push('<div class="detail-section detail-alias-section" id="detail-aliases" hidden></div>');
+  // I · 模型护照（许可 / 作者 / 商用判断），异步填
+  parts.push('<div class="detail-section" id="detail-passport" hidden></div>');
 
   // 标题 + 打印状态徽标
   parts.push(
@@ -301,6 +303,53 @@ function render(m) {
   Promise.resolve(fillCost(m)).catch(() => {});
   // 副本列表同理，没有副本时整个小节保持 hidden
   Promise.resolve(fillAliases(m)).catch(() => {});
+  // I · 护照小节同理
+  Promise.resolve(fillPassport(m)).catch(() => {});
+}
+
+// ---------- I · 模型护照 ----------
+async function fillPassport(m) {
+  const box = el('detail-passport');
+  if (!box || !m) return;
+  let p;
+  try { p = await api.passportGet(m.id); } catch (_) { box.hidden = true; return; }
+  if (currentId !== m.id) return;
+  const badge = p.commercial === true ? 'badge-ok' : (p.commercial === false ? 'badge-danger' : 'badge-warn');
+  box.innerHTML =
+    '<h3>' + tr('模型护照') + '</h3>' +
+    '<div class="pp-grid">' +
+      '<div class="pp-row"><span>' + tr('许可') + '</span><b>' + esc(p.licenseLabel) + '</b></div>' +
+      '<div class="pp-row"><span>' + tr('商用') + '</span><span class="badge ' + badge + '">' + esc(p.commercialLabel) + '</span></div>' +
+      '<div class="pp-row"><span>' + tr('作者') + '</span><b>' + esc(p.designer || '—') + '</b></div>' +
+      (p.sourceUrl ? '<div class="pp-row"><span>' + tr('来源') + '</span><a href="#" data-act="open-source" class="pp-link">' + tr('打开原页面') + '</a></div>' : '') +
+    '</div>' +
+    '<div class="pp-actions"><button type="button" class="btn btn-ghost btn-sm" data-act="passport-edit">' + icon('i-edit') + '<span>' + tr('编辑许可') + '</span></button></div>' +
+    (p.commercial == null ? '<p class="hint">' + tr('未标注许可：商用前请联系作者确认，不要默认可用。') + '</p>' : '');
+  box.hidden = false;
+}
+
+async function editPassport(id) {
+  let p;
+  try { p = await api.passportGet(id); } catch (_) { return; }
+  let choice;
+  try {
+    const picked = await selectDialog({
+      title: tr('选择许可'),
+      message: tr('只记录你确认的许可，软件不替你判断法律效力。'),
+      options: (p.presets || []).map((x) => ({ value: x.id, label: x.label })),
+      confirmText: tr('保存'),
+    });
+    choice = Array.isArray(picked) ? picked[0] : picked;
+  } catch (_) { return; }
+  if (!choice) return;
+  const preset = (p.presets || []).find((x) => x.id === choice);
+  try {
+    await api.passportUpdate(id, { license: choice, commercialUse: preset ? preset.commercial : null });
+    emitToast('success', tr('许可已更新'));
+    emitRefresh('passport');
+    const m = itemById(id);
+    if (m) Promise.resolve(fillPassport(m)).catch(() => {});
+  } catch (_) { /* 已 toast */ }
 }
 
 // ---------- C · 副本（智能合并后的别名记录） ----------
@@ -839,6 +888,7 @@ async function dispatch(act, node, id, m) {
     case 'dup-trash': return trashDuplicate(node.dataset.id || id);
     case 'alias-detach': return detachAlias(node.dataset.id || id);
     case 'cost-assign': return assignFilaments(id, m);
+    case 'passport-edit': return editPassport(id);
     case 'cost-weight': return editCostWeight(id, m);
     default: return;
   }

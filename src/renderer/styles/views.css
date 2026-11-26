@@ -663,3 +663,36 @@ img.detail-hero {
   background: color-mix(in srgb, var(--warn) 9%, var(--bg-soft));
 }
 .detail-alert.warn > .ico { color: var(--warn); }
+
+/* G · 以图搜图结果画廊 */
+.img-sim-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; max-height: 58vh; overflow-y: auto; }
+.img-sim-card { display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elev, #fff); cursor: pointer; text-align: left; }
+.img-sim-card:hover { border-color: var(--accent); box-shadow: var(--shadow-sm, 0 2px 8px rgba(15,23,42,.08)); }
+.img-sim-card img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; border-radius: 6px; background: var(--bg-sunken, #f1f5f9); }
+.img-sim-name { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.img-sim-score { font-size: 10px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
+/* I · 模型护照 / 周报 / 成就 */
+.pp-grid { display: grid; gap: 6px; margin-top: 6px; }
+.pp-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.pp-row > span:first-child { width: 56px; color: var(--text-dim); flex: 0 0 auto; }
+.pp-actions { margin-top: 8px; }
+.wk-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.wk-kpi { padding: 10px; border: 1px solid var(--border); border-radius: 10px; text-align: center; }
+.wk-kpi b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; }
+.wk-kpi span { font-size: 11px; color: var(--text-dim); }
+.wk-chart { display: flex; align-items: flex-end; gap: 8px; height: 120px; margin: 14px 0 6px; }
+.wk-day { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; height: 100%; }
+.wk-bar-wrap { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+.wk-bar { width: 100%; min-height: 2px; background: var(--accent); border-radius: 4px 4px 0 0; opacity: .85; }
+.wk-day-label { font-size: 10px; color: var(--text-dim); }
+.wk-day-num { font-size: 10px; font-variant-numeric: tabular-nums; }
+.wk-top { margin: 6px 0 0 18px; font-size: 12px; line-height: 1.8; }
+.ach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.ach-card { padding: 10px; border: 1px solid var(--border); border-radius: 10px; opacity: .72; }
+.ach-card.is-unlocked { opacity: 1; border-color: #f59e0b; background: color-mix(in srgb, #f59e0b 8%, transparent); }
+.ach-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
+.ach-desc { margin: 4px 0 8px; font-size: 11px; color: var(--text-dim); }
+.ach-bar { height: 4px; border-radius: 999px; background: var(--bg-sunken, #eef1f5); overflow: hidden; }
+.ach-bar > span { display: block; height: 100%; background: var(--accent); }
+.ach-progress { margin-top: 4px; font-size: 10px; color: var(--text-dim); font-variant-numeric: tabular-nums; }

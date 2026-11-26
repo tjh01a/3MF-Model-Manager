@@ -135,6 +135,13 @@ function normalizeFilament(rec) {
     note: typeof r.note === 'string' ? r.note : '',
     params: typeof r.params === 'string' ? r.params : '',
     isPreset: !!r.isPreset,
+    // D · 库存（docs/22 D）：null = 不管理库存；lowG 默认整卷 10%
+    stockG: r.stockG == null || r.stockG === '' ? null : (Number.isFinite(Number(r.stockG)) && Number(r.stockG) >= 0 ? Number(r.stockG) : null),
+    fullG: Number.isFinite(Number(r.fullG)) && Number(r.fullG) > 0 ? Number(r.fullG) : 1000,
+    lowG: Number.isFinite(Number(r.lowG)) && Number(r.lowG) >= 0 ? Number(r.lowG) : Math.round((Number.isFinite(Number(r.fullG)) && Number(r.fullG) > 0 ? Number(r.fullG) : 1000) * 0.1 * 100) / 100,
+    spools: Math.max(0, Math.floor(Number.isFinite(Number(r.spools)) ? Number(r.spools) : 0)),
+    buyUrl: typeof r.buyUrl === 'string' ? r.buyUrl.slice(0, 500) : '',
+    lowNotifiedAt: Number.isFinite(Number(r.lowNotifiedAt)) ? Number(r.lowNotifiedAt) : 0,
     createdAt: Number.isFinite(Number(r.createdAt)) ? Number(r.createdAt) : t,
     updatedAt: t,
   };
@@ -381,6 +388,7 @@ class FilamentService {
       note: String(data.note == null ? '' : data.note).slice(0, 2000),
       params: String(data.params == null ? '' : data.params).slice(0, 2000),
       isPreset: !!data.isPreset,
+      stockG: null, fullG: 1000, lowG: 100, spools: 0, buyUrl: '', lowNotifiedAt: 0,
       createdAt: t, updatedAt: t,
     };
     await this._mutate((d) => { d.items[id] = rec; });
@@ -403,6 +411,28 @@ class FilamentService {
       if (Object.prototype.hasOwnProperty.call(p, 'pricePerKg')) rec.pricePerKg = normalizePrice(p.pricePerKg);
       if (Object.prototype.hasOwnProperty.call(p, 'note')) rec.note = String(p.note == null ? '' : p.note).slice(0, 2000);
       if (Object.prototype.hasOwnProperty.call(p, 'params')) rec.params = String(p.params == null ? '' : p.params).slice(0, 2000);
+      // D · 库存字段：stockG 允许 null（不管理）；fullG/lowG 非负；spools 取整；buyUrl 截断
+      if (Object.prototype.hasOwnProperty.call(p, 'stockG')) {
+        const n = Number(p.stockG);
+        rec.stockG = p.stockG == null || p.stockG === '' ? null : (Number.isFinite(n) && n >= 0 ? n : null);
+      }
+      if (Object.prototype.hasOwnProperty.call(p, 'fullG')) {
+        const n = Number(p.fullG);
+        if (Number.isFinite(n) && n > 0) rec.fullG = n;
+      }
+      if (Object.prototype.hasOwnProperty.call(p, 'lowG')) {
+        const n = Number(p.lowG);
+        if (Number.isFinite(n) && n >= 0) rec.lowG = n;
+      }
+      if (Object.prototype.hasOwnProperty.call(p, 'spools')) {
+        const n = Number(p.spools);
+        if (Number.isFinite(n)) rec.spools = Math.max(0, Math.floor(n));
+      }
+      if (Object.prototype.hasOwnProperty.call(p, 'buyUrl')) rec.buyUrl = String(p.buyUrl == null ? '' : p.buyUrl).slice(0, 500);
+      if (Object.prototype.hasOwnProperty.call(p, 'lowNotifiedAt')) {
+        const n = Number(p.lowNotifiedAt);
+        rec.lowNotifiedAt = Number.isFinite(n) ? n : 0;
+      }
       rec.updatedAt = Date.now();
       return rec;
     });

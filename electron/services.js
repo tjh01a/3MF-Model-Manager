@@ -8,7 +8,8 @@ const path = require('path');
 const EventEmitter = require('events');
 // shell 只有 Electron 主进程才有；core 层与测试都不依赖它
 let shell = null;
-try { shell = require('electron').shell; } catch (_) { shell = null; }
+let nativeImage = null;
+try { shell = require('electron').shell; nativeImage = require('electron').nativeImage; } catch (_) { shell = null; nativeImage = null; }
 
 const Store = require('../src/core/store');
 const LibraryService = require('../src/core/library');
@@ -32,6 +33,12 @@ const cost = require('../src/core/cost');
 const quarantine = require('../src/core/quarantine');
 const merge = require('../src/core/merge');
 const { ShapeIndex, computeSignature } = require('../src/core/shapeprint');
+const { Stock } = require('../src/core/stock');
+const { parseNL } = require('../src/core/nlquery');
+const { ImageHashIndex, dhashFromGray, grayFromBitmap } = require('../src/core/imghash');
+const { buildWeekly } = require('../src/core/report');
+const { Achievements } = require('../src/core/achievements');
+const passport = require('../src/core/passport');
 const { parse3mf } = require('../src/core/model3mf');
 const duplicates = require('../src/core/duplicates');
 
@@ -60,15 +67,26 @@ class Services extends EventEmitter {
     await this.store.init();
     stage('store', 34);
     this.library = new LibraryService({ store: this.store });
+    // I · 成就：独立文件，首次解锁写盘
+    this.achievements = new Achievements(path.join(cpaths.getDataDir(), 'achievements.json'));
     // 耗材库 / 回执：独立文件，不进 library 备份机制（用户 2026-11-16 确认）
     this.filaments = new FilamentService({
       language: (this.store.getSettings().ui || {}).language,
     });
     await this.filaments.init();
+    // D · 耗材库存：字段在 filaments.json，流水单独存 stock-log.json
+    this.stock = new Stock({
+      filaments: this.filaments,
+      file: path.join(cpaths.getDataDir(), 'stock-log.json'),
+    });
     this.receipts = new ReceiptService();
     await this.receipts.init();
     stage('data', 48);
     this.thumbs = new ThumbnailService({ store: this.store });
+    // G · 以图搜图：缩略图 dHash 索引（独立文件）
+    this.imgIndex = new ImageHashIndex(path.join(cpaths.getDataDir(), 'img-hash.json'));
+    this._imgRunning = false;
+    this._imgStop = false;
     // A：几何指纹索引（独立文件，不进 library.json），扫描结束后顺手重算「同款变体」
     this.shapeIndex = new ShapeIndex(path.join(cpaths.getDataDir(), 'shapeprints.json'));
     this._shapeRunning = false;
@@ -113,6 +131,10 @@ class Services extends EventEmitter {
     this.scanner.on('done', (report) => {
       // A：有新模型入库时，等一会儿在后台补算几何指纹（不抢扫描刚结束时的那口气）
       if (report && (report.added || report.updated)) this.scheduleShapeRun(8000);
+      // G：缩略图变了就后台补算 dHash，错开指纹任务；updated 的模型缩略图可能已重生成，强制重算
+      if (report && (report.added || report.updated)) {
+        setTimeout(() => { this.imgHashRun({ force: !!report.updated }).catch(() => {}); }, 16000);
+      }
     });
     this.store.on('change', (p) => this.emitToRenderer('lib:changed', p || { reason: 'update' }));
     this.store.on('settings', () => { /* 设置由设置页自行重取，避免整库刷新 */ });
@@ -598,12 +620,14 @@ class Services extends EventEmitter {
     let weightG = null;
     let costTotal = 0;
     let filamentNames = [];
+    let costParts = [];
     if (model) {
       try {
         const c = cost.costOf(model, this.filaments.list());
         weightG = c.weightG;
         costTotal = c.total;
         filamentNames = c.parts.map((p) => p.name).filter(Boolean);
+        costParts = c.parts;
       } catch (_) { /* 成本算不出来也要落回执 */ }
     }
 
@@ -634,7 +658,18 @@ class Services extends EventEmitter {
       try { await this.library.setPrintStatus([model.id], 'printed'); }
       catch (_) { /* 状态回写失败不影响回执本身 */ }
     }
+    // D · 库存扣减：只在成功打印时扣；同一回执同一耗材幂等
+    if (receipt && j.result === 'finished' && costParts.length) {
+      try {
+        const sd = await this.stock.deductReceipt(receipt, costParts);
+        if (sd && sd.deducted && sd.deducted.length) {
+          await this._notifyLowStock();
+          this.emitToRenderer('stock:changed', { receiptId: receipt.id });
+        }
+      } catch (_) { /* 扣库存失败不影响回执 */ }
+    }
     this.emitToRenderer('receipts:changed', { id: receipt.id, result: j.result });
+    this.achievementsList().catch(() => {});
     return receipt;
   }
 
@@ -662,12 +697,14 @@ class Services extends EventEmitter {
       let weightG = null;
       let costTotal = 0;
       let filamentNames = [];
+      let costParts = [];
       if (model) {
         try {
           const c = cost.costOf(model, this.filaments.list());
           weightG = c.weightG;
           costTotal = c.total;
           filamentNames = c.parts.map((p) => p.name).filter(Boolean);
+          costParts = c.parts;
         } catch (_) { /* 成本算不出来也照补 */ }
       }
       const rec = await this.receipts.add({
@@ -688,6 +725,9 @@ class Services extends EventEmitter {
           await this.receipts.linkModel(rec.id, model.id,
             model.title || model.fileName || '', { manual: false });
         } catch (_) { /* 忽略 */ }
+      }
+      if (costParts.length) {
+        try { await this.stock.deductReceipt(rec, costParts); } catch (_) { /* 忽略 */ }
       }
       created++;
     }
@@ -725,6 +765,169 @@ class Services extends EventEmitter {
     return { ok: true, checked: pending.length, linked, ambiguous: ambiguous.length };
   }
 
+  // ---- G · 以图搜图 ----
+  _imgModels() {
+    return Object.values(this.store.getLibrary().models || {}).filter((r) =>
+      r && r.status !== 'missing' && r.status !== 'quarantined' && r.thumbnail && r.status !== 'broken');
+  }
+
+  _hashThumb(rec) {
+    if (!nativeImage) return null;
+    const file = this.thumbs.getPath(rec.thumbnail);
+    if (!file || !fs.existsSync(file)) return null;
+    try {
+      const img = nativeImage.createFromPath(file);
+      if (!img || img.isEmpty()) return null;
+      const small = img.resize({ width: 9, height: 8, quality: 'good' });
+      const bmp = small.toBitmap();
+      return dhashFromGray(grayFromBitmap(bmp, 9, 8, { channels: 4, order: 'bgra' }));
+    } catch (_) { return null; }
+  }
+
+  imgHashStatus() {
+    const models = this._imgModels();
+    return {
+      total: models.length,
+      hashed: models.filter((r) => this.imgIndex.has(r.id)).length,
+      pending: models.filter((r) => !this.imgIndex.has(r.id)).length,
+      running: this._imgRunning,
+      enabled: true,
+    };
+  }
+
+  async imgHashRun(opts) {
+    const force = !!(opts && opts.force);
+    if (this._imgRunning) return { ok: false, running: true };
+    this._imgRunning = true;
+    this._imgStop = false;
+    const models = this._imgModels();
+    let done = 0, failed = 0, computed = 0;
+    const t0 = Date.now();
+    try {
+      for (const rec of models) {
+        if (this._imgStop) break;
+        if (!force && this.imgIndex.has(rec.id)) { done++; continue; }
+        const h = this._hashThumb(rec);
+        if (h) { this.imgIndex.set(rec.id, h); computed++; }
+        else failed++;
+        done++;
+        if (done % 5 === 0 || done === models.length) {
+          this.emitToRenderer('img:progress', { done, total: models.length, failed, running: true });
+          await new Promise((r) => setTimeout(r, 0));
+        }
+      }
+      if (done === models.length) await this.imgIndex.prune(models.map((r) => r.id));
+      await this.imgIndex.flush();
+      const status = this.imgHashStatus();
+      if (computed) this.emitToRenderer('img:changed', { computed });
+      return { ok: true, ...status, computed, failed, ms: Date.now() - t0 };
+    } finally {
+      this._imgRunning = false;
+      this._imgStop = false;
+      this.emitToRenderer('img:progress', { done, total: models.length, failed, running: false });
+    }
+  }
+
+  imgHashStop() {
+    if (!this._imgRunning) return { ok: true, running: false };
+    this._imgStop = true;
+    return { ok: true, stopping: true };
+  }
+
+  /** 按模型 id 或外部图片找相似；返回按分数排序的模型摘要 */
+  async imgFindSimilar(payload) {
+    const p = payload || {};
+    let hash = null;
+    let excludeId = null;
+    if (p.id) {
+      const rec = this.store.getLibrary().models[p.id];
+      if (!rec) throw new Error('找不到这个模型');
+      excludeId = rec.id;
+      hash = this.imgIndex.get(rec.id) && this.imgIndex.get(rec.id).h;
+      if (!hash) {
+        hash = this._hashThumb(rec);
+        if (!hash) throw new Error('这个模型没有可用缩略图');
+        this.imgIndex.set(rec.id, hash);
+        await this.imgIndex.flush();
+      }
+    } else {
+      const src = p.dataUrl || p.filePath;
+      if (!src || !nativeImage) throw new Error('没有可用的图片');
+      const img = p.dataUrl
+        ? nativeImage.createFromDataURL(String(p.dataUrl))
+        : nativeImage.createFromPath(String(p.filePath));
+      if (!img || img.isEmpty()) throw new Error('图片读不出来（支持 PNG / JPG）');
+      const small = img.resize({ width: 9, height: 8, quality: 'good' });
+      hash = dhashFromGray(grayFromBitmap(small.toBitmap(), 9, 8, { channels: 4, order: 'bgra' }));
+    }
+    const near = this.imgIndex.nearest(hash, p.limit || 24, p.maxDistance == null ? 12 : p.maxDistance);
+    const models = this.store.getLibrary().models || {};
+    const items = [];
+    for (const n of near) {
+      if (excludeId && n.id === excludeId) continue;
+      const rec = models[n.id];
+      if (!rec || rec.status === 'missing' || rec.status === 'quarantined') continue;
+      items.push({
+        id: rec.id, title: rec.title || rec.fileName || '', fileName: rec.fileName,
+        thumbnail: rec.thumbnail, size: rec.size, score: n.score, distance: n.distance,
+      });
+    }
+    return { ok: true, hash, total: items.length, items };
+  }
+
+  // ---- I · 周报 / 成就 / 护照 ----
+  weeklyReport(weekOffset) {
+    const l = this.store.getLibrary();
+    return buildWeekly({
+      models: this._liveModels(),
+      receipts: this.receipts.list(),
+      categories: l.categories || [],
+      now: Date.now(),
+      weekOffset: Number(weekOffset) || 0,
+    });
+  }
+
+  async achievementsList(opts) {
+    const r = await this.achievements.evaluate({ models: this._liveModels(), receipts: this.receipts.list() });
+    if ((!opts || opts.notify !== false) && r.newly.length) {
+      for (const a of r.newly) {
+        this.emitToRenderer('app:toast', { type: 'success', message: '成就解锁：' + a.title });
+      }
+    }
+    return r;
+  }
+
+  passportGet(id) {
+    const rec = this.store.getLibrary().models[id];
+    if (!rec) throw new Error('找不到这个模型');
+    return { id: rec.id, ...passport.normalizeLicense(rec), presets: passport.PRESETS };
+  }
+
+  async passportUpdate(id, patch) {
+    const p = patch || {};
+    const data = {};
+    for (const k of passport.PASSPORT_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(p, k)) data[k] = p[k];
+    }
+    if (data.commercialUse === '') data.commercialUse = null;
+    const rec = await this.library.update(id, data);
+    this.store.emit('change', { reason: 'passport', id });
+    return { ok: true, id, ...passport.normalizeLicense(rec) };
+  }
+
+  passportCsv() {
+    const l = this.store.getLibrary();
+    const models = this._liveModels();
+    return { csv: passport.passportCsv(models, l.categories || []), count: models.length };
+  }
+
+  // ---- F · 自然语言搜索：纯本地解析，不联网 ----
+  nlParse(text) {
+    const l = this.store.getLibrary();
+    const lang = ((this.store.getSettings().ui || {}).language) || 'zh-CN';
+    return parseNL(text, { now: Date.now(), categories: l.categories || [], tags: l.tags || [], lang });
+  }
+
   filamentsList() { return this.filaments.list(); }
   async filamentCreate(data) {
     const r = await this.filaments.create(data);
@@ -745,6 +948,43 @@ class Services extends EventEmitter {
     const r = await this.filaments.setDefault(id);
     this.emitToRenderer('filaments:changed', { action: 'default', id: r.defaultId });
     return r;
+  }
+
+  // ---- D · 库存 ----
+  stockOverview() { return this.stock.overview(); }
+  stockStatus(filamentId) { return this.stock.status(filamentId); }
+  stockLog(limit) { return { items: this.stock.log(limit) }; }
+  async stockAdjust(payload) {
+    const r = await this.stock.adjust(payload || {});
+    this.emitToRenderer('filaments:changed', { action: 'stock', id: (payload || {}).filamentId });
+    this.emitToRenderer('stock:changed', { id: (payload || {}).filamentId });
+    await this._notifyLowStock();
+    return r;
+  }
+  async stockUndo(id) {
+    const r = await this.stock.undo(id);
+    this.emitToRenderer('filaments:changed', { action: 'stock-undo', id: r && r.status && r.status.id });
+    this.emitToRenderer('stock:changed', { action: 'undo' });
+    return r;
+  }
+  stockLowList() { return { items: this.stock.lowList() }; }
+  stockShoppingList() { return { items: this.stock.shoppingList() }; }
+  stockShoppingCsv() { return { csv: this.stock.shoppingCsv(), count: this.stock.shoppingList().length }; }
+
+  /** 低库存提醒：每卷每天最多一次；关掉设置就不弹 */
+  async _notifyLowStock() {
+    const cfg = (this.store.getSettings().inventory || {});
+    if (cfg.lowStockNotify === false) return;
+    const now = Date.now();
+    const DAY = 24 * 3600 * 1000;
+    for (const it of this.stock.lowList()) {
+      if (it.lowNotifiedAt && now - it.lowNotifiedAt < DAY) continue;
+      this.emitToRenderer('app:toast', {
+        type: 'warn',
+        message: '耗材「' + it.name + '」快用完了：约剩 ' + Math.round(it.stockG) + ' g（阈值 ' + Math.round(it.lowG) + ' g）',
+      });
+      try { await this.stock.markLowNotified(it.id); } catch (_) { /* 忽略 */ }
+    }
   }
   async filamentSetImage(id, filePath) {
     const r = await this.filaments.setImage(id, filePath);

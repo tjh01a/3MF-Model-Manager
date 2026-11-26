@@ -9,7 +9,7 @@ import { t as tr } from '../i18n.js';
  */
 import { api, emitToast, emitRefresh } from '../api.js';
 import { escapeHtml, icon } from '../utils.js';
-import { confirmDialog, promptDialog } from '../components/modal.js';
+import { confirmDialog, promptDialog, customDialog } from '../components/modal.js';
 import { openImageEditor } from '../components/img-editor.js';
 
 const esc = (v) => escapeHtml(v == null ? '' : String(v));
@@ -80,6 +80,18 @@ function filtered() {
 function cardHtml(f) {
   const sel = f.id === st.selectedId ? ' is-selected' : '';
   const isDefault = f.id === st.defaultId;
+  const fullG = Number(f.fullG) > 0 ? Number(f.fullG) : 1000;
+  const lowG = Number(f.lowG) >= 0 ? Number(f.lowG) : Math.round(fullG * 0.1);
+  const managed = f.stockG != null;
+  const stockG = managed ? Number(f.stockG) : null;
+  const pct = managed ? Math.max(0, Math.min(100, Math.round((stockG / fullG) * 100))) : 0;
+  const low = managed && stockG <= lowG;
+  const stockHtml = managed
+    ? tr('<span class="fil-stock') + (low ? ' is-low' : '') + '">' +
+        '<span class="fil-stock-bar"><span style="width:' + pct + '%"></span></span>' +
+        '<span class="fil-stock-text">' + tr('约剩 ') + Math.round(stockG) + ' g' +
+        (low ? tr(' · 偏低') : '') + (Number(f.spools) > 0 ? tr(' · 备用 ') + Number(f.spools) + tr(' 卷') : '') + '</span></span>'
+    : '';
   return '<button type="button" class="fil-card' + sel + (isDefault ? ' is-default' : '') + '" data-id="' + esc(f.id) + '" title="' + esc(f.name) + '">' +
     '<span class="fil-card-media"><img class="fil-card-img" src="' + thumbSrc(f) + '" alt="">' +
       (isDefault ? tr('<span class="fil-default-tag">默认</span>') : '') + '</span>' +
@@ -89,7 +101,7 @@ function cardHtml(f) {
         '<i class="fil-dot" style="background:' + esc(safeColor(f.color)) + '"></i>' +
         '<span class="fil-card-type">' + esc(f.type || 'PLA') + '</span>' +
         '<span class="fil-card-price">' + yuan(f.pricePerKg) + '/kg</span>' +
-      '</span>' +
+      '</span>' + stockHtml +
     '</span>' +
   '</button>';
 }
@@ -123,6 +135,21 @@ function detailHtml(f) {
           '<input type="color" data-field="color" value="' + esc(safeColor(f.color)) + '">' +
           '<input type="text" data-field="colorText" value="' + esc(safeColor(f.color)) + '" maxlength="7" class="fil-hex"></span></label>' +
         tr('<label class="fil-field"><span>单价（元 / kg）</span><input type="number" data-field="pricePerKg" min="0" step="0.01" value="') + esc(f.pricePerKg || 0) + '"></label>' +
+      '</div>' +
+      // D · 库存：stockG 留空 = 不管理
+      '<div class="fil-field-row">' +
+        '<label class="fil-field"><span>' + tr('剩余克数（留空 = 不管理库存）') + '</span><input type="number" data-field="stockG" min="0" step="1" placeholder="' + tr('例如 620') + '" value="' +
+          esc(f.stockG == null ? '' : f.stockG) + '"></label>' +
+        '<label class="fil-field"><span>' + tr('整卷克数') + '</span><input type="number" data-field="fullG" min="1" step="1" value="' + esc(f.fullG || 1000) + '"></label>' +
+      '</div>' +
+      '<div class="fil-field-row">' +
+        '<label class="fil-field"><span>' + tr('低库存阈值（克）') + '</span><input type="number" data-field="lowG" min="0" step="1" value="' + esc(f.lowG == null ? 100 : f.lowG) + '"></label>' +
+        '<label class="fil-field"><span>' + tr('备用整卷') + '</span><input type="number" data-field="spools" min="0" step="1" value="' + esc(f.spools || 0) + '"></label>' +
+      '</div>' +
+      '<label class="fil-field"><span>' + tr('购买链接') + '</span><input type="url" data-field="buyUrl" value="' + esc(f.buyUrl || '') + '" placeholder="https://…"></label>' +
+      '<div class="fil-stock-actions">' +
+        '<button type="button" class="btn btn-sm btn-ghost" data-act="stock-log">' + icon('i-clock') + '<span>' + tr('库存流水') + '</span></button>' +
+        '<button type="button" class="btn btn-sm btn-ghost" data-act="stock-shopping">' + icon('i-box') + '<span>' + tr('采购清单') + '</span></button>' +
       '</div>' +
       tr('<label class="fil-field"><span>备注</span><textarea data-field="note" rows="3" maxlength="2000">') + esc(f.note || '') + '</textarea></label>' +
       tr('<label class="fil-field"><span>耗材参数</span><textarea data-field="params" rows="3" maxlength="2000" placeholder="例如：打印温度 220°C / 热床 60°C / 收缩率 0.4% 等">') + esc(f.params || '') + '</textarea></label>' +
@@ -186,6 +213,11 @@ function readForm() {
     type: get('type'),
     color: get('colorText') || get('color'),
     pricePerKg: get('pricePerKg'),
+    stockG: get('stockG'),
+    fullG: get('fullG'),
+    lowG: get('lowG'),
+    spools: get('spools'),
+    buyUrl: get('buyUrl'),
     note: get('note'),
     params: get('params'),
   };
@@ -230,6 +262,80 @@ async function setDefault(f) {
     emitRefresh('filaments');   // 卡片价格要按新默认耗材重算
     await refresh();
   } catch (_) { /* 已 toast */ }
+}
+
+async function showStockLog() {
+  let r;
+  try { r = await api.stockLog(40); } catch (_) { return; }
+  const items = (r && r.items) || [];
+  if (!items.length) { emitToast('info', tr('还没有库存流水')); return; }
+  const rows = items.map((x) => {
+    const d = new Date(x.at || 0);
+    const when = d.toLocaleString();
+    const delta = (x.deltaG ? (x.deltaG > 0 ? '+' : '') + x.deltaG + ' g' : '') +
+      (x.deltaSpools ? (x.deltaSpools > 0 ? ' +' : '') + x.deltaSpools + tr(' 卷') : '');
+    const kind = x.kind === 'print' ? tr('打印扣减') : (x.kind === 'undo' ? tr('撤销') : tr('手动调整'));
+    return '<div class="stock-log-row"><div class="stock-log-main">' +
+      '<b>' + esc(x.filamentName || x.filamentId) + '</b> ' +
+      '<span class="badge">' + esc(kind) + '</span>' +
+      '<div class="muted">' + esc(when) + (x.modelName ? tr(' · ') + esc(x.modelName) : '') +
+      (x.note ? tr(' · ') + esc(x.note) : '') + '</div></div>' +
+      '<div class="stock-log-delta">' + esc(delta) + '</div>' +
+      (x.kind === 'undo' ? '' :
+        '<button type="button" class="btn btn-ghost btn-sm" data-stock-undo="' + esc(x.id) + '">' + tr('撤销') + '</button>') +
+      '</div>';
+  }).join('');
+  customDialog({
+    title: tr('库存流水'),
+    body: '<div class="stock-log">' + rows + '</div>',
+    onMount: (modal, close) => {
+      modal.querySelectorAll('[data-stock-undo]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          try {
+            await api.stockUndo(btn.dataset.stockUndo);
+            emitToast('success', tr('已撤销这笔库存变动'));
+            close(null);
+            emitRefresh('filaments');
+            await refresh();
+          } catch (_) { /* api 已提示 */ }
+        });
+      });
+    },
+  });
+}
+
+async function showShopping() {
+  let list, csv;
+  try {
+    list = await api.stockShoppingList();
+    csv = await api.stockShoppingCsv();
+  } catch (_) { return; }
+  const items = (list && list.items) || [];
+  if (!items.length) { emitToast('info', tr('没有需要补货的耗材')); return; }
+  const rows = items.map((x) =>
+    '<div class="stock-log-row"><div class="stock-log-main"><b>' + esc(x.name) + '</b>' +
+    '<div class="muted">' + esc(x.brand || '') + tr(' · 约剩 ') + Math.round(x.stockG) + ' g' +
+    (x.spools ? tr(' · 备用 ') + x.spools + tr(' 卷') : '') + '</div></div>' +
+    '<div class="stock-log-delta">' + tr('建议买 ') + x.suggestSpools + tr(' 卷') + '</div></div>').join('');
+  customDialog({
+    title: tr('采购清单'),
+    body: '<div class="stock-log">' + rows + '</div><p class="hint">' + tr('建议量按整卷估算，实际按你的用量调整。') + '</p>',
+    onMount: (modal, close) => {
+      const foot = modal.querySelector('.modal-foot') || modal;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-primary';
+      btn.textContent = tr('复制 CSV');
+      btn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText((csv && csv.csv) || '');
+          emitToast('success', tr('采购清单已复制，可直接粘贴到表格'));
+        } catch (_) { emitToast('error', tr('复制失败，请重试')); }
+        close(null);
+      });
+      foot.appendChild(btn);
+    },
+  });
 }
 
 async function onClick(e) {
@@ -303,6 +409,8 @@ async function onClick(e) {
       } catch (_) { /* 已 toast */ }
       break;
     }
+    case 'stock-log': await showStockLog(); break;
+    case 'stock-shopping': await showShopping(); break;
     case 'open-dir':
       try { await api.filamentsOpenDir(); } catch (_) { /* 已 toast */ }
       break;
@@ -361,6 +469,8 @@ export function mountFilaments() {
   // 背景点一下关闭（与设备页一致）
   if (panel) panel.addEventListener('click', (e) => { if (e.target === panel) closeFilaments(); });
   window.addEventListener('filaments:changed', () => { if (open) refresh(); });
+  // 打印回执扣库存只发 stock:changed，浮层开着时也要跟着刷新
+  window.addEventListener('stock:changed', () => { if (open) refresh(); });
   refresh().catch(() => {});
 }
 
