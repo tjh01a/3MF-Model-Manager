@@ -3,7 +3,7 @@ import { t as tr } from '../i18n.js';
 
 /**
  * 特殊视图：
- *   重复文件（duplicateGroup 并排对比 + 智能合并）/ 失效文件（missing 重定位）/ 同款变体（几何指纹）。
+ *   重复文件（duplicateGroup 并排对比 + 智能合并）/ 失效文件（missing 重定位）/ 同款变体（缩略图比对）。
  * 事件委托挂在 #content 上，动作统一用 sp- 前缀避免与 grid.js 卡片冲突。
  * 「损坏文件隔离区」的渲染与点击在 views/quarantine.js，这里只做转交。
  */
@@ -116,14 +116,14 @@ function variantBadge(m) {
 function groupCard(g) {
   const isExact = g.kind === 'exact';
   const isVariant = g.kind === 'variant';
-  const label = isExact ? tr('内容完全相同') : (isVariant ? tr('几何指纹相近') : tr('疑似，请人工确认'));
+  const label = isExact ? tr('内容完全相同') : (isVariant ? tr('缩略图相同') : tr('疑似，请人工确认'));
   const cls = isExact ? '' : ' warn';
   const keeperId = pickFor(g);
   const rows = g.members.map((m) => memberRow(g, m, m.id === keeperId)).join('');
   const note = isExact
     ? tr('每组的文件内容一模一样，可以放心合并。')
     : (isVariant
-      ? tr('形状相近但不保证内容相同，请看缩略图确认后再合并。')
+      ? tr('这些文件的缩略图一致，通常是同一个模型复制、缩放或换颜色后重新导出的版本；合并前仍建议看一眼缩略图。')
       : tr('文件名与体积相近，但不保证内容相同，请谨慎处理。'));
   return '<section class="dup-group' + (isExact ? '' : ' similar') + '" data-group="' + esc(g.key) + '">' +
     '<div class="dup-group-head">' +
@@ -152,6 +152,16 @@ async function loadGroups(kinds) {
   } catch (_) { return null; }
 }
 
+/** 页头统计：重复/变体按「组 · 文件」显示，避免出现「共 1 个模型」但下面列了 6 组 16 个文件。 */
+function setSpecialMeta(groups, files) {
+  state.specialMeta = { groups: Number(groups) || 0, files: Number(files) || 0 };
+  const text = tr('共 ') + state.specialMeta.groups + tr(' 组 · ') + state.specialMeta.files + tr(' 个文件');
+  const sub = document.getElementById('view-subtitle');
+  if (sub) sub.textContent = text;
+  const status = document.getElementById('status-count');
+  if (status) status.textContent = text;
+}
+
 async function renderDuplicates() {
   const content = el('content');
   if (!content) return;
@@ -160,23 +170,27 @@ async function renderDuplicates() {
   const exact = groups.filter((g) => g.kind === 'exact');
   const similar = groups.filter((g) => g.kind === 'similar');
   if (!exact.length && !similar.length) {
+    setSpecialMeta(0, 0);
     const extra = (state.stats && state.stats.aliases) ? '<p>' + esc(tr('已有 ') + state.stats.aliases + tr(' 个副本挂在主记录下，可在详情页查看或解除。')) + '</p>' : '';
     content.innerHTML = empty(tr('当前范围内没有重复模型'),
       filterHint('duplicates') || tr('内容哈希完全相同的文件会在这里成组显示，方便你清理冗余。'), extra);
     return;
   }
-  const totalBytes = exact.reduce((s, g) => s + (Number(g.freedBytes) || 0), 0);
   const aliasCount = exact.reduce((s, g) => s + g.members.length - 1, 0);
+  const exactBytes = exact.reduce((s, g) => s + (Number(g.freedBytes) || 0), 0);
   // 只统计本页真正渲染出来的组；同款变体有独立视图，别把它的成员重复算进来
   const shownGroups = exact.concat(similar);
   const fileCount = new Set(shownGroups.flatMap((g) => g.members.map((m) => m.id))).size;
+  // 疑似组也能合并释放空间；早先只加 exact，出现「16 个文件却可释放 0 B」的自相矛盾。
+  const totalBytes = shownGroups.reduce((s, g) => s + (Number(g.freedBytes) || 0), 0);
+  setSpecialMeta(shownGroups.length, fileCount);
   let out = '<div class="special-head"><div class="special-head-main">' +
     tr('<h2>重复文件</h2><p>每组选一条作为主记录，其余降为它的「副本」：不再占列表、不重复计数，备注和打印记录都会保留。</p>') +
     '<p class="muted">' + tr('共 ') + shownGroups.length + tr(' 组 · ') + fileCount + tr(' 个文件 · ') +
       tr('可释放约 ') + esc(fmtBytes(totalBytes)) + '</p></div>' +
     (exact.length
       ? '<button type="button" class="btn btn-primary btn-sm" data-act="sp-merge-all" data-ids="' + esc(exact.map((g) => g.key).join('|')) + '">' +
-        icon('i-trash') + tr('<span>一键合并全部完全重复（') + aliasCount + tr(' 个 · 约 ') + esc(fmtBytes(totalBytes)) + '）</span></button>'
+        icon('i-trash') + tr('<span>一键合并全部完全重复（') + aliasCount + tr(' 个 · 约 ') + esc(fmtBytes(exactBytes)) + '）</span></button>'
       : '') +
     '</div>';
   out += exact.map(groupCard).join('');
@@ -203,33 +217,35 @@ async function renderVariants() {
   if (state.contentMode !== 'variants' || !content) return;
   const groups = groupBy(state.items || [], 'variantGroup');
   const running = st && st.running;
+  const pending = st && Number(st.pending) || 0;
   const members = groups.reduce((s, g) => s + g.length, 0);
+  setSpecialMeta(groups.length, members);
 
   let statusHtml = '';
   if (st) {
     const bits = [];
-    if (running) bits.push(tr('正在后台计算…'));
-    bits.push(tr('已计算 ') + (st.total || 0) + tr(' 个模型'));
-    if (st.pending && !running) bits.push(tr('还有 ') + st.pending + tr(' 个待计算'));
-    if (st.failed) bits.push(st.failed + tr(' 个没有 3D 网格（切片文件）已跳过'));
+    if (running) bits.push(tr('正在检查缩略图…'));
+    bits.push(tr('已检查 ') + (st.hashed || 0) + tr(' 张缩略图'));
+    if (st.pending && !running) bits.push(tr('还有 ') + st.pending + tr(' 个待检查'));
+    if (st.failed) bits.push(st.failed + tr(' 个没有可用缩略图已跳过'));
     statusHtml = '<p class="muted">' + esc(bits.join(tr(' · '))) + '</p>' +
       '<div class="dup-actions">' +
         '<button type="button" class="btn btn-ghost btn-sm" data-act="sp-shape-run"' + (running ? ' disabled' : '') + '>' +
-          icon('i-refresh') + tr('<span>计算 / 更新</span></button>') +
+          icon('i-refresh') + tr('<span>重新检查缩略图</span></button>') +
         (running ? '<button type="button" class="btn btn-ghost btn-sm" data-act="sp-shape-stop">' + tr('<span>暂停</span></button>') : '') +
       '</div>';
   }
 
   if (!groups.length) {
     content.innerHTML = empty(tr('还没有发现同款变体'),
-      tr('同一个模型改了颜色、放大缩小、换个姿势重新导出，文件名和哈希都会变，但形状是一样的。软件会在后台按形状比对，把这类文件归到这里。'),
+      tr('同一个模型复制、放大缩小、换颜色后重新导出，文件名和 3MF 哈希都会变，但缩略图通常不变。软件按缩略图比对，把这类文件归到这里；没有缩略图的模型不会硬凑成一组。'),
       '<div class="empty-extra">' + statusHtml + '</div>');
-    if (running && !shapeTimer) shapeTimer = setInterval(() => { if (state.contentMode === 'variants') refreshSpecial('variants'); else stopShapePolling(); }, 2500);
+    if ((running || pending) && !shapeTimer) shapeTimer = setInterval(() => { if (state.contentMode === 'variants') refreshSpecial('variants'); else stopShapePolling(); }, 2500);
     return;
   }
   let out = '<div class="special-head"><div class="special-head-main">' +
-    tr('<h2>同款变体</h2><p>按网格形状比对得出的结果，不看文件名。') +
-    tr('<b>同一模型</b>可以放心合并，<b>疑似</b>请对照缩略图确认。</p>') + statusHtml + '</div></div>';
+    tr('<h2>同款变体</h2><p>按缩略图比对得出的结果，不看文件名和几何形状。') +
+    tr('<b>缩略图相同</b>通常是同一模型的不同版本；合并前仍建议看一眼缩略图。</p>') + statusHtml + '</div></div>';
   out += groups.map((list) => {
     const g = {
       key: 'variant:' + list[0].variantGroup,
@@ -242,7 +258,7 @@ async function renderVariants() {
     return groupCard(g);
   }).join('');
   content.innerHTML = out;
-  if (running && !shapeTimer) shapeTimer = setInterval(() => { if (state.contentMode === 'variants') refreshSpecial('variants'); else stopShapePolling(); }, 2500);
+  if ((running || pending) && !shapeTimer) shapeTimer = setInterval(() => { if (state.contentMode === 'variants') refreshSpecial('variants'); else stopShapePolling(); }, 2500);
 }
 
 // ---------- 失效文件 ----------
@@ -367,7 +383,7 @@ async function doMerge(keys, trash) {
   const ok = await confirmDialog({
     title: trash ? tr('合并并移入回收站') : tr('合并 · 只标为副本'),
     message: trash
-      ? tr('共 ') + groupCount + tr(' 组：保留 ') + groupCount + tr(' 个主记录，其余 ') + n + tr(' 个降为副本，并把它们的文件移入系统回收站（约 ') + esc(fmtBytes(freed)) + tr('）。')
+      ? tr('共 ') + groupCount + tr(' 组：保留 ') + groupCount + tr(' 个主记录，其余 ') + n + tr(' 个降为副本，并把它们的文件移入系统回收站（约 ') + esc(fmtBytes(freed)) + tr('）。如果系统回收站不可用，会保留文件、只标为副本，不会直接删除。')
       : tr('共 ') + groupCount + tr(' 组：保留 ') + groupCount + tr(' 个主记录，其余 ') + n + tr(' 个降为副本。磁盘文件不动。'),
     detail: tr('保留规则：优先留有缩略图、备注、打印记录的那份，其次留最早入库的。可在每组里手动改选。')
       + (trash
@@ -383,9 +399,11 @@ async function doMerge(keys, trash) {
     const failed = Array.isArray(r.failed) ? r.failed : [];
     for (const key of keys) picked.delete(key);
     if (failed.length) {
+      const kept = failed.filter((f) => f && f.kept).length;
+      const why = (failed[0] && failed[0].error) || tr('未知原因');
       emitToast(r.merged ? 'warn' : 'error',
-        tr('已合并 ') + (r.merged || 0) + tr(' 组，') + failed.length + tr(' 个文件移入回收站失败（')
-        + ((failed[0] && failed[0].error) || tr('未知原因')) + '）');
+        tr('已合并 ') + (r.merged || 0) + tr(' 组，') + failed.length + tr(' 个文件没能移入系统回收站')
+        + (kept ? tr('；其中 ') + kept + tr(' 个文件保持原位、只标为副本（') + why + '）' : '（' + why + '）'));
     } else if (r.merged) {
       emitToast('success', trash
         ? tr('已合并 ') + r.merged + tr(' 组，') + (r.trashed || 0) + tr(' 个副本进了回收站，约释放 ') + esc(fmtBytes(r.freedBytes || 0))
@@ -476,7 +494,7 @@ async function dispatch(act, d) {
     case 'sp-merge-trash': return doMerge([d.group], true);
     case 'sp-merge-all': return doMerge(String(d.ids || '').split('|').filter(Boolean), true);
     case 'sp-shape-run': {
-      try { const r = await api.shapeRun({ force: d.force === '1' }); if (r && r.started === false) emitToast('info', r.reason || tr('没有需要计算的模型')); }
+      try { const r = await api.shapeRun({ force: d.force === '1' }); if (r && r.started === false) emitToast('info', r.reason || tr('没有需要检查的缩略图')); }
       catch (e) { toastErr(e); }
       await refreshSpecial('variants');
       return;
@@ -535,3 +553,4 @@ export function renderSpecialView(mode) {
 }
 
 function leaveVariants() { stopShapePolling(); }
+

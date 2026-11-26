@@ -47,7 +47,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const checked = g0.querySelectorAll('input[type="radio"]:checked');
     ok(checked.length === 1, '默认每组主记录唯一（实际 ' + checked.length + '）');
     ok(!!g0.querySelector('.dup-reasons') && (g0.querySelector('.dup-reasons').textContent || '').length > 2, '显示推荐保留理由');
-    ok(!!g0.querySelector('.badge-ok'), '主记录有「保留」徽标');
+    ok(!!g0.querySelector('.badge-dup'), '主记录有「保留」徽标');
     ok(!!g0.querySelector('[data-act="sp-merge"]') && !!g0.querySelector('[data-act="sp-merge-trash"]'), '两个合并按钮都在');
     const keepId = checked[0] ? checked[0].dataset.id : null;
     out.info.keepId = keepId;

@@ -21,7 +21,7 @@ import { mountMonitorBar } from './components/monitorbar.js';
 import { mountOnboarding, maybeStartOnboarding, isOnboardingOpen } from './components/onboarding.js';
 import { mountLightbox, openLightbox, closeLightbox, isLightboxOpen } from './views/lightbox.js';
 import { mountSpecialView, renderSpecialView } from './views/duplicates.js';
-import { mountReceipts, renderReceipts } from './views/receipts.js';
+import { mountReceipts, renderReceipts, receiptsCount } from './views/receipts.js';
 import { mountToast } from './components/toast.js';
 import { isModalOpen, confirmDialog, promptDialog } from './components/modal.js';
 import { openClassifyPrompt } from './components/classify-prompt.js';
@@ -295,6 +295,10 @@ function doLightRefresh() {
 function bindRefresh() {
   window.addEventListener('shelf:refresh', (e) => {
     scheduleRefresh((e && e.detail && e.detail.reason) || 'refresh');
+  });
+  // 回执是异步拉的：渲染完成后补刷底栏「共 N 条回执」，不能停在模型总数
+  window.addEventListener('shelf:receipts-rendered', () => {
+    if (state.contentMode === 'receipts') updateStatusBar();
   });
   // docs/14：耗材改价 / 增删会推 filaments:changed，卡片价格来自派生成本缓存，
   // 必须跟着重算。filaments.js 自己的保存流程也会 emitRefresh，这里覆盖外部调用路径。
@@ -613,7 +617,18 @@ function updateStatusBar() {
   const sel = qs('#status-selection');
   if (sel) sel.textContent = state.selection.size ? tr('已选 ') + state.selection.size + tr(' 项') : '';
   const count = qs('#status-count');
-  if (count) count.textContent = tr('共 ') + state.total + tr(' 个模型');
+  if (count) {
+    if (state.contentMode === 'receipts') {
+      // 回执 id 和模型 id 是两套口径，底栏不能继续写「共 N 个模型」
+      count.textContent = tr('共 ') + receiptsCount() + tr(' 条回执');
+      return;
+    }
+    const special = (state.contentMode === 'duplicates' || state.contentMode === 'variants')
+      ? state.specialMeta : null;
+    count.textContent = special
+      ? tr('共 ') + special.groups + tr(' 组 · ') + special.files + tr(' 个文件')
+      : tr('共 ') + state.total + tr(' 个模型');
+  }
 }
 function onState(_s, reason) {
   if (reason === 'selection') updateStatusBar();

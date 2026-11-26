@@ -23,10 +23,19 @@ function asModelList(input) {
   return [];
 }
 
+/** 能参与重复分组的记录：别名、失效、隔离、解析失败的都不算。 */
+function groupable(r) {
+  if (!r || r.aliasOf) return false;
+  if (r.status === 'missing' || r.status === 'quarantined') return false;
+  if (r.parseErrorKind) return false;
+  return true;
+}
+
 /** A-3：hash -> ids[]，仅保留 length>1 的组；无 hash 的记录不参与分组 */
 function computeHashGroups(models) {
   const groups = new Map();
   for (const r of asModelList(models)) {
+    if (!groupable(r)) continue;
     const h = r.hash;
     if (!h || typeof h !== 'string') continue;
     if (!groups.has(h)) groups.set(h, []);
@@ -38,9 +47,9 @@ function computeHashGroups(models) {
   return groups;
 }
 
-/** A-3：归一化名相同 + size 差 <2% 的疑似重复组 */
+/** A-3：归一化名相同 + size 差 <2% 的疑似重复组（只和簇的代表比，避免链式越聚越宽） */
 function findSimilar(models) {
-  const list = asModelList(models);
+  const list = asModelList(models).filter(groupable);
   const byName = new Map();
   for (const r of list) {
     const name = r.fileName || r.title || '';
@@ -53,10 +62,11 @@ function findSimilar(models) {
   const out = [];
   for (const [key, arr] of byName) {
     if (arr.length < 2) continue;
-    // 按 size 升序聚类：相邻两条 size 差 <= 较大者的 2% 归为同一簇
+    // 按 size 升序聚类：每一条都跟「当前簇里体积最小的那条」比。
+    // 早先只和上一条比，A-B 差 2%、B-C 差 2% 会把 A 和 C（差 4%）也串成一组。
     const sorted = arr.slice().sort((a, b) => (Number(a.size) || 0) - (Number(b.size) || 0));
     let seq = 0;
-    let cluster = [sorted[0]];
+    let cluster = [];
     const flush = () => {
       if (cluster.length >= 2) {
         out.push({
@@ -67,10 +77,10 @@ function findSimilar(models) {
         seq++;
       }
     };
-    for (let i = 1; i < sorted.length; i++) {
-      const prev = cluster[cluster.length - 1];
-      const cur = sorted[i];
-      const a = Number(prev.size) || 0;
+    for (const cur of sorted) {
+      if (!cluster.length) { cluster = [cur]; continue; }
+      const base = cluster[0];
+      const a = Number(base.size) || 0;
       const b = Number(cur.size) || 0;
       if (Math.abs(a - b) <= Math.max(a, b) * 0.02) {
         cluster.push(cur);
@@ -94,7 +104,7 @@ function annotate(library) {
   const byId = new Map();
   for (const r of list) byId.set(r.id, r);
   // C：别名挂在主记录下面，不参与分组——否则合并完的组会立刻「复活」
-  const grouped = list.filter((r) => !(r.aliasOf));
+  const grouped = list.filter(groupable);
 
   // 1. 清空旧标记
   for (const r of list) {
@@ -104,23 +114,31 @@ function annotate(library) {
   }
 
   const affected = new Set();
+  const exactIds = new Set();
 
   // 2. 内容 hash 重复组
   const groups = computeHashGroups(grouped);
   for (const [hash, ids] of groups) {
-    for (const id of ids) {
-      const r = byId.get(id);
-      if (!r) continue;
+    const members = ids.map((id) => byId.get(id)).filter(Boolean)
+      .sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0)
+        || String(a.id).localeCompare(String(b.id)));
+    const base = members[0];
+    for (const r of members) {
       r.duplicateGroup = hash;
-      r.duplicateOf = ids.find((x) => x !== id) || null;
-      affected.add(id);
+      r.duplicateOf = r === base ? null : base.id;
+      exactIds.add(r.id);
+      affected.add(r.id);
     }
   }
 
-  // 3. 疑似重复组（仅提示，与重复组可共存）
+  // 3. 疑似重复组（仅提示，与重复组可共存；已经内容完全相同的成员不再重复列一遍）
   const sims = findSimilar(grouped);
+  let similarGroups = 0;
   for (const g of sims) {
-    for (const id of g.ids) {
+    const remain = g.ids.filter((id) => !exactIds.has(id));
+    if (remain.length < 2) continue;
+    similarGroups++;
+    for (const id of remain) {
       const r = byId.get(id);
       if (!r) continue;
       r.similarGroup = g.key;
@@ -128,7 +146,7 @@ function annotate(library) {
     }
   }
 
-  return { groups: groups.size, affected: Array.from(affected), similar: sims.length };
+  return { groups: groups.size, affected: Array.from(affected), similar: similarGroups };
 }
 
 module.exports = { computeHashGroups, findSimilar, annotate };

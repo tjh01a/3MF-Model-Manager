@@ -570,12 +570,8 @@ class Scanner extends EventEmitter {
         const dup = duplicates.annotate(target);
         report.duplicateGroups = dup.groups;
         report.broken = Object.values(models).filter((r) => r && r.parseErrorKind && !r.aliasOf && r.status !== 'missing').length;
-        // A：有几何指纹索引时顺带重算同款变体分组
-        if (this.shapeIndex && this.shapeIndex.size > 0) {
-          try {
-            this.shapeIndex.annotate(target, {});
-          } catch (_) { /* 变体分组失败不影响扫描 */ }
-        }
+        // A：同款变体改由 services 在缩略图就绪后按缩略图重算；
+        // 扫描阶段不再写几何指纹分组，避免把完全不同的模型按「形状相近」误聚。
         // 实际写入条数以 mutator 内的结果为准，报告不要虚报。
         report.added = added;
         report.updated = updated;

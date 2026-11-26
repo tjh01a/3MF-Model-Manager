@@ -109,7 +109,7 @@ function renderFolders() {
         sw(tr('计算内容哈希（精确去重）'), scan.hashEnabled !== false, 'data-bind="scan.hashEnabled" data-kind="bool"')
       ) +
       row(
-        sw(tr('后台计算几何指纹（识别同款变体）'), scan.shapePrint !== false, 'data-bind="scan.shapePrint" data-kind="bool"')
+        sw(tr('后台比对同款缩略图（识别同款变体）'), scan.shapePrint !== false, 'data-bind="scan.shapePrint" data-kind="bool"')
       ) +
       row(
         sw(tr('文件被删除后直接移出模型库'), scan.dropMissing !== false, 'data-bind="scan.dropMissing" data-kind="bool"')

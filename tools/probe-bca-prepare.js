@@ -1,6 +1,6 @@
 'use strict';
 /**
- * 给 B/C/A 走查探针准备一个隔离数据目录：造样本 → 建库 → 扫描 → 算完几何指纹。
+ * 给 B/C/A 走查探针准备一个隔离数据目录：造样本 → 建库 → 扫描 → 检查缩略图指纹。
  *
  * 用法：node tools/probe-bca-prepare.js <数据目录>
  * 之后：set PRINTSHELF_DATA_DIR=<数据目录> && node launch.js --capture=out.png --ui-script=tools/probe-xxx.js
@@ -38,7 +38,7 @@ const Services = require('../electron/services');
   const r = await svc.scanner.scanAll({ force: true });
   console.log('scan', JSON.stringify({ added: r.added, failed: r.failed, duplicates: r.duplicateGroups }));
 
-  // 几何指纹是后台任务：这里同步等它算完，探针里就能直接看到「同款变体」分组
+  // 缩略图检查是后台任务：这里同步等它跑完，探针里就能直接看到「同款变体」分组
   svc.shapeRun({ force: true });
   const t0 = Date.now();
   while (Date.now() - t0 < 30000) {

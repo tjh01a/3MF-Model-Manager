@@ -316,7 +316,7 @@ function clearAll() {
       yes = await confirmDialog({
         title: tr('清空打印回执'),
         message: tr('确定清空全部打印回执吗？'),
-        detail: tr('只删除本机的回执记录，不会动模型文件和模型库。'),
+        detail: tr('只删除本机的回执记录，不会动模型文件和模型库。清空后重启软件，也不会把已经看过的历史任务自动补回来。'),
         danger: true, confirmText: tr('清空'),
       });
     } catch (_) { return; }

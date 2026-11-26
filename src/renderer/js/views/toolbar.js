@@ -81,8 +81,15 @@ export function syncToolbar() {
     // 回执视图里 state.total 是「智能视图匹配到的模型数」，写成「个模型」会让人以为
     // 回执页在显示模型。这里按当前视图换成对应单位。
     const isReceipts = state.contentMode === 'receipts';
+    const special = (state.contentMode === 'duplicates' || state.contentMode === 'variants')
+      ? state.specialMeta : null;
     const n = isReceipts ? receiptsCount() : state.total;
-    sub.textContent = tr('共 ') + n + (isReceipts ? tr(' 条回执') : tr(' 个模型')) + (hasFilters() ? tr(' · 已筛选') : '');
+    if (special) {
+      sub.textContent = tr('共 ') + special.groups + tr(' 组 · ') + special.files + tr(' 个文件')
+        + (hasFilters() ? tr(' · 已筛选') : '');
+    } else {
+      sub.textContent = tr('共 ') + n + (isReceipts ? tr(' 条回执') : tr(' 个模型')) + (hasFilters() ? tr(' · 已筛选') : '');
+    }
   }
 
   const chips = qs('#filter-chips');

@@ -104,7 +104,7 @@ function rec(id, extra) {
   ok('includeAliases 才能查到', lib.query({ includeAliases: true }).items.some((m) => m.id === 'a'));
   ok('总数不含别名', lib.query({}).total === 6, lib.query({}).total);
   ok('stats 记了别名数（a + 测试数据里本来就有的 al）', lib.stats().aliases === 2, lib.stats().aliases);
-  ok('重复计数：g1 只剩主记录不再算重复', lib.smartCounts().duplicates === 3, lib.smartCounts().duplicates);
+  ok('重复计数：g1 只剩主记录不再算重复，疑似组也计入', lib.smartCounts().duplicates === 4, lib.smartCounts().duplicates);
   ok('轮盘不会抽到别名', (() => { for (let i = 0; i < 200; i++) if (lib.roulette().id === 'a') return false; return true; })());
   ok('能列出主记录的副本', lib.aliasesOf('a2').map((x) => x.id).join() === 'a');
   ok('别名的备注还在（没有丢人工信息）', a.note === '' && lib.get('al').note === '');
@@ -116,7 +116,7 @@ function rec(id, extra) {
   ok('只解除确实是别名的', det.detached === 1);
   ok('a 恢复成独立记录', !lib.get('a').aliasOf && lib.query({}).items.some((m) => m.id === 'a'));
   D.annotate(store.getLibrary());
-  ok('解除后重新成为重复组（g1 两条都回来了）', lib.smartCounts().duplicates === 5, lib.smartCounts().duplicates);
+  ok('解除后重新成为重复组（g1 两条都回来了，疑似组也计入）', lib.smartCounts().duplicates === 6, lib.smartCounts().duplicates);
 
   console.log('\n[6. 合并并移入回收站');
   const plan2 = merge.planMerge(store.getLibrary(), { 'exact:H1': 'a2', 'exact:H2': 'b' });
@@ -129,6 +129,17 @@ function rec(id, extra) {
   ok('失败的记录保持独立', !lib.get('b2').aliasOf && lib.query({}).items.some((m) => m.id === 'b2'));
   ok('只算成功那部分的释放空间', r2.freedBytes === 1000, r2.freedBytes);
   ok('存根保留路径和大小', lib.get('a').path.indexOf('a.3mf') > 0 && lib.get('a').size === 1000);
+
+  // 系统回收站不可用（提权 / 占用 / 杀软拦截）时的兜底：
+  // 文件原地保留，记录仍降为副本，不能出现「已合并 0 组」。
+  const planShadow = merge.planMerge(store.getLibrary(), { 'exact:H2': 'b' });
+  let rShadow = null;
+  await store.updateLibrary((L) => {
+    rShadow = merge.applyMergeInLibrary(L, planShadow, { b2: { ok: false, shadow: true, error: '回收站被占用' } });
+  }, 'test-merge-shadow');
+  ok('回收站失败也合并成功（1 组、1 个只标副本）', rShadow.merged === 1 && rShadow.shadow === 1 && rShadow.trashed === 0, JSON.stringify(rShadow));
+  ok('失败项明确标出「文件保留」', rShadow.failed.length === 1 && rShadow.failed[0].kept === true && rShadow.failed[0].id === 'b2');
+  ok('b2 降为 b 的副本且文件标记为未移动', lib.get('b2').aliasOf === 'b' && lib.get('b2').aliasState === 'shadow');
 
   console.log('\n[7. 主记录被删时别名自动恢复');
   await lib.remove(['a2']);

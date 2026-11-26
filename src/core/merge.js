@@ -207,22 +207,30 @@ function applyMergeInLibrary(lib, plan, outcome) {
       const r = models[a.id];
       // 已经是别名的不重复处理；主记录自己不能变成别名
       if (!r || isAlias(r) || r.id === item.keepId) continue;
+      let asShadow = !outcome;
       if (outcome) {
         const res = outcome[a.id];
         if (!res || !res.ok) {
-          failed.push({ id: a.id, path: a.path, error: (res && res.error) || '移入回收站失败' });
-          continue;
+          // 系统回收站两条路都失败时，调用方可以要求「保留文件、只标副本」。
+          // 只报失败会让整组一条都合并不了（用户看到「已合并 0 组」），文件也没动。
+          if (res && res.shadow) {
+            asShadow = true;
+            failed.push({ id: a.id, path: a.path, error: res.error || '移入回收站失败', kept: true });
+          } else {
+            failed.push({ id: a.id, path: a.path, error: (res && res.error) || '移入回收站失败' });
+            continue;
+          }
         }
       }
       r.aliasOf = item.keepId;
       r.aliasAt = now;
-      r.aliasState = outcome ? 'trashed' : 'shadow';
+      r.aliasState = asShadow ? 'shadow' : 'trashed';
       r.updatedAt = now;
       // 分组标记交给 duplicates.annotate 重算（别名不参与分组）
       r.duplicateGroup = null;
       r.duplicateOf = null;
       r.similarGroup = null;
-      if (outcome) { trashed++; freedBytes += Number(r.size) || 0; }
+      if (!asShadow) { trashed++; freedBytes += Number(r.size) || 0; }
       else shadow++;
       touched++;
     }

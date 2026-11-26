@@ -32,6 +32,8 @@ export const state = {
   cardSize: 220,
   theme: 'light',
   contentMode: 'normal', // normal | duplicates | variants | broken | missing | receipts
+  // 特殊视图的页头统计（重复/变体按「组 · 文件」显示，不能拿 state.total 当模型数）
+  specialMeta: null,
   settingsOpen: false,
   settingsTab: 'folders',
   sidebarCollapsed: false,

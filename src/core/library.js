@@ -62,7 +62,7 @@ function matchSmart(rec, key, now) {
     case 'untagged': return !Array.isArray(rec.tagIds) || rec.tagIds.length === 0;
     case 'recent': return !!rec.createdAt && (now - rec.createdAt) <= DAY7;
     case 'recentOpened': return !!rec.lastOpenedAt;
-    case 'duplicates': return !!(rec.duplicateGroup || rec.duplicateOf);
+    case 'duplicates': return !!(rec.duplicateGroup || rec.duplicateOf || rec.similarGroup);
     case 'missing': return rec.status === 'missing';
     // B：解析失败 / 结构异常的坏文件（含已隔离的）；文件已不存在的那条归 missing 管
     case 'broken': return !!rec.parseErrorKind && rec.status !== 'missing';
@@ -794,6 +794,7 @@ class LibraryService {
       quarantined: 0, broken: 0, aliases: 0,
     };
     const dupSizes = this._dupGroupSizes();
+    const simSizes = this._groupSizes('similarGroup');
     const bump = (obj, k) => { obj[k] = (obj[k] || 0) + 1; };
     for (const r of this._all()) {
       // 失效记录只用于「失效文件」维护视图的计数，不进入模型总数 / 占用空间 /
@@ -821,7 +822,8 @@ class LibraryService {
       if (r.favorite) s.favorites++;
       if (r.printStatus === 'printed') s.printed++;
       if (r.printStatus === 'unprinted') s.unprinted++;
-      if (r.duplicateOf || (r.duplicateGroup && dupSizes.get(r.duplicateGroup) > 1)) s.duplicates++;
+      if (r.duplicateOf || (r.duplicateGroup && dupSizes.get(r.duplicateGroup) > 1)
+        || (r.similarGroup && simSizes.get(r.similarGroup) > 1)) s.duplicates++;
       if (r.createdAt && (now - r.createdAt) <= DAY7) s.recentAdded++;
       if (r.lastOpenedAt && (now - r.lastOpenedAt) <= DAY7) s.recentOpened++;
       if (r.thumbnail) s.thumbnails++;
@@ -834,6 +836,7 @@ class LibraryService {
     for (const k of SMART_KEYS) out[k] = 0;
     const now = U.now();
     const dupSizes = this._dupGroupSizes();
+    const simSizes = this._groupSizes('similarGroup');
     for (const r of this._all()) {
       // 与 query 保持一致：失效 / 已隔离记录只计入各自视图，其它徽标不能比列表多；
       // 别名（C）在任何视图里都不计数
@@ -848,7 +851,8 @@ class LibraryService {
         if (matchSmart(r, k, now)) out[k]++;
       }
       // 一键清除后留下的那份仍带旧分组标记；只按标记计数会让徽标一直是 N 而列表是空的。
-      if (!hidden && (r.duplicateOf || (r.duplicateGroup && dupSizes.get(r.duplicateGroup) > 1))) {
+      if (!hidden && (r.duplicateOf || (r.duplicateGroup && dupSizes.get(r.duplicateGroup) > 1)
+        || (r.similarGroup && simSizes.get(r.similarGroup) > 1))) {
         out.duplicates++;
       }
     }
@@ -857,9 +861,14 @@ class LibraryService {
 
   /** 各重复组当前的文件数：判断「还是不是重复」不能只看记录上有没有分组标记 */
   _dupGroupSizes() {
+    return this._groupSizes('duplicateGroup');
+  }
+
+  /** 任意分组字段的当前成员数（排除别名，避免空组残留把徽标撑大） */
+  _groupSizes(field) {
     const sizes = new Map();
     for (const r of this._all()) {
-      const k = r && r.duplicateGroup;
+      const k = r && r[field];
       if (!k || isAlias(r)) continue;
       sizes.set(k, (sizes.get(k) || 0) + 1);
     }

@@ -4,6 +4,7 @@
  * core 层完全不知道 Electron 的存在，这里是唯一的粘合层。
  */
 const fs = require('fs');
+const crypto = require('crypto');
 const path = require('path');
 const EventEmitter = require('events');
 // shell 只有 Electron 主进程才有；core 层与测试都不依赖它
@@ -32,7 +33,8 @@ const { ReceiptService, matchModel, matchModelFuzzy } = require('../src/core/rec
 const cost = require('../src/core/cost');
 const quarantine = require('../src/core/quarantine');
 const merge = require('../src/core/merge');
-const { ShapeIndex, computeSignature } = require('../src/core/shapeprint');
+const { ShapeIndex } = require('../src/core/shapeprint');
+const thumbprint = require('../src/core/thumbprint');
 const { Stock } = require('../src/core/stock');
 const { parseNL } = require('../src/core/nlquery');
 const { ImageHashIndex, dhashFromGray, grayFromBitmap } = require('../src/core/imghash');
@@ -92,6 +94,10 @@ class Services extends EventEmitter {
     this._shapeRunning = false;
     this._shapeStop = false;
     this._shapeTimer = null;
+    // 缩略图解码失败的 id：状态里单独计数，别让「待检查」永远不归零、页面一直轮询
+    this._thumbFailed = new Set();
+    // 同款变体用的缩略图**字节**指纹（不是 dHash）：{ id: { file, sig } }
+    this._thumbSigs = new Map();
     this.scanner = new Scanner({ store: this.store, thumbs: this.thumbs, shapeIndex: this.shapeIndex });
     this.slicer = new SlicerService({ store: this.store });
     // 快造 U1 转换：预设解析 + 转换编排（转换本身跑在 worker 线程里）
@@ -129,10 +135,10 @@ class Services extends EventEmitter {
     }));
     this.scanner.on('error', () => { this._scanning = false; });
     this.scanner.on('done', (report) => {
-      // A：有新模型入库时，等一会儿在后台补算几何指纹（不抢扫描刚结束时的那口气）
-      if (report && (report.added || report.updated)) this.scheduleShapeRun(8000);
-      // G：缩略图变了就后台补算 dHash，错开指纹任务；updated 的模型缩略图可能已重生成，强制重算
+      // A：新模型或缩略图变了，等扫描收尾后统一重算「同款变体」（读缩略图字节，不用解码图片）。
+      // G：以图搜图仍用 dHash，晚一点单独补算，避免和变体检查抢 CPU。
       if (report && (report.added || report.updated)) {
+        if (this.shapeEnabled()) setTimeout(() => { this.shapeRun({ force: !!report.updated }); }, 8000);
         setTimeout(() => { this.imgHashRun({ force: !!report.updated }).catch(() => {}); }, 16000);
       }
     });
@@ -163,9 +169,29 @@ class Services extends EventEmitter {
     // 目录监视不进启动关键路径：chokidar 的初始递归扫描在机械盘 / 网络盘上可能很慢。
     // 这里只记下意图，由 main.js 在首屏画完后调用 startBackground()。
     this._autoWatch = !!autoWatch;
+    // 迁移：旧版本写的是「几何指纹」分组（var:*），先清掉，等缩略图检查重算，
+    // 否则用户打开同款变体会先看到上一版的误报。
+    try {
+      const old = Object.values((this.store.getLibrary() || {}).models || {})
+        .some((r) => r && String(r.variantGroup || '').startsWith('var:'));
+      if (old) {
+        await this.store.updateLibrary((lib) => {
+          for (const r of Object.values((lib && lib.models) || {})) {
+            if (r && String(r.variantGroup || '').startsWith('var:')) {
+              r.variantGroup = null;
+              r.variantRole = null;
+              r.variantScore = null;
+              r.variantScale = null;
+            }
+          }
+        }, 'variants-migrate');
+      }
+    } catch (_) { /* 迁移失败不影响启动，后续重算会覆盖 */ }
     stage('services', 64);
 
     this.initialized = true;
+    // 首屏画完后再算，别和窗口创建抢时间；设置里关掉后台任务就不自动跑（手动按钮仍可用）。
+    if (this.shapeEnabled()) this.scheduleShapeRun(1200);
     return this;
   }
 
@@ -181,8 +207,6 @@ class Services extends EventEmitter {
     try { this.watcher.start(); } catch (e) {
       this.emitToRenderer('app:toast', { type: 'warn', message: '目录自动监视启动失败：' + e.message });
     }
-    // A：首屏画完后补算几何指纹（只算还没有的；设置里关掉就不跑）
-    this.scheduleShapeRun(4000);
   }
 
   async shutdown() {
@@ -613,7 +637,7 @@ class Services extends EventEmitter {
     }
 
     // 去重：掉线重连、重启补判都可能对同一次打印再发一次终态事件
-    const dup = this.receipts.findRecentJob(j.printerId, j.jobName, j.at);
+    const dup = this.receipts.findRecentJob(j.printerId, j.jobName, j.at, 6 * 3600 * 1000, j.startedAt);
     if (dup) return dup;
 
     // 成本核算：先算一次快照，之后用户改耗材价格不影响历史回执
@@ -688,7 +712,7 @@ class Services extends EventEmitter {
       if (!s || !s.endedAt || s.endedAt < cutoff) continue;
       // 6 小时窗口和实时去重保持一致：同一个任务被切成多段 session 时，
       // 阈值太小会给同一次打印补出两三条账。
-      if (this.receipts.findRecentJob(s.printerId, s.jobName, s.endedAt, 6 * 3600 * 1000)) continue;
+      if (this.receipts.findRecentJob(s.printerId, s.jobName, s.endedAt, 6 * 3600 * 1000, s.startedAt)) continue;
       let model = matchModel(s.jobName, models);
       if (!model) {
         const f = matchModelFuzzy(s.jobName, models);
@@ -1543,6 +1567,37 @@ class Services extends EventEmitter {
   }
 
   /**
+   * 把一个文件移入系统回收站。Electron 优先，失败再走切片服务的备用回收站实现。
+   * 两层错误都带回来，界面才能说清「为什么没移走」，而不是只写「移入回收站失败」。
+   * @returns {Promise<{ok:Boolean, error?:String}>}
+   */
+  async _trashFile(target) {
+    const p = String(target || '');
+    if (!p) return { ok: false, error: '文件路径为空' };
+    if (!fs.existsSync(p)) return { ok: false, error: '文件已不存在' };
+    let first = '';
+    if (shell && typeof shell.trashItem === 'function') {
+      try {
+        await shell.trashItem(p);
+        return { ok: true };
+      } catch (e) {
+        first = (e && e.message) || String(e);
+      }
+    } else {
+      first = '当前环境没有系统回收站接口';
+    }
+    let second = '';
+    try {
+      const r = await this.slicer.trash([p]);
+      if ((r.ok || []).includes(p)) return { ok: true };
+      second = ((r.failed || [])[0] || {}).error || '备用回收站操作未成功';
+    } catch (e2) {
+      second = (e2 && e2.message) || String(e2);
+    }
+    return { ok: false, error: first + (second ? '；备用方式：' + second : '') };
+  }
+
+  /**
    * 把记录移入系统回收站（Electron shell 优先，退回 PowerShell），成功后才移出索引。
    * 重复文件视图、隔离区共用这一处。
    */
@@ -1553,20 +1608,9 @@ class Services extends EventEmitter {
     for (const id of list) {
       const rec = this.library.get(id);
       if (!rec) { failed.push({ id, error: '索引中找不到该模型' }); continue; }
-      let done = false;
-      try {
-        await shell.trashItem(rec.path);
-        done = true;
-      } catch (e1) {
-        try {
-          const r = await this.slicer.trash([rec.path]);
-          done = (r.ok || []).includes(rec.path);
-          if (!done) throw new Error(((r.failed || [])[0] || {}).error || '回收站操作失败');
-        } catch (e2) {
-          failed.push({ id, error: '移入回收站失败：' + e2.message });
-        }
-      }
-      if (done) { ok.push(id); bytes += Number(rec.size) || 0; }
+      const r = await this._trashFile(rec.path);
+      if (r.ok) { ok.push(id); bytes += Number(rec.size) || 0; }
+      else failed.push({ id, error: '移入回收站失败：' + r.error });
     }
     if (ok.length) {
       try { this.snapshot(ok); } catch (_) { /* 忽略 */ }
@@ -1759,33 +1803,54 @@ class Services extends EventEmitter {
     return this.library.remove(list);
   }
 
-  // ---- A · 几何指纹 ----
+  // ---- A · 同款变体（按缩略图比对） ----
 
   shapeEnabled() {
     const s = (this.store.getSettings() || {}).scan || {};
     return s.shapePrint !== false;
   }
 
-  /** 还没算过（或文件变了要重算）的模型 */
-  _shapeTargets(force) {
+  /** 有真实缩略图、能参与同款比对的模型；占位 SVG 不参与，避免空图互聚。 */
+  _variantModels() {
     const models = (this.store.getLibrary() || {}).models || {};
-    const out = [];
-    for (const r of Object.values(models)) {
-      if (!r || r.aliasOf || !r.path) continue;
-      if (r.status !== 'ok' || r.parseErrorKind) continue;
-      const sig = this.shapeIndex.get(r.id);
-      // 算过失败的（切片文件没有网格等）不重复算，除非手动点「重新计算」
-      if (force || !sig || (sig.s && r.hash && sig.s !== r.hash)) out.push(r);
-    }
-    return out;
+    return Object.values(models).filter((r) => r
+      && !r.aliasOf
+      && r.thumbnail
+      && !/\.svg$/i.test(String(r.thumbnail))
+      && r.status !== 'missing'
+      && r.status !== 'quarantined'
+      && !r.parseErrorKind);
+  }
+
+  /** 缩略图文件路径（只读缩略图，不动模型文件） */
+  _thumbPath(rec) {
+    try { return this.thumbs.getPath(rec.thumbnail); } catch (_) { return null; }
+  }
+
+  /** 当前缩略图对应的字节指纹；换过缩略图就视为过期 */
+  _thumbSigCurrent(rec) {
+    const it = this._thumbSigs.get(rec.id);
+    return it && it.file === rec.thumbnail ? it.sig : null;
+  }
+
+  /** 还没算过缩略图字节指纹的模型（force 时全部重算，包括上次读取失败的） */
+  _shapeTargets(force) {
+    const models = this._variantModels();
+    return models.filter((r) => force || (!this._thumbSigCurrent(r) && !this._thumbFailed.has(r.id)));
   }
 
   shapeStatus() {
-    const st = this.shapeIndex.status();
-    const targets = this._shapeTargets(false);
+    const models = this._variantModels();
+    const hashed = models.filter((r) => !!this._thumbSigCurrent(r)).length;
+    const failed = models.filter((r) => !this._thumbSigCurrent(r) && this._thumbFailed.has(r.id)).length;
     return {
-      total: st.total, failed: st.failed, pending: targets.length,
-      running: !!this._shapeRunning, enabled: this.shapeEnabled(),
+      total: models.length,
+      hashed,
+      failed,
+      pending: models.length - hashed - failed,
+      running: !!this._shapeRunning,
+      enabled: this.shapeEnabled(),
+      mode: 'thumbnail',
     };
   }
 
@@ -1794,19 +1859,18 @@ class Services extends EventEmitter {
     this._shapeTimer = setTimeout(() => {
       this._shapeTimer = null;
       try { this.shapeRun({}); } catch (_) { /* 忽略 */ }
-    }, Math.max(500, Number(delayMs) || 4000));
+    }, Math.max(500, Number(delayMs) || 1500));
     if (this._shapeTimer.unref) this._shapeTimer.unref();
   }
 
-  /** 后台补算几何指纹。同一时刻只跑一个；stop 可以中途停。 */
+  /** 后台读取缩略图字节指纹，再按缩略图重算同款变体。同一时刻只跑一个。 */
   shapeRun({ force = false } = {}) {
-    if (this._shapeRunning) return { started: false, reason: '正在计算中' };
-    if (!force && !this.shapeEnabled()) return { started: false, reason: '已在设置里关闭' };
+    if (this._shapeRunning) return { started: false, reason: '正在比对缩略图' };
     const targets = this._shapeTargets(!!force);
     if (!targets.length) {
-      // 没有要算的，也顺手按现有指纹重算一次分组（比如扫描刚加进来的记录）
-      this._annotateVariants().catch(() => {});
-      return { started: false, reason: '没有需要计算的模型', pending: 0 };
+      // 指纹都在：直接按现有缩略图重算分组（扫描刚结束、或用户手动点刷新）
+      this._annotateThumbVariants().catch(() => {});
+      return { started: false, reason: '没有需要检查的缩略图', pending: 0 };
     }
     this._shapeRunning = true;
     this._shapeStop = false;
@@ -1814,35 +1878,33 @@ class Services extends EventEmitter {
     let failed = 0;
     const total = targets.length;
     setImmediate(async () => {
+      const fsp = fs.promises;
       for (const rec of targets) {
         if (this._shapeStop) break;
+        const file = this._thumbPath(rec);
         try {
-          const sig = computeSignature(rec.path);
-          if (sig.failed) {
-            failed++;
-            // 切片盘文件没有网格，属于正常情况，不算「失败」
-            this.shapeIndex.set(rec.id, { failed: sig.failed, s: rec.hash || null, t: U.now() });
-          } else {
-            this.shapeIndex.set(rec.id, Object.assign(sig, { s: rec.hash || null, t: U.now() }));
-            done++;
-          }
-        } catch (e) {
+          if (!file) throw new Error('缩略图路径无效');
+          const buf = await fsp.readFile(file);
+          const sig = crypto.createHash('sha1').update(buf).digest('hex');
+          this._thumbSigs.set(rec.id, { file: rec.thumbnail, sig });
+          this._thumbFailed.delete(rec.id);
+          done++;
+        } catch (_) {
+          this._thumbSigs.delete(rec.id);
+          this._thumbFailed.add(rec.id);
           failed++;
-          this.shapeIndex.set(rec.id, { failed: 'read-error', detail: String((e && e.message) || e), s: rec.hash || null, t: U.now() });
         }
-        if ((done + failed) % 10 === 0) this.shapeIndex.flush();
         // 让出事件循环，别把界面卡住
         await new Promise((r) => setImmediate(r));
       }
-      this.shapeIndex.flush();
+      const out = await this._annotateThumbVariants();
       this._shapeRunning = false;
-      const ann = await this._annotateVariants();
       const stopped = this._shapeStop;
-      if ((done || failed || force) && !stopped) {
+      if (!stopped) {
         this.emitToRenderer('app:toast', {
           type: 'info',
-          message: '几何指纹已计算 ' + done + ' 个模型' + (failed ? '，' + failed + ' 个没有 3D 网格已跳过' : '')
-            + (ann && ann.groups ? '，发现 ' + ann.groups + ' 组同款变体' : ''),
+          message: '缩略图比对完成：检查 ' + done + ' 个模型' + (failed ? '，' + failed + ' 个没有可用缩略图已跳过' : '')
+            + (out && out.groups ? '，发现 ' + out.groups + ' 组同款变体' : ''),
           duration: 5000,
         });
       }
@@ -1855,14 +1917,21 @@ class Services extends EventEmitter {
     return { ok: true };
   }
 
-  /** 按现有指纹重算「同款变体」分组并写回库。返回 { groups, members }。 */
-  async _annotateVariants() {
-    if (!this.shapeIndex || this.shapeIndex.size === 0) return null;
+  /** 按缩略图字节指纹重算「同款变体」并写回库。返回 { groups, members, checked }。 */
+  async _annotateThumbVariants() {
+    const models = this._variantModels();
+    const hashes = {};
+    for (const r of models) {
+      const sig = this._thumbSigCurrent(r);
+      if (sig) hashes[r.id] = sig;
+    }
     let out = null;
     await this.store.updateLibrary((lib) => {
-      try { out = this.shapeIndex.annotate(lib, {}); } catch (_) { out = null; }
+      try {
+        duplicates.annotate(lib);
+        out = thumbprint.annotate(lib, hashes);
+      } catch (_) { out = null; }
     }, 'variants');
-    this.shapeIndex.flush();
     return out;
   }
 
@@ -1886,21 +1955,12 @@ class Services extends EventEmitter {
       outcome = {};
       for (const a of plan.aliasIds) {
         const rec = this.library.get(a.id);
-        if (!rec || !fs.existsSync(rec.path)) { outcome[a.id] = { ok: false, error: '文件已不存在' }; continue; }
-        let done = false;
-        try {
-          await shell.trashItem(rec.path);
-          done = true;
-        } catch (e1) {
-          try {
-            const r = await this.slicer.trash([rec.path]);
-            done = (r.ok || []).includes(rec.path);
-            if (!done) throw new Error(((r.failed || [])[0] || {}).error || '回收站操作失败');
-          } catch (e2) {
-            outcome[a.id] = { ok: false, error: '移入回收站失败：' + e2.message };
-          }
-        }
-        if (done) outcome[a.id] = { ok: true };
+        if (!rec) { outcome[a.id] = { ok: false, error: '索引中找不到该模型' }; continue; }
+        const r = await this._trashFile(rec.path);
+        // 回收站不可用（常见于提权启动、杀毒软件拦截）时不把整组卡死：
+        // 文件原地保留，记录仍降为副本，界面明确提示「文件未移动」。
+        // 这样不会静默删文件，也不会出现「已合并 0 组」。
+        outcome[a.id] = r.ok ? { ok: true } : { ok: false, shadow: true, error: r.error };
       }
     }
     let result = null;
@@ -1917,7 +1977,11 @@ class Services extends EventEmitter {
 
   async aliasDetach(ids) {
     const r = await this.library.detachAliases(ids);
-    if (r.detached) await this.store.updateLibrary((lib) => { duplicates.annotate(lib); }, 'alias-detach');
+    if (r.detached) {
+      await this.store.updateLibrary((lib) => { duplicates.annotate(lib); }, 'alias-detach');
+      // 解除副本后，这条记录可能重新符合「缩略图相同」，顺手并入同款变体
+      await this._annotateThumbVariants().catch(() => {});
+    }
     return r;
   }
 

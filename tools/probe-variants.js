@@ -1,5 +1,5 @@
 /**
- * 走查探针 C：同款变体（几何指纹）
+ * 走查探针 C：同款变体（按缩略图比对）
  *
  *   node tools/probe-bca-prepare.js %TEMP%/ps-probe-bca
  *   set PRINTSHELF_DATA_DIR=%TEMP%/ps-probe-bca
@@ -33,7 +33,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
     const st = await window.shelf.shapeStatus();
     out.info.status = st;
-    ok(st && typeof st.total === 'number' && st.total >= 4, '几何指纹已算出基础数据（total ' + (st && st.total) + '）');
+    ok(st && st.mode === 'thumbnail' && st.hashed >= 4, '缩略图指纹已检查（hashed ' + (st && st.hashed) + '/total ' + (st && st.total) + '）');
 
     const nav = q('#sidebar [data-smart="variants"]');
     ok(!!nav, '侧栏有「同款变体」入口');
@@ -41,16 +41,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     ok(await until(() => q('#content .dup-group') || q('#content .empty'), 12000), '变体视图渲染完成');
 
     const head = q('#content .special-head');
-    ok(!!head && (head.textContent || '').includes('已计算'), '头部显示已计算状态');
+    ok(!!head && (head.textContent || '').includes('已检查'), '头部显示缩略图已检查状态');
     ok(!!head && (head.textContent || '').includes('同款变体'), '标题是「同款变体」');
-    ok(!!q('#content [data-act="sp-shape-run"]'), '有「计算 / 更新」按钮');
+    ok(!!q('#content [data-act="sp-shape-run"]'), '有「重新检查缩略图」按钮');
 
     const groups = qa('#content .dup-group');
     out.info.groups = groups.length;
     ok(groups.length >= 1, '至少一组同款（实际 ' + groups.length + '）');
     const members = qa('#content .dup-item');
     out.info.members = members.length;
-    ok(members.length >= 4, '四个同网格文件都归到组里（实际 ' + members.length + '）');
+    ok(members.length >= 2, '同缩略图的变体归到组里（实际 ' + members.length + '；完全重复的两份归重复文件，不重复列）');
     const tagged = members.filter((m) => m.querySelector('.badge-ok') || m.querySelector('.badge.warn')).length;
     ok(tagged >= members.length - 1, '除主记录外每个成员都标了同一模型/疑似（' + tagged + '/' + members.length + '）');
     const g0 = groups[0];
@@ -58,6 +58,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       ok(!!g0.querySelector('.dup-reasons'), '组头显示推荐保留理由');
       ok((g0.querySelector('.dup-reasons') || {}).textContent.includes('最早'), '推荐理由包含「最早入库」');
       ok(g0.querySelectorAll('input[type="radio"]:checked').length === 1, '每组主记录唯一');
+      ok((g0.querySelector('.dup-group-head') || {}).textContent.includes('缩略图相同'), '组头标「缩略图相同」');
       ok(!!g0.querySelector('[data-act="sp-merge"]') && !!g0.querySelector('[data-act="sp-merge-trash"]'), '两个合并按钮都在');
     }
 

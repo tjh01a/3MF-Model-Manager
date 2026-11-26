@@ -4,7 +4,7 @@
  *
  * 产出：
  *   完全重复A.3mf / 完全重复B.3mf   内容逐字节相同 → 精确重复组
- *   同款变体A/B.3mf              网格相同、多了不同的附加条目 → 哈希不同，几何指纹相同
+ *   同款变体A/B.3mf              网格相同、多了不同的附加条目 → 3MF 哈希不同，缩略图字节相同
  *   损坏-纯文本.3mf               非 zip → not-3mf（不可修复）
  *   损坏-截断.3mf                 正常 zip 砍掉后半段 → truncated（可尝试修复）
  *   损坏-缺核心.3mf               只有 3D 模型、没有 [Content_Types].xml → missing-core（可修复）
@@ -18,7 +18,8 @@ const path = require('path');
 const AdmZip = require('adm-zip');
 
 const PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
+  // 64×64 有效 PNG（1×1 的图 Electron nativeImage 会当成空图，缩略图指纹算不出来）
+  'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAFgSURBVHhe7dA7bgMxDIThPY6PkyOm8TkdqDAQ/IAelMhdApzia6YQR3O9fn4/lV0MqtEADKrRAAyq0QAMqtEADKrRAAyifN6XGd+IEDoAP3SCb3sJG4Af8MAbHtwHYOkIvHnCdQAWjcTbu1wGYLk7sYvV8QAs9AR2stAADCxY5Enstmp7ABbIgB1XaAAGK3g4E3adMQ/Agxmx84gGYDDDYxmx84hpAB7KjN17NACDER7JjN17NACDER7JjN17NACDHh7Ijv17lgdoeCQzdu/RAAxGeCQzdu/RAAxGeCQzdu/RAAxmeCgjdh7RAAxmeCwjdh4xD9DwYCbsOrM1QMPDGbDjCg3AwIIFnsRuq44GaFjkCexkoQEY7GChO7GLlcsAXywXibd3uQ7QsGgE3jzhPsAXS3vgDQ9hAzT8wAm+7SV0gP/4oRV8I8JtA2SlARhUowEYVKMBGFSjARhUU36APwfxqbUq0k/GAAAAAElFTkSuQmCC',
   'base64');
 const TYPES = '<?xml version="1.0" encoding="UTF-8"?>' +
   '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +

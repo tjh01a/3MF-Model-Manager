@@ -16,7 +16,9 @@ const paths = require('./paths');
 const MAX_ITEMS = 200;
 
 function emptyData() {
-  return { schemaVersion: 1, updatedAt: Date.now(), items: [] };
+  // seenJobs 是「已经记过账的打印任务」墓碑，不随清空回执一起删。
+  // 没有它，清空后重启，监控补录会把同一批完成记录再补回来（用户 2026-11-26 反馈）。
+  return { schemaVersion: 2, updatedAt: Date.now(), items: [], seenJobs: [] };
 }
 
 /** 旧回执缺字段时补齐，避免列表渲染 undefined（P0-16）。 */
@@ -47,6 +49,28 @@ function normalizeReceipt(rec) {
     note: typeof r.note === 'string' ? r.note : '',
     durationMin: Number.isFinite(Number(r.durationMin))
       ? Number(r.durationMin) : Math.max(0, Math.round((endAt - started) / 60000)),
+  };
+}
+
+/** 已经记过账的打印任务指纹：只留去重需要的字段，不存模型/成本等内容。 */
+function jobStamp(r) {
+  return {
+    p: String((r && r.printerId) || ''),
+    n: String((r && r.jobName) || ''),
+    s: Number(r && r.startedAt) || 0,
+    e: Number(r && r.endedAt) || 0,
+    at: Date.now(),
+  };
+}
+
+function normalizeStamp(s) {
+  const r = (s && typeof s === 'object') ? s : {};
+  return {
+    p: String(r.p || ''),
+    n: String(r.n || ''),
+    s: Number(r.s) || 0,
+    e: Number(r.e) || 0,
+    at: Number(r.at) || 0,
   };
 }
 
@@ -248,6 +272,7 @@ class ReceiptService {
     if (j && Array.isArray(j.items)) {
       this._data = j;
       this._data.items = this._data.items.map(normalizeReceipt);
+      this._data.seenJobs = Array.isArray(j.seenJobs) ? j.seenJobs.map(normalizeStamp) : [];
     } else {
       const backup = corruptBackupPath(file);
       try { await fsp.copyFile(file, backup); }
@@ -264,7 +289,23 @@ class ReceiptService {
     let items = this._data.items;
     if (items.length > MAX_ITEMS) items = items.slice(items.length - MAX_ITEMS);
     this._data.items = items;
+    // 墓碑只用于去重，留最近 500 条足够覆盖长时间未开机的补录；
+    // 上限固定，避免 receipts.json 无限增长。
+    let seen = Array.isArray(this._data.seenJobs) ? this._data.seenJobs : [];
+    if (seen.length > 500) seen = seen.slice(seen.length - 500);
+    this._data.seenJobs = seen;
     await atomicWrite(this._file(), JSON.stringify(this._data, null, 2));
+  }
+
+  /** 记录/补记一条任务指纹；同一台机器 + 同一任务 + 同一开始时间只留一条。 */
+  _rememberJob(data, stamp) {
+    const st = normalizeStamp(stamp);
+    if (!st.p || !st.n) return;
+    if (!Array.isArray(data.seenJobs)) data.seenJobs = [];
+    const same = data.seenJobs.findIndex((x) => x && x.p === st.p && x.n === st.n
+      && Math.abs((Number(x.s) || 0) - st.s) <= 60 * 1000);
+    if (same >= 0) data.seenJobs[same] = Object.assign({}, data.seenJobs[same], { e: st.e, at: st.at });
+    else data.seenJobs.push(st);
   }
 
   _mutate(fn) {
@@ -303,7 +344,10 @@ class ReceiptService {
       note: String(d.note || '').slice(0, 300),
     };
     rec.durationMin = Math.max(0, Math.round((rec.endedAt - rec.startedAt) / 60000));
-    await this._mutate((data) => { data.items.push(rec); });
+    await this._mutate((data) => {
+      data.items.push(rec);
+      this._rememberJob(data, jobStamp(rec));
+    });
     return rec;
   }
 
@@ -346,21 +390,40 @@ class ReceiptService {
   }
 
   /**
-   * 找「同一台机器的同一次打印」已经落过的回执，用于去重：
-   * 掉线重连、重启后补判都可能对同一任务再发一次完成事件。
-   * 判定：同 printerId + 同名任务 + 结果相同 + 开始/结束时间相差在窗口内。
+   * 找「同一台机器的同一次打印」已经落过账的记录，用于去重：
+   * 掉线重连、重启后补判都可能对同一任务再发一次完成事件；清空回执后重启，
+   * 监控补录也会拿历史采样再补一遍。所以不只查当前回执，也查清空/删除后留下的
+   * 任务墓碑（seenJobs）。
+   *
+   * 优先比开始时间：同一次打印的开始时间是稳定的，重打一次必然不同。
+   * 旧记录没有开始时间时，退回结束时间窗口。
    */
-  findRecentJob(printerId, jobName, at, windowMs = 6 * 3600 * 1000) {
+  findRecentJob(printerId, jobName, at, windowMs = 6 * 3600 * 1000, startedAt = 0) {
     const pid = String(printerId || '');
     const name = String(jobName || '');
     const t = Number(at) || Date.now();
+    const st = Number(startedAt) || 0;
     if (!pid || !name) return null;
+    const match = (r, s, e) => {
+      if (!r || String(r.printerId == null ? r.p : r.printerId) !== pid) return false;
+      if (String(r.jobName == null ? r.n : r.jobName) !== name) return false;
+      if (st) {
+        const rs = Number(r.startedAt == null ? s : r.startedAt) || 0;
+        // 双方都有开始时间：只认「开始时间对得上」，对不上就是另一次打印。
+        // 2 分钟只用于容忍设备时间戳取整；不能再拿结束时间兜底，
+        // 否则同名模型隔几小时重打也会被吞掉。
+        if (rs) return Math.abs(rs - st) <= 2 * 60 * 1000;
+      }
+      const re = Number(r.endedAt == null ? e : r.endedAt) || 0;
+      return Math.abs(re - t) <= windowMs;
+    };
     const items = (this._data && this._data.items) || [];
     for (let i = items.length - 1; i >= 0; i--) {
-      const r = items[i];
-      if (!r || r.printerId !== pid) continue;
-      if (String(r.jobName || '') !== name) continue;
-      if (Math.abs((Number(r.endedAt) || 0) - t) <= windowMs) return normalizeReceipt(r);
+      if (match(items[i], items[i].startedAt, items[i].endedAt)) return normalizeReceipt(items[i]);
+    }
+    const seen = (this._data && this._data.seenJobs) || [];
+    for (let i = seen.length - 1; i >= 0; i--) {
+      if (match(seen[i], seen[i].s, seen[i].e)) return { id: '', jobName: name, result: 'finished', seen: true };
     }
     return null;
   }
@@ -378,13 +441,17 @@ class ReceiptService {
   }
 
   async clear() {
-    await this._mutate((d) => { d.items = []; });
+    await this._mutate((d) => {
+      for (const r of d.items || []) this._rememberJob(d, jobStamp(r));
+      d.items = [];
+    });
     return { ok: true };
   }
 
   /**
    * 按回执 id 删除选中的几条（长按编辑模式用）。
    * 只动回执记录，不碰模型库和磁盘文件；找不到的 id 记入 failed，不报错。
+   * 删掉的也写进任务墓碑，否则下次启动补录会把它重新补回来。
    */
   async delete(ids) {
     const wanted = (Array.isArray(ids) ? ids : [ids]).filter(Boolean).map(String);
@@ -392,8 +459,9 @@ class ReceiptService {
     const set = new Set(wanted);
     const missing = new Set(wanted);
     await this._mutate((d) => {
-      d.items = d.items.filter((r) => {
+      d.items = (d.items || []).filter((r) => {
         if (!set.has(String(r.id))) return true;
+        this._rememberJob(d, jobStamp(r));
         missing.delete(String(r.id));
         return false;
       });
