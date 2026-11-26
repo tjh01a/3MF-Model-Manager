@@ -1,14 +1,14 @@
 # 23 · 交接文档：整理功能 B / C / A 开发进度
 
 > 交接时间：2026-11-26 13:35　基线：v1.2.0（`main` @ `2f06055`）　计划书：`docs/22-整理与体验增强计划书.md`
-> **一句话状态：三个功能的核心逻辑、主进程服务、IPC 全部做完并测过；界面只写了一半（未接入，已移出加载路径）。应用当前可正常运行。**
+> **状态更新（2026-11-26 16:30）：界面已全部接通，B/C/A 三个视图可从侧栏进入；走查探针三个全绿；`npm run selftest` 全绿。见 §7。**
 
 ## 1. 现在能不能直接用
 
-- 能。`npm run selftest` 全绿（既有 15 套零回归 + 新增 3 套），Electron 无头自检通过，IPC 契约一致（144 个方法）。
-- 用户可见的变化只有一处：启动几秒后后台计算一次几何指纹，弹一条提示「几何指纹已计算 N 个模型，发现 M 组同款变体」。首次约 10 秒（中位 56ms/文件），大文件可达 0.5 秒，会轻微占用主进程。
-- 隔离区、合并、同款变体三个界面**还没有入口**，所以这些功能暂时只能通过 IPC / 测试调用。
-- 代码在分支 `wip/bca-organize` 上的一个本地提交里，**没有推送**；`main` 仍是发布版。
+- 能，而且界面已经能点了：侧栏「质量检查」下的**重复文件 / 同款变体 / 损坏文件**三个入口都已接通。
+- `npm run selftest` 全绿；`electron:smoke` 启动正常（144 个 IPC）；三个走查探针全绿。
+- 首次启动几秒后仍会在后台计算几何指纹，但界面里能看到「已计算 / 待计算 / 失败（无网格）」进度，也能手动暂停/重算。
+- 代码仍在分支 `wip/bca-organize` 上，未推送；`main` 仍是发布版。版本号未动（README 标为「1.2.1 开发中」）。
 
 ## 2. 已完成
 
@@ -23,17 +23,24 @@
 | 测试 | `tests/quarantine-tests.js`(39) `tests/merge-tests.js`(53) `tests/shapeprint-tests.js`(57) | 已加入 `npm run selftest` |
 | 冒烟 | `tools/smoke-organize.js` | 不开界面，在 Node 里把服务层实际跑一遍 |
 
-## 3. 未完成（按建议顺序）
+## 3. 界面接入清单（2026-11-26 已完成）
 
-1. **界面 · 损坏文件隔离区**：新建 `src/renderer/js/views/quarantine.js`，导出 `renderBroken(content)`、`onBrokenClick(e)`、`leaveBroken()`（重写的重复文件视图已按这三个名字 import）。数据来自 `api.brokenList()`，动作用 `brokenRetry / brokenRepair(id,{replace}) / brokenQuarantine / brokenRestore / brokenTrash(=api.trash) / brokenForget`。
-2. **界面 · 重复文件视图（已写完未接入）**：成品在 `docs/wip/duplicates.view.wip.js`，放回 `src/renderer/js/views/duplicates.js` 即可。它已经包含：合并流程、一键合并、手动改选主记录、同款变体视图。**放回去之前必须先有第 1 步的文件**，否则渲染层加载失败。
-3. **侧栏与路由**：`views/sidebar.js` 的 `SMART_VIEWS` 加 `broken`（损坏文件）和 `variants`（同款变体），点击时清筛选的条件里加上这两个 key；`app.js` 的 `doRefresh` 里把 `smart === 'broken' / 'variants'` 映射到同名特殊视图。
-4. **详情页「副本」小节**：`views/detail.js` 加一个异步小节，调 `api.dupAliases(id)` 列出副本，按钮走 `aliasDetach`。
-5. **样式**：新视图用到的类还没写：`.dup-pick` `.dup-radio` `.dup-reasons` `.dup-note` `.spacer` `.empty-extra` `.badge-ok`。
-6. **多语言**：新界面的文案都用 `tr()` 包了，但 `src/renderer/locales/en-US.js` 里**还没有对应英文词条**，需要补。
-7. **设置页**：隔离目录（`settings.quarantine.dir`）和几何指纹开关（`settings.scan.shapePrint`）已有默认值，但没有界面。
-8. **探针**：计划中的 `probe-broken / probe-merge / probe-variants` 未写。旧的 `tools/probe-dup-cleanup.js`、`probe-dup-cleanup-exec.js` 断言的是已被替换的「一键清除」按钮（`sp-clean-all`），接入新视图后会失效，需要改写或删除。
-9. **文档**：`docs/09`、`docs/18`、README 未更新；版本号未动。
+1. ✅ **损坏文件隔离区**：`src/renderer/js/views/quarantine.js` 已建，导出 `renderBroken / onBrokenClick / leaveBroken`。
+   数据来自 `api.brokenList()`，动作 `br-retry / br-repair / br-quarantine / br-restore / br-trash / br-forget`，
+   每行先确认再执行；修复是两段式（先产出 `.repaired.3mf`，再问是否替换，替换前备份 `.broken.bak`）。
+2. ✅ **重复文件视图**：`docs/wip/duplicates.view.wip.js` 已落位到 `views/duplicates.js`，原 wip 文件删除。
+   落位时修了文件里 6 处括号缺失（语法哨兵直接挡下），并补了头部「共 N 组 · M 个文件 · 可释放」汇总。
+3. ✅ **侧栏与路由**：`SMART_VIEWS` 加 `broken` / `variants`，进这四个体检视图都清筛选；`app.js` 的 `doRefresh` 映射到
+   同名 `contentMode`；`views/toolbar.js` 的 `SMART_LABELS` 也补了标题（漏这处标题栏会一直显示「全部模型」）。
+4. ✅ **详情页「副本」小节**：`detail.js` 用 `api.dupAliases(id)` 异步填 `#detail-aliases`，行内标注
+   `aliasState`（仍在原处 / 已进回收站），按钮走 `aliasDetach`。注意该接口返回**数组**，不是 `{items}`。
+5. ✅ **样式**：补齐 `.dup-pick .dup-radio .dup-reasons .dup-note .empty-extra .badge-ok`，另加隔离区行样式 `.br-*`；
+   顺手补了 `.badge.warn / .danger / .badge-warn / .badge-dup` 的语义底色（原来一直没样式）。
+6. ✅ **英文词条**：新增 150 条（含动态数量片段），`tools/i18n-missing.js` 里 B/C/A 相关 key 清零。
+7. ✅ **设置页**：加「后台计算几何指纹」开关（`scan.shapePrint`）和「隔离目录」（`quarantine.dir`，留空 = 数据目录下 quarantine）。
+8. ✅ **探针**：新增 `probe-bca-seed.js` / `probe-bca-prepare.js` / `probe-broken.js` / `probe-merge.js` / `probe-variants.js`；
+   旧的 `probe-dup-cleanup*.js`（断言已删除的 `sp-clean-all`）已删。
+9. ✅ **文档**：`docs/09` 加 §15 三件套与 5 条新坑、`docs/03` 补 13 个 IPC、`docs/18` 加变更记录、README 中英同步（标为 1.2.1 开发中）。
 
 ## 4. 必须知道的坑（都踩过了）
 
@@ -52,14 +59,18 @@
 ## 5. 如何验证
 
 ```bash
-npm run selftest                 # 全量：既有 15 套 + 新增 3 套 + IPC 契约
+npm run selftest                 # 全量：17 套 + IPC 契约
 node tools/smoke-organize.js     # 服务层冒烟：隔离→移回→修复→替换→合并→指纹，末尾打印「全部通过」
 ```
 
-界面接入后的走查用隔离数据目录，不要碰真实库：
+界面走查（隔离数据目录，不碰真实库）：
 
 ```bash
-PRINTSHELF_DATA_DIR=<临时目录> node launch.js --capture=<临时 png> --ui-script=tools/<探针>.js
+node tools/probe-bca-prepare.js %TEMP%/ps-probe-bca
+set PRINTSHELF_DATA_DIR=%TEMP%/ps-probe-bca
+node launch.js --capture=%TEMP%/probe-broken.png   --ui-script=tools/probe-broken.js
+node launch.js --capture=%TEMP%/probe-merge.png    --ui-script=tools/probe-merge.js
+node launch.js --capture=%TEMP%/probe-variants.png --ui-script=tools/probe-variants.js
 ```
 
 ## 6. 计划书与实现的差异
@@ -67,3 +78,11 @@ PRINTSHELF_DATA_DIR=<临时目录> node launch.js --capture=<临时 png> --ui-sc
 - 阈值可调的设置项没做（阈值写在 `shapeprint.js` 顶部常量里，校准成本高，不建议暴露给用户）。
 - 「疑似」区间（0.70–1.30）在真实库里本来就混有无关模型，这是算法上限；界面上要把「同一模型」和「疑似」分开标，合并「疑似」必须逐组确认。
 - 几何指纹只在启动后和每次扫描结束后后台补算，没有做实时进度事件，界面靠轮询 `shapeStatus`。
+
+## 7. 2026-11-26 收尾记录
+
+- 界面：`quarantine.js` 新建；`duplicates.js` 用 wip 成品替换（修了 6 处语法括号）；详情页副本小节；侧栏/工具栏/路由；设置页两项；CSS 徽标与行样式。
+- 修掉的隐性 bug：`dupAliases` 返回数组却被当成 `{items}`（详情小节永远空白）；`SMART_LABELS` 缺 variants/broken（标题永远「全部模型」）；重复页头部把同款变体成员重复计数（「2 组却 6 个文件」）。
+- 探针：`probe-broken` 18 条断言、`probe-merge` 20 条、`probe-variants` 13 条，全绿；截图在 `%TEMP%/probe-*.png`（样本缩略图是 1x1 红点，卡片大红块是夹具现象，不是回归）。
+- 文档：`09` §15 + §12.2，`03` IPC 表，`18` 变更记录，README 中英。
+- 还没做：GitHub 推送 / 打包 1.2.1 / 真实库跑一遍三视图（建议先备份 `data/`）。

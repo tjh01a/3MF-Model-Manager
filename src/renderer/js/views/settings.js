@@ -107,7 +107,17 @@ function renderFolders() {
       row(
         sw(tr('自动监视目录变化'), scan.autoWatch !== false, 'data-bind="scan.autoWatch" data-kind="bool"') +
         sw(tr('计算内容哈希（精确去重）'), scan.hashEnabled !== false, 'data-bind="scan.hashEnabled" data-kind="bool"')
+      ) +
+      row(
+        sw(tr('后台计算几何指纹（识别同款变体）'), scan.shapePrint !== false, 'data-bind="scan.shapePrint" data-kind="bool"')
       )
+    ) +
+    sec(tr('隔离区'),
+      row(field(tr('隔离目录'),
+        '<input class="input" data-bind="quarantine.dir" data-kind="string" value="' +
+        esc((state.settings && state.settings.quarantine && state.settings.quarantine.dir) || '') +
+        tr('" placeholder="留空则用数据目录下的 quarantine">'),
+        tr('损坏文件「移入隔离区」后会移动到这里，扫描器不会扫描它。')))
     );
 }
 

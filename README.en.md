@@ -10,6 +10,13 @@ No account required. Core features work offline and never upload your files (the
 ![Dark theme](docs/screenshots/00-主界面-深色.png)
 ![Color shares on hover](docs/screenshots/00-主界面-色板占比.png)
 
+## In development: 1.2.1 (not released yet)
+
+- **Damaged-file quarantine**: 3MF files that fail to parse are no longer just placeholder cards. The **Damaged files** view can retry parsing, attempt a best-effort repair (the original is untouched; you are asked before replacing it, and the original is backed up as `.broken.bak`), move the file into a quarantine folder, send it to the Recycle Bin, or drop the index entry.
+- **Merge duplicates into aliases**: pick one primary record per group; the rest become its aliases — hidden from the list, not double-counted, while notes and print records stay. The detail panel lists the aliases and lets you detach them. Merging can either only change records or also send the other files to the Recycle Bin.
+- **Variants**: recolor, scale or re-export the same model and the file name and hash change while the shape stays the same. PrintShelf compares mesh shapes in the background, groups these files under **Variants**, and lets you merge confirmed ones.
+- Also filled in semantic colors for `.badge.warn / .danger / .badge-ok` so status badges in the maintenance views are no longer bare text.
+
 ## What's new in 1.2.0
 
 - **Chinese / English interface**: switch from the top bar, or use Settings → Appearance → Interface language. All new UI text goes through the same i18n framework.
@@ -48,7 +55,9 @@ The project folder is still named `PrintShelf` locally; that is a historical pac
 - **Find models fast**: thumbnail wall or list view, search, filters and sorting.
 - **Drag to organize**: drop a card onto a category or tag in the sidebar.
 - **Open in your slicer**: Bambu Studio, OrcaSlicer and Snapmaker Orca are supported, with a per-model choice.
-- **Duplicates stay quiet**: identical files collapse into one card; open Details to switch copies, or clean up a whole group.
+- **Duplicates stay quiet**: identical files collapse into one card; open Details to switch copies, or pick a primary and merge the rest into aliases (optionally sending their files to the Recycle Bin).
+- **Damaged files have a home**: 3MF files that fail to parse appear under **Damaged files**, where you can retry, attempt a repair, quarantine them, or recycle them instead of leaving a placeholder card unmanaged.
+- **Variants**: files with the same mesh shape (recolored, scaled, re-exported) are grouped under **Variants**, regardless of file name, and can be merged once confirmed.
 - **Source pages are recognized**: MakerWorld links appear on the card. If the 3MF description has no URL, `DesignModelId` is used to look up the model page.
 - **Print status and notes**: mark models as printed, record print counts, write notes and rate models in Details.
 - **Rough cost estimates**: Chinese installs include three sample filaments; English installs start empty. Add your own filaments, set a default, and estimate cost from model weight. Hover the swatch to see per-color shares.

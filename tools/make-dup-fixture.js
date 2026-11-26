@@ -1,12 +1,14 @@
 /**
- * 一次性夹具：为「一键清除」的**会真删**走查准备临时库（4 记录 / 2 组重复）。
+ * 一次性夹具：准备临时库（4 记录 / 2 组重复）做重复合并走查。
  *
  *   node tools/make-dup-fixture.js --from "D:\模型\任意.3mf"
  *   PRINTSHELF_DATA_DIR=data/audit-dup node launch.js \
- *     --capture=data/probe.png --ui-script=tools/probe-dup-cleanup-exec.js
+ *     --capture=data/probe.png --ui-script=tools/probe-merge.js
  *
  * 生成目录：data/audit-dup/{library.json, settings.json, files/*.3mf}
- * 走查会把多余副本移入系统回收站（可恢复），跑完可直接删掉 data/audit-dup。
+ * 合并走查可把多余副本移入系统回收站（可恢复）；跑完可直接删掉 data/audit-dup。
+ * 注：原先配套的 probe-dup-cleanup*.js 已随「一键清除」按钮一起删除，改用 probe-merge.js
+ * （后者自带 probe-bca-seed.js 造样本，不需要本夹具）。
  */
 const fs = require('fs');
 const path = require('path');

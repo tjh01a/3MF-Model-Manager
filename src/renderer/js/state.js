@@ -31,7 +31,7 @@ export const state = {
   view: 'grid',
   cardSize: 220,
   theme: 'light',
-  contentMode: 'normal', // normal | duplicates | missing
+  contentMode: 'normal', // normal | duplicates | variants | broken | missing | receipts
   settingsOpen: false,
   settingsTab: 'folders',
   sidebarCollapsed: false,

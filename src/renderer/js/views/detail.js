@@ -33,6 +33,8 @@ let currentId = null;
 let saveHintTimer = null;
 // 上一次渲染的模型 id：用来区分「同一个模型局部刷新」和「换了个模型」
 let lastRenderId = null;
+// 当前主记录名下的副本（C · 智能合并），异步取回后填进 #detail-aliases
+let currentAliases = [];
 
 const el = (id) => document.getElementById(id);
 const itemById = (id) => (state.items || []).find((m) => m && m.id === id) || null;
@@ -163,6 +165,9 @@ function render(m) {
     '</div>'
   );
   if (dupSectionHtml) parts.push(dupSectionHtml);
+  // 副本（C · 智能合并）：合并后降级的记录不再出现在列表里，只在这里列出来。
+  // 需要异步从 dupAliases 取（state.items 默认不含别名），先占位、拿到再填。
+  parts.push('<div class="detail-section detail-alias-section" id="detail-aliases" hidden></div>');
 
   // 标题 + 打印状态徽标
   parts.push(
@@ -294,6 +299,73 @@ function render(m) {
   lastRenderId = m.id;
   // 成本区块异步填：不影响详情主体立刻可见
   Promise.resolve(fillCost(m)).catch(() => {});
+  // 副本列表同理，没有副本时整个小节保持 hidden
+  Promise.resolve(fillAliases(m)).catch(() => {});
+}
+
+// ---------- C · 副本（智能合并后的别名记录） ----------
+
+const ALIAS_LABEL = {
+  shadow: tr('文件仍在原处'),
+  trashed: tr('文件已进回收站'),
+  pending: tr('待处理'),
+};
+
+/** 异步取副本并填进 #detail-aliases；没有副本就把小节藏起来 */
+async function fillAliases(m) {
+  const box = el('detail-aliases');
+  if (!box || !m) return;
+  let r;
+  try { r = await api.dupAliases(m.id); } catch (_) { box.hidden = true; return; }
+  if (currentId !== m.id) return;
+  // aliasesOf 直接返回数组（不是 {items}），兼容一下以后可能的包装
+  const items = Array.isArray(r) ? r : ((r && r.items) || []);
+  currentAliases = items;
+  if (!items.length) { box.hidden = true; box.innerHTML = ''; return; }
+  const rows = items.map((a) => {
+    const src = a.thumbnail ? esc('shelf://thumbs/' + a.thumbnail) : 'assets/placeholder.svg';
+    const label = ALIAS_LABEL[a.aliasState] || ALIAS_LABEL.shadow;
+    const cls = a.aliasState === 'trashed' ? 'warn' : 'badge-ok';
+    const bits = [
+      a.size != null ? fmtBytes(a.size) : null,
+      a.aliasAt ? tr('降为副本于 ') + fmtDate(a.aliasAt) : null,
+    ].filter(Boolean).join(' · ');
+    return '<div class="detail-dup-row detail-alias-row" data-id="' + esc(a.id) + '">' +
+      '<img class="detail-dup-thumb" src="' + src + '" alt="">' +
+      '<span class="detail-dup-meta">' +
+        '<span class="detail-dup-name">' + esc(a.fileName || a.title || tr('未命名')) +
+          '<span class="badge ' + cls + '">' + esc(label) + '</span></span>' +
+        '<span class="detail-dup-path mono" title="' + esc(a.path || '') + '">' + esc(a.path || '—') + '</span>' +
+        '<span class="detail-dup-sub">' + esc(bits) + (a.note ? tr('<span class="detail-dup-note">备注：') + esc(a.note) + '</span>' : '') + '</span>' +
+      '</span>' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-act="alias-detach" data-id="' + esc(a.id) +
+        '" title="' + esc(tr('解除副本关系，让它重新成为独立模型')) + '">' +
+        icon('i-undo') + tr('<span>解除副本</span>') + '</button>' +
+    '</div>';
+  }).join('');
+  box.innerHTML = tr('<h4 class="section-title">副本 · 共 ') + items.length + tr(' 个 ') +
+    tr('<span class="muted">合并后不再出现在列表，备注与打印记录保留在这里</span></h4>') +
+    '<div class="detail-dup-list">' + rows + '</div>';
+  box.hidden = false;
+}
+
+/** 解除某个副本：记录恢复独立。文件若已进回收站，需要用户自己去还原。 */
+async function detachAlias(id) {
+  const a = currentAliases.find((x) => x.id === id);
+  const ok = await confirmDialog({
+    title: tr('解除副本关系'),
+    message: tr('这条记录会恢复为独立模型，重新出现在列表、搜索与统计里。'),
+    detail: tr('如果它的文件已经在回收站里，请到系统回收站还原后再扫描一次；这里只解除记录关系，不会替你取回文件。'),
+    items: [a ? (a.path || a.fileName || id) : id],
+    confirmText: tr('解除'),
+  });
+  if (!ok) return;
+  try {
+    await api.aliasDetach([id]);
+    emitToast('success', tr('已解除副本关系'));
+    emitRefresh('alias-detach');
+    await refreshDetail();
+  } catch (e) { toastErr(e); }
 }
 
 // ---------- 13 · 耗材与成本 ----------
@@ -765,6 +837,7 @@ async function dispatch(act, node, id, m) {
     case 'dup-prev': return stepDuplicate(-1);
     case 'dup-next': return stepDuplicate(1);
     case 'dup-trash': return trashDuplicate(node.dataset.id || id);
+    case 'alias-detach': return detachAlias(node.dataset.id || id);
     case 'cost-assign': return assignFilaments(id, m);
     case 'cost-weight': return editCostWeight(id, m);
     default: return;

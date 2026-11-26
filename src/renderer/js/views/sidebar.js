@@ -21,6 +21,8 @@ const SMART_VIEWS = [
   // docs/14：「已完成打印」本质是打印回执 / 成本账本，从 smart 组迁入 cost 组并改名。
   { key: 'printed',       label: tr('打印回执 · 成本账本'), icon: 'i-check', group: 'cost' },
   { key: 'duplicates',    label: tr('重复文件'),   icon: 'i-copy',      group: 'quality' },
+  { key: 'variants',      label: tr('同款变体'),   icon: 'i-layers',    group: 'quality' },
+  { key: 'broken',        label: tr('损坏文件'),   icon: 'i-wrench',    group: 'quality' },
   { key: 'missing',       label: tr('失效文件'),   icon: 'i-alert',     group: 'quality' },
 ];
 /** 非 smart 的模块入口：点击直接触发动作，不改 state.query */
@@ -142,10 +144,10 @@ function onClick(e) {
   if (smart) {
     const key = smart.dataset.smart;
     const next = { ...state.query, smart: key };
-    // 「重复文件 / 失效文件」是全库体检视图，侧栏徽标显示的也是全库数量。
+    // 这四个都是全库体检视图，侧栏徽标显示的也是全库数量。
     // 如果带着上一次的分类/标签/关键词筛选进来，就会出现「左边写 79、列表 0 个」——
-    // 看起来像计数 bug，其实是筛选把结果挡掉了。进这两个视图时把会隐藏结果的条件清掉。
-    if (key === 'duplicates' || key === 'missing') {
+    // 看起来像计数 bug，其实是筛选把结果挡掉了。进这些视图时把会隐藏结果的条件清掉。
+    if (key === 'duplicates' || key === 'missing' || key === 'broken' || key === 'variants') {
       next.categoryId = null;
       next.tagIds = [];
       next.keyword = '';

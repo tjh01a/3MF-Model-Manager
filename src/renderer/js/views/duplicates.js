@@ -2,13 +2,16 @@
 import { t as tr } from '../i18n.js';
 
 /**
- * 特殊视图：重复文件（duplicateGroup 并排对比）/ 失效文件（missing 重定位）。
+ * 特殊视图：
+ *   重复文件（duplicateGroup 并排对比 + 智能合并）/ 失效文件（missing 重定位）/ 同款变体（几何指纹）。
  * 事件委托挂在 #content 上，动作统一用 sp- 前缀避免与 grid.js 卡片冲突。
+ * 「损坏文件隔离区」的渲染与点击在 views/quarantine.js，这里只做转交。
  */
 import { api, emitRefresh, emitToast } from '../api.js';
 import { state, setState } from '../state.js';
 import { escapeHtml, icon, fmtBytes, fmtDate } from '../utils.js';
 import { confirmDialog, promptDialog, selectDialog } from '../components/modal.js';
+import { renderBroken, onBrokenClick, leaveBroken } from './quarantine.js';
 
 const esc = (v) => escapeHtml(v == null ? '' : String(v));
 const el = (id) => document.getElementById(id);
@@ -17,8 +20,8 @@ const toastErr = (e) => emitToast('error', (e && e.message) || tr('操作失败'
 
 let mounted = false;
 
-function empty(title, desc) {
-  return '<div class="empty">' + icon('i-info') + '<h2>' + esc(title) + '</h2><p>' + esc(desc) + '</p></div>';
+function empty(title, desc, extra) {
+  return '<div class="empty">' + icon('i-info') + '<h2>' + esc(title) + '</h2><p>' + esc(desc) + '</p>' + (extra || '') + '</div>';
 }
 
 /**
@@ -53,125 +56,193 @@ function groupBy(items, key) {
 function thumb(m) {
   return m && m.thumbnail ? esc('shelf://thumbs/' + m.thumbnail) : 'assets/placeholder.svg';
 }
-
-/**
- * 「保留哪一个」的打分：内容既然完全相同，优先留下承载了人工信息的那份，
- * 否则用户写的备注/评分/分类会随着被删的那份一起消失。
- * 只有磁盘上还在的副本参与打分；失效/解析错误的交给「失效文件」视图处理。
- */
-function keepScore(m) {
-  if (!m) return -1;
-  let s = 0;
-  if (m.status !== 'missing' && m.status !== 'error') s += 1000;
-  if (m.favorite) s += 200;
-  s += Math.max(0, Math.min(5, Number(m.rating) || 0)) * 20;
-  if (m.note && String(m.note).trim()) s += 60;
-  if (Number(m.printCount) > 0) s += 40;
-  if (m.printStatus && m.printStatus !== 'none') s += 10;
-  if (m.categoryId) s += 20;
-  s += Math.min(10, (m.tagIds || []).length) * 6;
-  return s;
-}
-
-/** 分数相同时保留更早入库的那份；再相同按 id 兜底，保证每次结果可复现 */
-function compareKeeper(a, b) {
-  const d = keepScore(b) - keepScore(a);
-  if (d) return d;
-  const ta = Number(a && a.createdAt) || 0;
-  const tb = Number(b && b.createdAt) || 0;
-  if (ta !== tb) return ta - tb;
-  return String(a && a.id || '').localeCompare(String(b && b.id || ''));
-}
-
-/**
- * 生成「每组留一个」的清理计划。只处理内容完全相同（duplicateGroup）的组，
- * 疑似重复（similarGroup）一律不碰——那是要靠人判断的。
- */
-function planCleanup(items) {
-  const groups = groupBy(items, 'duplicateGroup');
-  const plans = [];
-  const extras = [];
-  for (const g of groups) {
-    const healthy = g.filter((m) => m && m.status !== 'missing' && m.status !== 'error');
-    if (healthy.length < 2) continue;   // 只剩一份（或都已失效）就没有可清理的
-    const sorted = healthy.slice().sort(compareKeeper);
-    const drop = sorted.slice(1);
-    plans.push({ keeper: sorted[0], drop });
-    for (const d of drop) extras.push(d);
-  }
-  return { plans, extras };
-}
-
-/** 确认清单里用短名，避免一屏都是超长路径 */
 function shortName(m) {
   if (!m) return tr('未知文件');
-  const name = m.fileName || m.title || '';
-  if (name) return name;
-  const p = String(m.path || '');
-  return p.split(/[\\/]/).pop() || p || tr('未知文件');
+  return m.fileName || m.title || String(m.path || '').split(/[\\/]/).pop() || tr('未知文件');
 }
 
-// ---------- 重复文件 ----------
-function dupCard(m, group, similar) {
-  const others = group.filter((x) => x && x.id !== m.id);
-  const otherIds = others.map((o) => o.id).join(',');
-  return '<article class="dup-item" data-id="' + esc(m.id) + '">' +
+// ---------- 智能合并（C） ----------
+
+/** 用户在界面上手动改选的「主记录」：groupKey -> id。没选过就用服务端推荐的。 */
+const picked = new Map();
+/** 最近一次拉到的合并分组，按 key 索引 */
+let groupIndex = new Map();
+let mergeBusy = false;
+
+function pickFor(g) {
+  const id = picked.get(g.key);
+  return (id && g.members.some((m) => m.id === id)) ? id : g.keeperId;
+}
+
+function memberRow(g, m, isKeeper) {
+  const role = m.variantRole && m.variantRole !== 'base' ? variantBadge(m) : '';
+  const reasons = (isKeeper && g.keeperReasons && g.keeperReasons.length)
+    ? tr('<span class="muted dup-reasons">推荐保留：') + esc(g.keeperReasons.join('、')) + '</span>' : '';
+  const trashed = m.aliasState === 'trashed';
+  return '<article class="dup-item dup-pick' + (isKeeper ? ' is-keeper' : '') + '" data-id="' + esc(m.id) + '">' +
+    '<label class="dup-radio" title="' + esc(tr('设为保留的主记录')) + '">' +
+      '<input type="radio" name="pick-' + esc(g.key) + '"' + (isKeeper ? ' checked' : '') +
+        ' data-act="sp-pick" data-group="' + esc(g.key) + '" data-id="' + esc(m.id) + '">' +
+      '<span class="dup-radio-dot"></span></label>' +
     '<img class="dup-thumb" src="' + thumb(m) + '" alt="">' +
     '<div class="dup-info">' +
-      '<div class="dup-name">' + esc(m.fileName || m.title || tr('未命名')) + '</div>' +
+      '<div class="dup-name">' + esc(shortName(m)) + role +
+        (isKeeper ? tr('<span class="badge badge-dup">保留</span>') : '') +
+        (trashed ? tr('<span class="badge">文件已进回收站</span>') : '') + '</div>' +
       '<div class="mono dup-path" title="' + esc(m.path || '') + '">' + esc(m.path || '—') + '</div>' +
       '<div class="muted">' + (m.size != null ? fmtBytes(m.size) : '—') +
+        (m.printCount ? tr(' · 打印过 ') + m.printCount + tr(' 次') : '') +
+        (m.note ? tr(' · 有备注') : '') +
+        (m.favorite ? tr(' · 已收藏') : '') +
         tr(' · 添加于 ') + (m.createdAt ? fmtDate(m.createdAt) : '—') + '</div>' +
+      reasons +
     '</div>' +
     '<div class="dup-actions">' +
-      (similar ? '' :
-        '<button type="button" class="btn btn-ghost btn-sm" data-act="sp-keep" data-id="' + esc(m.id) +
-          '" data-others="' + esc(otherIds) + '">' + icon('i-check') + tr('<span>仅保留此文件</span></button>')) +
-      '<button type="button" class="btn btn-ghost btn-sm danger" data-act="sp-trash" data-id="' + esc(m.id) + '">' +
-        icon('i-trash') + tr('<span>移入回收站</span></button>') +
       '<button type="button" class="btn btn-ghost btn-sm" data-act="sp-reveal" data-id="' + esc(m.id) + '">' +
         icon('i-folder-open') + tr('<span>定位文件</span></button>') +
     '</div></article>';
 }
 
-function dupGroup(group, similar) {
-  const label = similar ? tr('疑似，请人工确认') : tr('内容完全相同');
-  const ids = group.map((m) => m.id).join(',');
-  const head = '<div class="dup-group-head">' +
-    '<span class="badge' + (similar ? ' warn' : '') + '">' + icon(similar ? 'i-warning' : 'i-copy') + esc(label) + '</span>' +
-    tr('<span class="muted">共 ') + group.length + tr(' 个文件</span>') +
-    (similar ? '' :
-      '<button type="button" class="btn btn-ghost btn-sm danger" data-act="sp-trash-group" data-ids="' + esc(ids) + '">' +
-        icon('i-trash') + tr('<span>整组移入回收站</span></button>')) +
-    '</div>';
-  return '<section class="dup-group' + (similar ? ' similar' : '') + '">' + head +
-    '<div class="dup-items">' + group.map((m) => dupCard(m, group, similar)).join('') + '</div></section>';
+function variantBadge(m) {
+  if (m.variantRole === 'same') return tr('<span class="badge badge-ok">同一模型</span>');
+  if (m.variantRole === 'scaled') {
+    const s = Number(m.variantScale);
+    return '<span class="badge badge-ok">' + esc(tr('缩放版')) + ' ×' + (isFinite(s) ? s.toFixed(2).replace(/\.?0+$/, '') : '—') + '</span>';
+  }
+  const pct = m.variantScore == null ? null : Math.round(Number(m.variantScore) * 100);
+  return '<span class="badge warn">' + esc(tr('疑似')) + (pct != null ? ' · ' + tr('相似度') + ' ' + pct + '%' : '') + '</span>';
 }
 
-function renderDuplicates(items) {
-  const groups = groupBy(items, 'duplicateGroup');
-  const similar = groupBy(items, 'similarGroup');
-  if (!groups.length && !similar.length) {
-    return empty(tr('当前范围内没有重复模型'),
-      filterHint('duplicates') || tr('内容哈希完全相同的文件会在这里成组显示，方便你清理冗余。'));
+function groupCard(g) {
+  const isExact = g.kind === 'exact';
+  const isVariant = g.kind === 'variant';
+  const label = isExact ? tr('内容完全相同') : (isVariant ? tr('几何指纹相近') : tr('疑似，请人工确认'));
+  const cls = isExact ? '' : ' warn';
+  const keeperId = pickFor(g);
+  const rows = g.members.map((m) => memberRow(g, m, m.id === keeperId)).join('');
+  const note = isExact
+    ? tr('每组的文件内容一模一样，可以放心合并。')
+    : (isVariant
+      ? tr('形状相近但不保证内容相同，请看缩略图确认后再合并。')
+      : tr('文件名与体积相近，但不保证内容相同，请谨慎处理。'));
+  return '<section class="dup-group' + (isExact ? '' : ' similar') + '" data-group="' + esc(g.key) + '">' +
+    '<div class="dup-group-head">' +
+      '<span class="badge' + cls + '">' + icon(isExact ? 'i-copy' : 'i-layers') + esc(label) + '</span>' +
+      tr('<span class="muted">共 ') + g.members.length + tr(' 个文件</span>') +
+      (g.freedBytes ? tr('<span class="muted">合并后可释放约 ') + esc(fmtBytes(g.freedBytes)) + '</span>' : '') +
+      '<span class="spacer"></span>' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-act="sp-merge" data-group="' + esc(g.key) + '" title="' + esc(tr('其余文件降为这个主记录的「副本」，不再出现在列表里；磁盘文件保持不动')) + '">' +
+        icon('i-copy') + tr('<span>合并 · 只标为副本</span></button>') +
+      '<button type="button" class="btn btn-primary btn-sm" data-act="sp-merge-trash" data-group="' + esc(g.key) + '" title="' + esc(tr('其余文件降为副本，并把它们的文件移入系统回收站')) + '">' +
+        icon('i-trash') + tr('<span>合并并移入回收站</span></button>') +
+      (isVariant ? '' :
+        '<button type="button" class="btn btn-ghost btn-sm danger" data-act="sp-trash-group" data-ids="' + esc(g.members.map((m) => m.id).join(',')) + '">' +
+          icon('i-trash') + tr('<span>整组移入回收站</span></button>')
+      ) +
+    '</div>' +
+    '<p class="dup-note">' + esc(note) + '</p>' +
+    '<div class="dup-items">' + rows + '</div></section>';
+}
+
+async function loadGroups(kinds) {
+  try {
+    const r = await api.dupMergePreview();
+    groupIndex = new Map(((r && r.groups) || []).map((g) => [g.key, g]));
+    return r;
+  } catch (_) { return null; }
+}
+
+async function renderDuplicates() {
+  const content = el('content');
+  if (!content) return;
+  const r = await loadGroups();
+  const groups = r ? (r.groups || []) : [];
+  const exact = groups.filter((g) => g.kind === 'exact');
+  const similar = groups.filter((g) => g.kind === 'similar');
+  if (!exact.length && !similar.length) {
+    const extra = (state.stats && state.stats.aliases) ? '<p>' + esc(tr('已有 ') + state.stats.aliases + tr(' 个副本挂在主记录下，可在详情页查看或解除。')) + '</p>' : '';
+    content.innerHTML = empty(tr('当前范围内没有重复模型'),
+      filterHint('duplicates') || tr('内容哈希完全相同的文件会在这里成组显示，方便你清理冗余。'), extra);
+    return;
   }
-  const plan = planCleanup(items);
+  const totalBytes = exact.reduce((s, g) => s + (Number(g.freedBytes) || 0), 0);
+  const aliasCount = exact.reduce((s, g) => s + g.members.length - 1, 0);
+  // 只统计本页真正渲染出来的组；同款变体有独立视图，别把它的成员重复算进来
+  const shownGroups = exact.concat(similar);
+  const fileCount = new Set(shownGroups.flatMap((g) => g.members.map((m) => m.id))).size;
   let out = '<div class="special-head"><div class="special-head-main">' +
-    tr('<h2>重复文件</h2><p>按内容哈希完全相同的文件归为一组。</p></div>') +
-    (plan.extras.length
-      ? '<button type="button" class="btn btn-ghost btn-sm danger" data-act="sp-clean-all">' +
-        icon('i-trash') + tr('<span>一键清除 · 每组留 1 个（') + plan.extras.length + '）</span></button>'
+    tr('<h2>重复文件</h2><p>每组选一条作为主记录，其余降为它的「副本」：不再占列表、不重复计数，备注和打印记录都会保留。</p>') +
+    '<p class="muted">' + tr('共 ') + shownGroups.length + tr(' 组 · ') + fileCount + tr(' 个文件 · ') +
+      tr('可释放约 ') + esc(fmtBytes(totalBytes)) + '</p></div>' +
+    (exact.length
+      ? '<button type="button" class="btn btn-primary btn-sm" data-act="sp-merge-all" data-ids="' + esc(exact.map((g) => g.key).join('|')) + '">' +
+        icon('i-trash') + tr('<span>一键合并全部完全重复（') + aliasCount + tr(' 个 · 约 ') + esc(fmtBytes(totalBytes)) + '）</span></button>'
       : '') +
     '</div>';
-  out += groups.length
-    ? groups.map((g) => dupGroup(g, false)).join('')
-    : empty(tr('没有内容完全相同的重复文件'), tr('仅有下方疑似重复，请人工确认。'));
+  out += exact.map(groupCard).join('');
   if (similar.length) {
     out += tr('<div class="special-head"><h2>疑似重复</h2>') +
-      tr('<p class="warn">疑似，请人工确认：文件名与体积相近，但不保证内容相同，请谨慎处理。</p></div>');
-    out += similar.map((g) => dupGroup(g, true)).join('');
+      tr('<p class="warn">文件名与体积相近，但不保证内容相同，请看缩略图确认后再合并。</p></div>');
+    out += similar.map(groupCard).join('');
   }
-  return out;
+  content.innerHTML = out;
+}
+
+// ---------- 同款变体（A） ----------
+
+let shapeTimer = null;
+function stopShapePolling() {
+  if (shapeTimer) { clearInterval(shapeTimer); shapeTimer = null; }
+}
+
+async function renderVariants() {
+  const content = el('content');
+  if (!content) return;
+  let st = null;
+  try { st = await api.shapeStatus(); } catch (_) { st = null; }
+  if (state.contentMode !== 'variants' || !content) return;
+  const groups = groupBy(state.items || [], 'variantGroup');
+  const running = st && st.running;
+  const members = groups.reduce((s, g) => s + g.length, 0);
+
+  let statusHtml = '';
+  if (st) {
+    const bits = [];
+    if (running) bits.push(tr('正在后台计算…'));
+    bits.push(tr('已计算 ') + (st.total || 0) + tr(' 个模型'));
+    if (st.pending && !running) bits.push(tr('还有 ') + st.pending + tr(' 个待计算'));
+    if (st.failed) bits.push(st.failed + tr(' 个没有 3D 网格（切片文件）已跳过'));
+    statusHtml = '<p class="muted">' + esc(bits.join(tr(' · '))) + '</p>' +
+      '<div class="dup-actions">' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-act="sp-shape-run"' + (running ? ' disabled' : '') + '>' +
+          icon('i-refresh') + tr('<span>计算 / 更新</span></button>') +
+        (running ? '<button type="button" class="btn btn-ghost btn-sm" data-act="sp-shape-stop">' + tr('<span>暂停</span></button>') : '') +
+      '</div>';
+  }
+
+  if (!groups.length) {
+    content.innerHTML = empty(tr('还没有发现同款变体'),
+      tr('同一个模型改了颜色、放大缩小、换个姿势重新导出，文件名和哈希都会变，但形状是一样的。软件会在后台按形状比对，把这类文件归到这里。'),
+      '<div class="empty-extra">' + statusHtml + '</div>');
+    if (running && !shapeTimer) shapeTimer = setInterval(() => { if (state.contentMode === 'variants') refreshSpecial('variants'); else stopShapePolling(); }, 2500);
+    return;
+  }
+  let out = '<div class="special-head"><div class="special-head-main">' +
+    tr('<h2>同款变体</h2><p>按网格形状比对得出的结果，不看文件名。') +
+    tr('<b>同一模型</b>可以放心合并，<b>疑似</b>请对照缩略图确认。</p>') + statusHtml + '</div></div>';
+  out += groups.map((list) => {
+    const g = {
+      key: 'variant:' + list[0].variantGroup,
+      kind: 'variant',
+      members: list.map((m) => Object.assign({ reasons: [] }, m)),
+      keeperId: (list.find((x) => x.variantRole === 'base') || list[0]).id,
+      keeperReasons: [tr('最早入库的那一个')],
+      freedBytes: list.slice(1).reduce((s, m) => s + (Number(m.size) || 0), 0),
+    };
+    return groupCard(g);
+  }).join('');
+  content.innerHTML = out;
+  if (running && !shapeTimer) shapeTimer = setInterval(() => { if (state.contentMode === 'variants') refreshSpecial('variants'); else stopShapePolling(); }, 2500);
 }
 
 // ---------- 失效文件 ----------
@@ -224,24 +295,6 @@ async function refreshSpecial(mode) {
 }
 
 // ---------- 各类操作 ----------
-async function keepOne(id, othersStr) {
-  const others = String(othersStr || '').split(',').filter(Boolean);
-  if (!others.length) { emitToast('info', tr('该组没有其它文件')); return; }
-  const keep = itemById(id);
-  const paths = others.map((oid) => { const m = itemById(oid); return m ? (m.path || m.fileName || oid) : oid; });
-  const ok = await confirmDialog({
-    title: tr('仅保留此文件'), message: tr('将把同组其它 ') + others.length + tr(' 个文件移出索引（不删除磁盘文件）。'),
-    detail: tr('保留：') + (keep ? (keep.path || keep.fileName) : '') + tr('；以下完整路径将移出索引：'),
-    items: paths, danger: true, confirmText: tr('移出其它文件'),
-  });
-  if (!ok) return;
-  try {
-    const r = await api.remove(others);
-    emitToast('success', tr('已移出 ') + ((r && r.removed) || others.length) + tr(' 个文件'));
-    await refreshSpecial('duplicates');
-  } catch (e) { toastErr(e); }
-}
-
 async function trashOne(id) {
   const m = itemById(id);
   const ok = await confirmDialog({
@@ -281,42 +334,69 @@ async function trashGroup(idsStr) {
   } catch (e) { toastErr(e); }
 }
 
-/**
- * 一键清除：内容完全相同的组，每组只留一个，其余移入回收站。
- * 为什么不是「移出索引」——只移索引的话文件还在磁盘上，下次扫描会重新入库，
- * 用户会以为没清理干净。这里走回收站（可恢复），并同时把记录移出索引。
- */
-let cleaning = false;
-async function cleanupAll() {
-  if (cleaning) return;
-  const { plans, extras } = planCleanup(state.items || []);
-  if (!extras.length) { emitToast('info', tr('没有可清理的重复文件')); return; }
-  const lines = plans.slice(0, 8).map((p, i) =>
-    tr('第 ') + (i + 1) + tr(' 组：保留「') + shortName(p.keeper) + tr('」，移入回收站 ') + p.drop.length + tr(' 个'));
-  if (plans.length > 8) lines.push(tr('…另有 ') + (plans.length - 8) + tr(' 组，同样每组留 1 个'));
+function linesForMerge(selection) {
+  const lines = [];
+  let n = 0;
+  for (const key of Object.keys(selection)) {
+    const g = groupIndex.get(key);
+    if (!g) continue;
+    const keepId = selection[key];
+    const keep = g.members.find((m) => m.id === keepId);
+    lines.push(tr('保留「') + shortName(keep || {}) + tr('」，其余 ') + (g.members.length - 1) + tr(' 个降为副本'));
+    n += g.members.length - 1;
+    if (lines.length >= 8) break;
+  }
+  const total = Object.keys(selection).length;
+  if (total > 8) lines.push(tr('…另有 ') + (total - 8) + tr(' 组'));
+  return { lines, n };
+}
+
+/** 合并一组或几组。trash=true 时先把副本文件移入回收站。 */
+async function doMerge(keys, trash) {
+  if (mergeBusy || !keys.length) return;
+  const selection = {};
+  for (const key of keys) {
+    const g = groupIndex.get(key);
+    if (!g) continue;
+    selection[key] = pickFor(g);
+  }
+  if (!Object.keys(selection).length) return;
+  const { lines, n } = linesForMerge(selection);
+  const freed = keys.reduce((s, key) => s + (Number((groupIndex.get(key) || {}).freedBytes) || 0), 0);
+  const groupCount = Object.keys(selection).length;
   const ok = await confirmDialog({
-    title: tr('一键清除重复（每组留一个）'),
-    message: tr('共 ') + plans.length + tr(' 组重复，保留 ') + plans.length + tr(' 个，把其余 ') + extras.length + tr(' 个移入回收站。'),
-    detail: tr('保留规则：优先留有备注/评分/分类等人工信息的副本，其次留最早入库的。')
-      + tr('磁盘文件进系统回收站可恢复，记录同时从索引移除；「疑似重复」不参与一键清除。'),
-    items: lines, danger: true, confirmText: tr('移入回收站并清理'), cancelText: tr('先不清除'),
+    title: trash ? tr('合并并移入回收站') : tr('合并 · 只标为副本'),
+    message: trash
+      ? tr('共 ') + groupCount + tr(' 组：保留 ') + groupCount + tr(' 个主记录，其余 ') + n + tr(' 个降为副本，并把它们的文件移入系统回收站（约 ') + esc(fmtBytes(freed)) + tr('）。')
+      : tr('共 ') + groupCount + tr(' 组：保留 ') + groupCount + tr(' 个主记录，其余 ') + n + tr(' 个降为副本。磁盘文件不动。'),
+    detail: tr('保留规则：优先留有缩略图、备注、打印记录的那份，其次留最早入库的。可在每组里手动改选。')
+      + (trash
+        ? tr('副本的备注和打印记录会保留在主记录的详情页。软件只能解除副本关系，不能把文件从回收站取回；要还原请到系统回收站操作。')
+        : tr('副本的备注和打印记录会保留在主记录的详情页，随时可以解除。')),
+    items: lines, danger: !!trash,
+    confirmText: trash ? tr('合并并移入回收站') : tr('合并'),
   });
   if (!ok) return;
-  cleaning = true;
+  mergeBusy = true;
   try {
-    const r = await api.trash(extras.map((m) => m.id)) || {};
-    const done = Array.isArray(r.ok) ? r.ok.length : 0;
+    const r = await api.dupMergeApply(selection, { trash: !!trash }) || {};
     const failed = Array.isArray(r.failed) ? r.failed : [];
+    for (const key of keys) picked.delete(key);
     if (failed.length) {
-      emitToast(done ? 'warn' : 'error',
-        tr('已清理 ') + done + tr(' 个，') + failed.length + tr(' 个失败（') + ((failed[0] && failed[0].error) || tr('未知原因')) + '）');
+      emitToast(r.merged ? 'warn' : 'error',
+        tr('已合并 ') + (r.merged || 0) + tr(' 组，') + failed.length + tr(' 个文件移入回收站失败（')
+        + ((failed[0] && failed[0].error) || tr('未知原因')) + '）');
+    } else if (r.merged) {
+      emitToast('success', trash
+        ? tr('已合并 ') + r.merged + tr(' 组，') + (r.trashed || 0) + tr(' 个副本进了回收站，约释放 ') + esc(fmtBytes(r.freedBytes || 0))
+        : tr('已合并 ') + r.merged + tr(' 组，') + (r.shadow || 0) + tr(' 个降为副本'));
     } else {
-      emitToast('success', tr('已清理 ') + done + tr(' 个重复文件，每组保留 1 个'));
+      emitToast('info', tr('没有需要合并的文件'));
     }
   } catch (e) {
     toastErr(e);
   } finally {
-    cleaning = false;
+    mergeBusy = false;
     await refreshSpecial('duplicates');
   }
 }
@@ -376,12 +456,34 @@ async function removeMissing(id) {
   } catch (e) { toastErr(e); }
 }
 
+function pick(d) {
+  picked.set(d.group, d.id);
+  const section = el('content').querySelector('[data-group="' + (window.CSS && CSS.escape ? CSS.escape(d.group) : d.group) + '"]');
+  if (!section) return;
+  // 只更新这一组的选中态，不整页重绘（否则滚动位置会跳）
+  for (const row of section.querySelectorAll('.dup-item')) {
+    const on = row.dataset.id === d.id;
+    row.classList.toggle('is-keeper', on);
+    const radio = row.querySelector('input[type="radio"]');
+    if (radio) radio.checked = on;
+  }
+}
+
 async function dispatch(act, d) {
   switch (act) {
-    case 'sp-keep': return keepOne(d.id, d.others);
+    case 'sp-pick': pick(d); return;
+    case 'sp-merge': return doMerge([d.group], false);
+    case 'sp-merge-trash': return doMerge([d.group], true);
+    case 'sp-merge-all': return doMerge(String(d.ids || '').split('|').filter(Boolean), true);
+    case 'sp-shape-run': {
+      try { const r = await api.shapeRun({ force: d.force === '1' }); if (r && r.started === false) emitToast('info', r.reason || tr('没有需要计算的模型')); }
+      catch (e) { toastErr(e); }
+      await refreshSpecial('variants');
+      return;
+    }
+    case 'sp-shape-stop': try { await api.shapeStop(); } catch (e) { toastErr(e); } return;
     case 'sp-trash': return trashOne(d.id);
     case 'sp-trash-group': return trashGroup(d.ids);
-    case 'sp-clean-all': return cleanupAll();
     case 'sp-reveal': return api.reveal(d.id);
     case 'sp-relink-auto': return relinkAuto(d.id);
     case 'sp-relink-manual': return relinkManual(d.id);
@@ -394,10 +496,14 @@ function onClick(e) {
   const content = el('content');
   if (!content || !content.contains(e.target)) return;
   // 仅在特殊视图下接管，且只处理 sp- 前缀动作
-  if (state.contentMode !== 'duplicates' && state.contentMode !== 'missing') return;
+  const mode = state.contentMode;
+  if (mode !== 'duplicates' && mode !== 'missing' && mode !== 'variants') return;
   const node = e.target.closest ? e.target.closest('[data-act]') : null;
-  if (!node || !String(node.dataset.act || '').startsWith('sp-')) return;
-  Promise.resolve(dispatch(node.dataset.act, node.dataset)).catch(toastErr);
+  if (!node) return;
+  const act = String(node.dataset.act || '');
+  if (!act.startsWith('sp-')) return;
+  // 单选按钮的默认行为（选中）保留，这里只记下选择
+  Promise.resolve(dispatch(act, node.dataset)).catch(toastErr);
 }
 
 // ---------- 对外导出 ----------
@@ -405,15 +511,27 @@ export function mountSpecialView() {
   if (mounted) return;
   mounted = true;
   const content = el('content');
-  if (content) content.addEventListener('click', onClick);
+  if (content) {
+    content.addEventListener('click', (e) => {
+      if (state.contentMode === 'broken') { onBrokenClick(e); return; }
+      onClick(e);
+    });
+  }
 }
 
 export function renderSpecialView(mode) {
   const content = el('content');
   if (!content) return;
+  if (mode !== 'variants' && mode !== 'broken') stopShapePolling();
+  if (mode === 'broken') { setState({ contentMode: 'broken' }); leaveVariants(); content.className = 'content-special'; renderBroken(content); return; }
+  if (mode === 'variants') { setState({ contentMode: 'variants' }); content.className = 'content-special'; renderVariants(); return; }
+  leaveVariants();
   const m = mode === 'missing' ? 'missing' : 'duplicates';
   setState({ contentMode: m });
   const items = state.items || [];
-  content.innerHTML = m === 'duplicates' ? renderDuplicates(items) : renderMissing(items);
   content.className = 'content-special';
+  if (m === 'duplicates') { content.innerHTML = ''; renderDuplicates(); }
+  else content.innerHTML = renderMissing(items);
 }
+
+function leaveVariants() { stopShapePolling(); }

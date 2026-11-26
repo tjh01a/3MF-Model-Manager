@@ -214,8 +214,10 @@
 新增交互必须配一个 UI 探针，且**不得修改用户真实数据**：
 
 - `tools/probe-dupfold.js`：重复文件折叠、副本切换、单副本删除按钮结构。
-- `tools/probe-dup-cleanup.js`：一键清除按钮与计数、确认框清单与保留规则、取消后库不变（只读，不删任何文件）。
-- `tools/probe-dup-cleanup-exec.js`：在 `tools/make-dup-fixture.js` 造的临时库上真删一次，验证保留规则与删除范围（会进系统回收站）。
+- ~~`tools/probe-dup-cleanup.js`~~ / ~~`probe-dup-cleanup-exec.js`~~：随「一键清除」按钮一起删除（该流程已被合并为副本取代），改由下面三条覆盖。
+- `tools/probe-merge.js`：合并预览/一键合并/改选主记录/详情副本小节/解除副本（临时库，20 条断言）。
+- `tools/probe-broken.js`：重试全部、可修复标记、隔离→移回、确认框取消不写数据（临时库，18 条断言）。
+- `tools/probe-variants.js`：同款变体分组、指纹状态、合并入口（临时库，13 条断言）。
 - `tools/probe-receipts-edit.js`：回执长按、多选、全选、删除确认（点「取消」不落盘）、Esc 退出、模型批量条隐藏。
 - `tools/probe-receipts-link.js`：回执中文时间、关联模型选择器、搜索过滤、取消不写数据。
 - `tools/probe-source-url.js`：来源链接识别、`data-url` 一致性、地球按钮绿/灰状态（网格 + 列表）、详情展示。
@@ -262,3 +264,4 @@ node launch.js --capture=data/ui-xxx.png --ui-script=tools/probe-xxx.js
 | 2026-11-25 | 卡片精简 | 信息行只保留「大小 · 时间」，不显示对象数/盘数；第三行只保留分类 chip，移除五星评分（详情里仍可评分） |
 | 2026-11-25 | v1.1.8 发布 | 汇总内置耗材包、开发版任务栏图标、MakerWorld 默认中国站与无链接反查、色板悬停占比、卡片信息换行/精简 |
 | 2026-11-26 | v1.2.0 中英双语 | 顶栏中英切换与设置页语言/站点选择；英文界面默认 MakerWorld 国际站，缺失时回退中国站并提示；英文新库用英文分类与关键词且不内置三条耗材；README 双语并列 |
+| 2026-11-26 | 整理三件套界面接通 | 侧栏新增「同款变体 / 损坏文件」两个体检入口；损坏文件隔离区（重试 / 修复 / 隔离 / 移回 / 回收站 / 移出索引）；重复组单选主记录 + 合并为副本 + 详情「副本」小节与解除；同款变体视图复用组卡并显示指纹进度；补 `.badge.warn/.danger/.badge-ok` 语义底色 |

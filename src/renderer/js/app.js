@@ -418,9 +418,10 @@ function pruneSelection(items) {
 
 async function doRefresh(reason) {
   const smart = state.query.smart;
-  // 「已完成打印」走打印回执视图（docs/13）；重复 / 失效仍走各自特殊视图
+  // 「已完成打印」走打印回执视图（docs/13）；重复 / 同款变体 / 损坏 / 失效走各自特殊视图
+  const SPECIAL_MODES = { duplicates: true, missing: true, variants: true, broken: true };
   const mode = smart === 'printed' ? 'receipts'
-    : (smart === 'duplicates' || smart === 'missing') ? smart : 'normal';
+    : (SPECIAL_MODES[smart] ? smart : 'normal');
   const prevMode = state.contentMode;
   state.contentMode = mode;
   // 视图切换时退出长按编辑模式：回执 id 与模型 id 不能共用同一批勾选

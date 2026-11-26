@@ -11,7 +11,7 @@ const SMART_LABELS = {
   all: tr('全部模型'), favorites: tr('收藏'), recentOpened: tr('最近打开'),
   unprinted: tr('未打印'), uncategorized: tr('未分类'), untagged: tr('未打标签'),
   recent: tr('最近 7 天'), printed: tr('已完成打印'), rated: tr('已评分'),
-  duplicates: tr('重复文件'), missing: tr('失效文件'),
+  duplicates: tr('重复文件'), variants: tr('同款变体'), broken: tr('损坏文件'), missing: tr('失效文件'),
 };
 const STATUS_LABELS = {
   unprinted: tr('未打印'), queued: tr('待打印'), printing: tr('打印中'), printed: tr('已完成'), failed: tr('失败'),
