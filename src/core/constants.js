@@ -21,6 +21,8 @@ const SMART_VIEWS = [
   { key: 'printed',       label: '已完成打印', icon: 'i-check',     group: 'smart' },
   { key: 'rated',         label: '已评分',     icon: 'i-star',      group: 'smart' },
   { key: 'duplicates',    label: '重复文件',   icon: 'i-copy',      group: 'quality' },
+  { key: 'broken',        label: '损坏文件',   icon: 'i-alert',     group: 'quality' },
+  { key: 'variants',      label: '同款变体',   icon: 'i-layers',    group: 'quality' },
   { key: 'missing',       label: '失效文件',   icon: 'i-alert',     group: 'quality' },
 ];
 
@@ -151,7 +153,10 @@ const DEFAULT_SETTINGS = {
   scan: {
     excludeDirs: [], maxDepth: 12, autoWatch: true,
     hashEnabled: true, parseMeta: true, concurrency: 4,
+    shapePrint: true,      // A · 几何指纹：后台计算「同款变体」
   },
+  // B · 隔离区：dir 留空 = 数据目录下的 quarantine/
+  quarantine: { dir: '' },
   data: { backupKeep: 10, lastBackupAt: null },
   updatedAt: 0,
 };

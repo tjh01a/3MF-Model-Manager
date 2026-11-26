@@ -15,6 +15,7 @@ const DAY7 = 7 * 24 * 60 * 60 * 1000;
 const SMART_KEYS = [
   'all', 'favorites', 'unprinted', 'uncategorized', 'untagged', 'recent',
   'recentOpened', 'duplicates', 'missing', 'printed', 'rated',
+  'broken', 'variants',
 ];
 const SORT_FIELDS = [
   'name', 'category', 'size', 'createdAt', 'mtime', 'lastOpenedAt', 'lastPrintedAt',
@@ -30,10 +31,21 @@ const UPDATABLE_FIELDS = [
   'duplicateGroup', 'duplicateOf', 'similarGroup', 'meta',
   // 13 · 成本账本：用户手填重量与耗材分配（meta 里的自动提取值走 meta 字段）
   'costWeightG', 'filamentLinks', 'costNote',
+  // B · 隔离区：错误类型 / 隔离状态
+  'parseErrorKind', 'quarantinedAt', 'origPath',
+  // C · 智能合并：别名降级
+  'aliasOf', 'aliasState', 'aliasAt',
+  // A · 几何指纹：同款变体
+  'variantGroup', 'variantRole', 'variantScore', 'variantScale',
 ];
 
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const isPrintStatus = (s) => typeof s === 'string' && Object.prototype.hasOwnProperty.call(C.PRINT_STATUS, s);
+
+/** C：这条记录是不是某个主记录的别名（别名默认不出现在任何普通视图里）。 */
+function isAlias(rec) {
+  return !!(rec && rec.aliasOf);
+}
 
 /** smart 视图过滤谓词，query 与 smartCounts 共用，保证计数与列表一致。 */
 function matchSmart(rec, key, now) {
@@ -48,6 +60,10 @@ function matchSmart(rec, key, now) {
     case 'recentOpened': return !!rec.lastOpenedAt;
     case 'duplicates': return !!(rec.duplicateGroup || rec.duplicateOf);
     case 'missing': return rec.status === 'missing';
+    // B：解析失败 / 结构异常的坏文件（含已隔离的）；文件已不存在的那条归 missing 管
+    case 'broken': return !!rec.parseErrorKind && rec.status !== 'missing';
+    // A：几何指纹认出的同款变体
+    case 'variants': return !!rec.variantGroup;
     case 'rated': return (Number(rec.rating) || 0) > 0;
     default: return true;
   }
@@ -132,10 +148,15 @@ class LibraryService {
     // 只有「失效文件」维护视图（smart=missing）或显式按 status=missing 筛选时才列出来，
     // 这样用户仍能找回误移走的文件、做重新定位或移出索引。
     const wantMissing = Q.smart === 'missing' || statuses.includes('missing');
+    // B：已隔离的文件同样只在隔离区（smart=broken）或显式按 status 筛选时可见
+    const wantQuarantined = Q.smart === 'broken' || statuses.includes('quarantined');
 
     const filtered = [];
     for (const rec of this._all()) {
+      // C：别名从普通视图、搜索、统计里隐藏；详情页「副本」列表用 includeAliases 取
+      if (isAlias(rec) && !Q.includeAliases) continue;
       if (!wantMissing && rec.status === 'missing') continue;
+      if (!wantQuarantined && rec.status === 'quarantined') continue;
       if (Q.smart && !matchSmart(rec, Q.smart, now)) continue;
       if (statuses.length && !statuses.includes(rec.status)) continue;
       if (Q.folderId && rec.folderId !== Q.folderId) continue;
@@ -226,6 +247,32 @@ class LibraryService {
   getMany(ids) {
     const models = this._models();
     return (Array.isArray(ids) ? ids : [ids]).map((id) => models[id]).filter(Boolean);
+  }
+
+  /** C：某条主记录名下的全部别名副本（含文件已进回收站的存根） */
+  aliasesOf(id) {
+    const out = this._all().filter((r) => r.aliasOf === id);
+    out.sort((a, b) => (Number(a.aliasAt) || 0) - (Number(b.aliasAt) || 0));
+    return out;
+  }
+
+  /** C：解除别名关系，让副本重新成为独立记录。返回解除的条数。 */
+  async detachAliases(ids) {
+    const list = Array.isArray(ids) ? ids : [ids];
+    const now = U.now();
+    let detached = 0;
+    await this.store.updateLibrary((lib) => {
+      for (const id of list) {
+        const r = lib.models[id];
+        if (!r || !r.aliasOf) continue;
+        r.aliasOf = null;
+        r.aliasState = null;
+        r.aliasAt = null;
+        r.updatedAt = now;
+        detached++;
+      }
+    }, 'detachAliases');
+    return { detached };
   }
 
   // ---- 更新 ----
@@ -347,6 +394,7 @@ class LibraryService {
           lib.models[newId] = r;
           for (const other of Object.values(lib.models)) {
             if (other.duplicateOf === id) other.duplicateOf = newId;
+            if (other.aliasOf === id) other.aliasOf = newId;
           }
         }
         result = r;
@@ -371,6 +419,13 @@ class LibraryService {
       }
       for (const r of Object.values(lib.models)) {
         if (r.duplicateOf && set.has(r.duplicateOf)) r.duplicateOf = null;
+        // C：主记录没了，它的别名要恢复成独立记录，否则会永远藏在库里看不到
+        if (r.aliasOf && set.has(r.aliasOf)) {
+          r.aliasOf = null;
+          r.aliasState = null;
+          r.aliasAt = null;
+          r.updatedAt = U.now();
+        }
       }
     }, 'remove');
     return { removed };
@@ -398,6 +453,9 @@ class LibraryService {
       r.status = 'ok';
       r.missingSince = null;
       r.parseError = null;
+      r.parseErrorKind = null;
+      r.quarantinedAt = null;
+      delete r.origPath;
       r.relativePath = recomputeRelative(r, target, settings);
       r.updatedAt = U.now();
       result = r;
@@ -682,6 +740,7 @@ class LibraryService {
       byPrintStatus: {}, byCategory: {}, byTag: {}, byStatus: {},
       favorites: 0, printed: 0, unprinted: 0, missing: 0, duplicates: 0,
       recentAdded: 0, recentOpened: 0, thumbnails: 0,
+      quarantined: 0, broken: 0, aliases: 0,
     };
     const dupSizes = this._dupGroupSizes();
     const bump = (obj, k) => { obj[k] = (obj[k] || 0) + 1; };
@@ -693,6 +752,15 @@ class LibraryService {
         bump(s.byStatus, 'missing');
         continue;
       }
+      // B：已隔离的文件同样不进总数 / 占用空间，只在隔离区里计数
+      if (r.status === 'quarantined') {
+        s.quarantined++;
+        bump(s.byStatus, 'quarantined');
+        continue;
+      }
+      // C：别名挂在主记录下面，不单独计数
+      if (isAlias(r)) { s.aliases++; continue; }
+      if (r.parseErrorKind) s.broken++;
       s.total++;
       s.totalSize += Number(r.size) || 0;
       bump(s.byPrintStatus, r.printStatus || 'unprinted');
@@ -716,15 +784,20 @@ class LibraryService {
     const now = U.now();
     const dupSizes = this._dupGroupSizes();
     for (const r of this._all()) {
-      // 与 query 保持一致：失效记录只计入 missing 视图，其它徽标不能比列表多
+      // 与 query 保持一致：失效 / 已隔离记录只计入各自视图，其它徽标不能比列表多；
+      // 别名（C）在任何视图里都不计数
       const isMissing = r.status === 'missing';
+      const isQuarantined = r.status === 'quarantined';
+      const hidden = isMissing || isQuarantined || isAlias(r);
       for (const k of SMART_KEYS) {
         if (k === 'duplicates') continue;   // 单独算：要按「组内 ≥2」判定
         if (isMissing && k !== 'missing') continue;
+        if (isQuarantined && k !== 'broken') continue;
+        if (isAlias(r)) continue;
         if (matchSmart(r, k, now)) out[k]++;
       }
       // 一键清除后留下的那份仍带旧分组标记；只按标记计数会让徽标一直是 N 而列表是空的。
-      if (!isMissing && (r.duplicateOf || (r.duplicateGroup && dupSizes.get(r.duplicateGroup) > 1))) {
+      if (!hidden && (r.duplicateOf || (r.duplicateGroup && dupSizes.get(r.duplicateGroup) > 1))) {
         out.duplicates++;
       }
     }
@@ -736,14 +809,15 @@ class LibraryService {
     const sizes = new Map();
     for (const r of this._all()) {
       const k = r && r.duplicateGroup;
-      if (!k) continue;
+      if (!k || isAlias(r)) continue;
       sizes.set(k, (sizes.get(k) || 0) + 1);
     }
     return sizes;
   }
 
   roulette() {
-    const pool = this._all().filter((r) => r.printStatus === 'unprinted' || r.printStatus === 'queued');
+    const pool = this._all().filter((r) => (r.printStatus === 'unprinted' || r.printStatus === 'queued')
+      && !isAlias(r) && r.status !== 'missing' && r.status !== 'quarantined');
     if (!pool.length) return null;
     return pool[Math.floor(Math.random() * pool.length)];
   }

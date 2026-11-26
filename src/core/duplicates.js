@@ -93,6 +93,8 @@ function annotate(library) {
   const list = asModelList(library);
   const byId = new Map();
   for (const r of list) byId.set(r.id, r);
+  // C：别名挂在主记录下面，不参与分组——否则合并完的组会立刻「复活」
+  const grouped = list.filter((r) => !(r.aliasOf));
 
   // 1. 清空旧标记
   for (const r of list) {
@@ -104,7 +106,7 @@ function annotate(library) {
   const affected = new Set();
 
   // 2. 内容 hash 重复组
-  const groups = computeHashGroups(list);
+  const groups = computeHashGroups(grouped);
   for (const [hash, ids] of groups) {
     for (const id of ids) {
       const r = byId.get(id);
@@ -116,7 +118,7 @@ function annotate(library) {
   }
 
   // 3. 疑似重复组（仅提示，与重复组可共存）
-  const sims = findSimilar(list);
+  const sims = findSimilar(grouped);
   for (const g of sims) {
     for (const id of g.ids) {
       const r = byId.get(id);

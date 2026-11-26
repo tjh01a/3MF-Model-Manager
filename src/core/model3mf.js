@@ -694,7 +694,7 @@ function extractMeta(entries, opts, thumbnailName) {
  * @returns {Promise<{ok:Boolean, error?:String, thumbnail:{entry,data:Buffer,mime}|null, meta:Object}>}
  */
 async function parse3mf(filePath, options = {}) {
-  const result = { ok: false, thumbnail: null, meta: emptyMeta() };
+  const result = { ok: false, thumbnail: null, meta: emptyMeta(), core: null };
   const opts = {
     withThumbnail: options.withThumbnail !== false,
     withMeta: options.withMeta !== false,
@@ -720,6 +720,34 @@ async function parse3mf(filePath, options = {}) {
 
     const entries = zip.getEntries();
     if (!Array.isArray(entries)) throw new Error('无法读取 3MF 内的条目列表');
+
+    // 结构标记（只看条目名，不解压）：隔离区据此判断「压缩包能打开但缺东西」的情况
+    const lowerNames = entries.map((en) => String((en && en.entryName) || '').toLowerCase());
+    result.core = {
+      contentTypes: lowerNames.includes('[content_types].xml'),
+      rels: lowerNames.includes('_rels/.rels'),
+      model: lowerNames.some((n) => n === '3d/3dmodel.model' || n.endsWith('.model') || n.endsWith('.3dmodel')),
+      gcode: lowerNames.some((n) => /^metadata\/.*\.gcode$/.test(n)),
+    };
+    // 切片出来的盘文件（plate_1.3mf）里 3D/3dmodel.model 只是个空壳，几何只剩 G-code。
+    // 只有主文件里没有 <mesh> 时才去翻其它 .model 条目（Bambu 把网格放在 3D/Objects/），
+    // 正常的单文件 3MF 主文件里就有网格，不会多读任何条目。
+    result.core.mesh = false;
+    try {
+      const MAIN = '3d/3dmodel.model';
+      const isModelName = (n) => (n.endsWith('.model') || n.endsWith('.3dmodel'));
+      const main = entries.find((en) => en && !en.isDirectory && String(en.entryName).toLowerCase() === MAIN);
+      const hasMeshIn = (en) => {
+        if (!en || en.isDirectory) return false;
+        const size = Number(en.header.size) || 0;
+        if (size > opts.maxModelBytes) return true;          // 太大不读，按有网格处理
+        try { return /<mesh\b/.test(en.getData().toString('utf8')); }
+        catch (_) { return false; }
+      };
+      if (hasMeshIn(main)) result.core.mesh = true;
+      else result.core.mesh = entries.some((en) => en && !en.isDirectory
+        && isModelName(String(en.entryName).toLowerCase()) && hasMeshIn(en));
+    } catch (_) { result.core.mesh = result.core.model; }
 
     // _rels/.rels（失败仅降级，不影响整体）
     let relsXml = '';

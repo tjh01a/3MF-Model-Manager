@@ -13,6 +13,8 @@ const { IGNORE_DIRS, MAX_FILE_SIZE } = require('./constants');
 const { parse3mf } = require('./model3mf');
 const duplicates = require('./duplicates');
 const classify = require('./classify');
+const quarantine = require('./quarantine');
+const { brokenKindOf } = quarantine;
 
 const DEFAULT_OPTIONS = {
   concurrency: 4,
@@ -79,12 +81,14 @@ function normExclude(s) {
 }
 
 class Scanner extends EventEmitter {
-  constructor({ store, thumbs, options = {} } = {}) {
+  constructor({ store, thumbs, shapeIndex = null, options = {} } = {}) {
     super();
     if (!store) throw new Error('Scanner 初始化失败：缺少 store 依赖');
     if (!thumbs) throw new Error('Scanner 初始化失败：缺少 thumbs 依赖');
     this.store = store;
     this.thumbs = thumbs;
+    // A：几何指纹索引；有就在每轮扫描后顺手重算「同款变体」分组
+    this.shapeIndex = shapeIndex;
     // 只保存显式注入项，运行时再与 settings.scan / 默认值合并
     this.options = { ...(options || {}) };
     this._status = { running: false, phase: 'idle', current: 0, total: 0, message: '', startedAt: null };
@@ -113,7 +117,7 @@ class Scanner extends EventEmitter {
     }
     if (!dataDir) dataDir = corePaths.getDataDir();
     if (!dataDir) return [];
-    return ['thumbs', 'backups', 'logs', 'u1-cache']
+    return ['thumbs', 'backups', 'logs', 'u1-cache', 'quarantine']
       .map((n) => path.join(dataDir, n));
   }
 
@@ -348,8 +352,9 @@ class Scanner extends EventEmitter {
         if (folderId != null) folderCounts.set(folderId, (folderCounts.get(folderId) || 0) + 1);
 
         const prev = existingByPath.get(pk);
+        // 解析失败过的文件即使大小/时间没变也重试：用户可能已经手动替换过内容
         const unchanged = !force && prev && prev.status === 'ok'
-          && prev.size === rec.size && prev.mtime === rec.mtime;
+          && prev.size === rec.size && prev.mtime === rec.mtime && !prev.parseError;
         if (unchanged) {
           report.unchanged++;
           report.files.push({ path: item.path, action: 'unchanged' });
@@ -379,6 +384,8 @@ class Scanner extends EventEmitter {
           const pk = utils.pathKey(item.path);
           const id = utils.sha1(pk).slice(0, 20);
 
+          const brokenKind = brokenKindOf(parseResult, item.path);
+
           // 基于旧记录展开，保留全部人工字段；写回时还会跟当前库再合并一次。
           const record = {
             ...(prev || {}),
@@ -396,10 +403,20 @@ class Scanner extends EventEmitter {
             updatedAt: now,
             status: 'ok',                    // 磁盘文件恢复时置回 ok
             missingSince: null,
-            parseError: parseResult.ok ? null : (parseResult.error || '解析 3MF 失败'),
+            parseError: parseResult.ok
+              ? (brokenKind ? (quarantine.BROKEN_MESSAGES[brokenKind] || '文件结构异常') : null)
+              : (parseResult.error || '解析 3MF 失败'),
+            parseErrorKind: brokenKind,
             meta: parseResult.meta,
             thumbSource: parseResult.thumbnail ? parseResult.thumbnail.entry : null,
           };
+          // C：文件进了回收站的别名存根，如今文件又出现在原路径 → 当作恢复，解除别名。
+          // 必须显式写成 null：写回时会以「当前库里的记录」为底叠加，只 delete 的话旧值会被留下来。
+          if (prev && prev.aliasState === 'trashed') {
+            record.aliasOf = null;
+            record.aliasState = null;
+            record.aliasAt = null;
+          }
           // 只有解析成功才代表「确实没有重量」；解析失败写终态会让回填永久跳过（P1-7）。
           if (parseResult.ok === true && record.meta && record.meta.weightG == null) {
             record.meta.weightChecked = true;
@@ -516,6 +533,8 @@ class Scanner extends EventEmitter {
         // 失效检测：用当前记录的最新 path 复核，而不是旧快照里的 path。
         for (const r of Object.values(models)) {
           if (!r || !r.path || r.status === 'missing') continue;
+          if (r.status === 'quarantined') continue;           // B：隔离区里的文件不归这里管
+          if (r.aliasState === 'trashed') continue;           // C：文件已进回收站的别名存根
           if (diskPathKeys.has(utils.pathKey(r.path))) continue;
           if (!scannedDirs.some((sd) => isUnder(r.path, sd.root))) continue;
           let stillExists = false;
@@ -534,6 +553,13 @@ class Scanner extends EventEmitter {
         }
         const dup = duplicates.annotate(target);
         report.duplicateGroups = dup.groups;
+        report.broken = Object.values(models).filter((r) => r && r.parseErrorKind && !r.aliasOf && r.status !== 'missing').length;
+        // A：有几何指纹索引时顺带重算同款变体分组
+        if (this.shapeIndex && this.shapeIndex.size > 0) {
+          try {
+            this.shapeIndex.annotate(target, {});
+          } catch (_) { /* 变体分组失败不影响扫描 */ }
+        }
         // 实际写入条数以 mutator 内的结果为准，报告不要虚报。
         report.added = added;
         report.updated = updated;

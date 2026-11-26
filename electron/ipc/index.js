@@ -167,33 +167,23 @@ function registerIpc(services, { getWindow = () => null } = {}) {
     findRelinkCandidates: (id) => lib().findRelinkCandidates(id),
     undo: () => services.undo(),
 
-    trash: async (ids) => {
-      const list = Array.isArray(ids) ? ids : [ids];
-      const ok = [], failed = [];
-      for (const id of list) {
-        const rec = lib().get(id);
-        if (!rec) { failed.push({ id, error: '索引中找不到该模型' }); continue; }
-        let done = false;
-        try {
-          await shell.trashItem(rec.path);
-          done = true;
-        } catch (e1) {
-          try {
-            const r = await services.slicer.trash([rec.path]);
-            done = (r.ok || []).includes(rec.path);
-            if (!done) throw new Error(((r.failed || [])[0] || {}).error || '回收站操作失败');
-          } catch (e2) {
-            failed.push({ id, error: '移入回收站失败：' + e2.message });
-          }
-        }
-        if (done) ok.push(id);
-      }
-      if (ok.length) {
-        snap(ok);
-        await lib().remove(ok);
-      }
-      return { ok, failed };
-    },
+    // 移入回收站：成功后才移出索引。与隔离区、智能合并共用 services 里的同一份实现。
+    trash: (ids) => services.trashIds(ids),
+
+    // ---------------- 整理 · B 隔离区 / C 智能合并 / A 几何指纹 ----------------
+    brokenList: () => services.brokenList(),
+    brokenRetry: (ids) => services.brokenRetry(ids),
+    brokenRepair: (id, opts) => services.brokenRepair(id, opts || {}),
+    brokenQuarantine: (ids) => services.brokenQuarantine(ids),
+    brokenRestore: (ids) => services.brokenRestore(ids),
+    brokenForget: (ids) => services.brokenForget(ids),
+    shapeStatus: () => services.shapeStatus(),
+    shapeRun: (opts) => services.shapeRun(opts || {}),
+    shapeStop: () => services.shapeStop(),
+    dupMergePreview: () => services.mergePreview(),
+    dupMergeApply: (selection, opts) => services.mergeApply(selection || {}, opts || {}),
+    dupAliases: (id) => services.aliasesOf(id),
+    aliasDetach: (ids) => services.aliasDetach(ids),
 
     reveal: async (idOrPath) => {
       const rec = lib().get(idOrPath);

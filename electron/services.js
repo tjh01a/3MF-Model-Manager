@@ -6,6 +6,9 @@
 const fs = require('fs');
 const path = require('path');
 const EventEmitter = require('events');
+// shell 只有 Electron 主进程才有；core 层与测试都不依赖它
+let shell = null;
+try { shell = require('electron').shell; } catch (_) { shell = null; }
 
 const Store = require('../src/core/store');
 const LibraryService = require('../src/core/library');
@@ -26,6 +29,11 @@ const U1Converter = require('../src/core/u1convert');
 const { FilamentService, sniffImageExt } = require('../src/core/filaments');
 const { ReceiptService, matchModel, matchModelFuzzy } = require('../src/core/receipts');
 const cost = require('../src/core/cost');
+const quarantine = require('../src/core/quarantine');
+const merge = require('../src/core/merge');
+const { ShapeIndex, computeSignature } = require('../src/core/shapeprint');
+const { parse3mf } = require('../src/core/model3mf');
+const duplicates = require('../src/core/duplicates');
 
 class Services extends EventEmitter {
   constructor() {
@@ -61,7 +69,12 @@ class Services extends EventEmitter {
     await this.receipts.init();
     stage('data', 48);
     this.thumbs = new ThumbnailService({ store: this.store });
-    this.scanner = new Scanner({ store: this.store, thumbs: this.thumbs });
+    // A：几何指纹索引（独立文件，不进 library.json），扫描结束后顺手重算「同款变体」
+    this.shapeIndex = new ShapeIndex(path.join(cpaths.getDataDir(), 'shapeprints.json'));
+    this._shapeRunning = false;
+    this._shapeStop = false;
+    this._shapeTimer = null;
+    this.scanner = new Scanner({ store: this.store, thumbs: this.thumbs, shapeIndex: this.shapeIndex });
     this.slicer = new SlicerService({ store: this.store });
     // 快造 U1 转换：预设解析 + 转换编排（转换本身跑在 worker 线程里）
     this.orcapresets = new OrcaPresets({ store: this.store });
@@ -97,6 +110,10 @@ class Services extends EventEmitter {
       message: '扫描出错：' + (e && e.message ? e.message : String(e)),
     }));
     this.scanner.on('error', () => { this._scanning = false; });
+    this.scanner.on('done', (report) => {
+      // A：有新模型入库时，等一会儿在后台补算几何指纹（不抢扫描刚结束时的那口气）
+      if (report && (report.added || report.updated)) this.scheduleShapeRun(8000);
+    });
     this.store.on('change', (p) => this.emitToRenderer('lib:changed', p || { reason: 'update' }));
     this.store.on('settings', () => { /* 设置由设置页自行重取，避免整库刷新 */ });
     this.store.on('error', (e) => this.emitToRenderer('app:toast', {
@@ -142,10 +159,15 @@ class Services extends EventEmitter {
     try { this.watcher.start(); } catch (e) {
       this.emitToRenderer('app:toast', { type: 'warn', message: '目录自动监视启动失败：' + e.message });
     }
+    // A：首屏画完后补算几何指纹（只算还没有的；设置里关掉就不跑）
+    this.scheduleShapeRun(4000);
   }
 
   async shutdown() {
     // 先停采样并把队列里的曲线点落盘，再断打印机连接
+    try { this._shapeStop = true; } catch (_) { /* 忽略 */ }
+    try { if (this._shapeTimer) clearTimeout(this._shapeTimer); } catch (_) { /* 忽略 */ }
+    try { if (this.shapeIndex) this.shapeIndex.flush(); } catch (_) { /* 忽略 */ }
     try { if (this.monitor) this.monitor.stop(); } catch (_) { /* 忽略 */ }
     try { if (this.printers) this.printers.stop(); } catch (_) { /* 忽略 */ }
     try { if (this.watcher) await this.watcher.stop(); } catch (_) { /* 忽略 */ }
@@ -553,7 +575,7 @@ class Services extends EventEmitter {
   /** monitor 'job' 终态 → 落回执；成功且匹配到模型时自动回写状态（用户 2026-11-16 确认） */
   async _onPrintJob(j) {
     if (!j) return null;
-    const models = this.store.getLibrary().models || {};
+    const models = this._liveModels();
 
     // 精确匹配优先；精确不中再走「名字大致匹配」——分多次打印会让同一模型出现
     // _plate_2 / (3) / 尾部编号等变体，只用精确匹配会全落空（用户 2026-11-24 反馈）。
@@ -624,7 +646,7 @@ class Services extends EventEmitter {
   async receiptsBackfillFromMonitor() {
     let list = [];
     try { list = this.monitor.missedCompletions(120) || []; } catch (_) { return { ok: false, created: 0 }; }
-    const models = this.store.getLibrary().models || {};
+    const models = this._liveModels();
     const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
     let created = 0;
     for (const s of list) {
@@ -678,7 +700,7 @@ class Services extends EventEmitter {
    * 只写 modelId/modelTitle，不动成本与用料快照——那些是打印当时的事实。
    */
   async receiptsAutoLink() {
-    const models = this.store.getLibrary().models || {};
+    const models = this._liveModels();
     const items = this.receipts.list();
     const pending = items.filter((r) => r && !r.modelId && r.jobName);
     let linked = 0;
@@ -1270,6 +1292,393 @@ class Services extends EventEmitter {
       slicerName: sl.name,
       presetWarning,
     };
+  }
+
+  // ---------------------------------------------------------------- 整理 · B 隔离区 / C 智能合并 / A 几何指纹
+
+  /** 回执匹配用的模型列表：别名、失效、已隔离的都不参与（否则合并后同名副本会让「唯一匹配」失效） */
+  _liveModels() {
+    const models = (this.store.getLibrary() || {}).models || {};
+    return Object.values(models).filter((m) => m && !m.aliasOf && m.status !== 'missing' && m.status !== 'quarantined');
+  }
+
+  /**
+   * 把记录移入系统回收站（Electron shell 优先，退回 PowerShell），成功后才移出索引。
+   * 重复文件视图、隔离区共用这一处。
+   */
+  async trashIds(ids) {
+    const list = Array.isArray(ids) ? ids : [ids];
+    const ok = [], failed = [];
+    let bytes = 0;
+    for (const id of list) {
+      const rec = this.library.get(id);
+      if (!rec) { failed.push({ id, error: '索引中找不到该模型' }); continue; }
+      let done = false;
+      try {
+        await shell.trashItem(rec.path);
+        done = true;
+      } catch (e1) {
+        try {
+          const r = await this.slicer.trash([rec.path]);
+          done = (r.ok || []).includes(rec.path);
+          if (!done) throw new Error(((r.failed || [])[0] || {}).error || '回收站操作失败');
+        } catch (e2) {
+          failed.push({ id, error: '移入回收站失败：' + e2.message });
+        }
+      }
+      if (done) { ok.push(id); bytes += Number(rec.size) || 0; }
+    }
+    if (ok.length) {
+      try { this.snapshot(ok); } catch (_) { /* 忽略 */ }
+      await this.library.remove(ok);
+    }
+    return { ok, failed, bytes };
+  }
+
+  _quarantineDir() {
+    const s = (this.store.getSettings() || {}).quarantine || {};
+    const d = String(s.dir || '').trim();
+    return d || path.join(cpaths.getDataDir(), 'quarantine');
+  }
+
+  brokenList() {
+    return quarantine.brokenItems(this.store.getLibrary());
+  }
+
+  /** 重新解析：文件被手动替换 / 修好之后用。成功则清除坏文件标记并刷新元数据与缩略图。 */
+  async brokenRetry(ids) {
+    const list = Array.isArray(ids) ? ids : [ids];
+    const ok = [], still = [], missing = [];
+    for (const id of list) {
+      const rec = this.library.get(id);
+      if (!rec) { still.push({ id, error: '找不到该模型' }); continue; }
+      if (!fs.existsSync(rec.path)) {
+        missing.push(id);
+        await this.store.updateLibrary((lib) => {
+          const r = lib.models[id];
+          if (r) { r.status = 'missing'; r.missingSince = U.now(); r.updatedAt = U.now(); }
+        }, 'broken-retry');
+        continue;
+      }
+      const p = await parse3mf(rec.path, { withThumbnail: true });
+      const kind = quarantine.brokenKindOf(p, rec.path);
+      if (p.ok !== true || kind) {
+        still.push({ id, kind, error: p.ok === true ? (quarantine.BROKEN_MESSAGES[kind] || '文件结构异常') : p.error });
+      }
+      let thumbFile = null;
+      if (p.ok === true && !kind) {
+        try { thumbFile = await this.thumbs.ensureFor(rec, { force: true, parseResult: p }); } catch (_) { thumbFile = null; }
+      }
+      let hash = rec.hash;
+      if (p.ok === true) { try { hash = await U.hashFile(rec.path); } catch (_) { /* 保留旧值 */ } }
+      await this.store.updateLibrary((lib) => {
+        const r = lib.models[id];
+        if (!r) return;
+        const now = U.now();
+        r.updatedAt = now;
+        if (p.ok === true && !kind) {
+          r.parseError = null;
+          r.parseErrorKind = null;
+          r.meta = p.meta;
+          r.thumbSource = p.thumbnail ? p.thumbnail.entry : null;
+          if (thumbFile) r.thumbnail = thumbFile;
+          r.hash = hash;
+          ok.push(id);
+        } else {
+          r.parseError = p.ok === true ? (quarantine.BROKEN_MESSAGES[kind] || '文件结构异常') : (p.error || '解析 3MF 失败');
+          r.parseErrorKind = kind || 'unknown';
+        }
+      }, 'broken-retry');
+    }
+    if (ok.length) {
+      await this.store.updateLibrary((lib) => { duplicates.annotate(lib); }, 'broken-retry');
+    }
+    return { ok, still, missing };
+  }
+
+  /**
+   * 尝试修复：永远输出到新文件，原文件不动。
+   * replace=true 时才替换：原文件先改名为 <名字>.broken.bak（同目录、非 .3mf 后缀，不会被重新扫描），再让修复版顶上。
+   */
+  async brokenRepair(id, opts = {}) {
+    const rec = this.library.get(id);
+    if (!rec) throw new Error('找不到该模型');
+    if (!fs.existsSync(rec.path)) throw new Error('文件已不存在：' + rec.path);
+    if (rec.status === 'quarantined') throw new Error('文件在隔离区里，请先移回原处再修复');
+    const diag = quarantine.diagnose3mf(rec.path);
+    const outPath = rec.path.replace(/\.3mf$/i, '.repaired.3mf');
+    const r = quarantine.repair3mf(rec.path, outPath, diag);
+    const result = { ok: true, outPath: r.outPath, skipped: r.skipped, injected: r.injected, replaced: false, backupPath: '' };
+    if (opts.replace) {
+      const backup = rec.path.replace(/\.3mf$/i, '.broken.bak');
+      fs.renameSync(rec.path, quarantine.uniqueSuffix(backup));
+      fs.renameSync(r.outPath, rec.path);
+      result.replaced = true;
+      result.backupPath = backup;
+      result.outPath = rec.path;
+      const retry = await this.brokenRetry([id]);
+      if (!retry.ok.includes(id)) {
+        // 修复版竟然解析不了：把原文件放回去，别让用户两头落空
+        try { fs.renameSync(rec.path, r.outPath); fs.renameSync(backup, rec.path); } catch (_) { /* 尽力回滚 */ }
+        result.replaced = false;
+        result.outPath = r.outPath;
+        throw new Error('修复版仍然无法读取，已把原文件放回去。修复产物保留在：' + r.outPath);
+      }
+    }
+    return result;
+  }
+
+  /** 移入隔离区：文件挪到隔离目录，记录跟着走；之后不出现在普通视图，也不会被判成失效 */
+  async brokenQuarantine(ids) {
+    const list = Array.isArray(ids) ? ids : [ids];
+    const dir = this._quarantineDir();
+    const ok = [], failed = [];
+    const moves = [];
+    for (const id of list) {
+      const rec = this.library.get(id);
+      if (!rec) { failed.push({ id, error: '找不到该模型' }); continue; }
+      if (rec.status === 'quarantined') { ok.push(id); continue; }
+      if (!fs.existsSync(rec.path)) { failed.push({ id, error: '文件已不存在' }); continue; }
+      try {
+        const dst = quarantine.moveFile(rec.path, path.join(dir, rec.fileName || path.basename(rec.path)));
+        moves.push({ id, from: rec.path, to: dst });
+        ok.push(id);
+      } catch (e) {
+        failed.push({ id, error: '移动失败：' + e.message });
+      }
+    }
+    if (moves.length) {
+      try { this.snapshot(moves.map((m) => m.id)); } catch (_) { /* 忽略 */ }
+      await this.store.updateLibrary((lib) => {
+        const now = U.now();
+        for (const m of moves) {
+          const r = lib.models[m.id];
+          if (!r) continue;
+          r.origPath = r.origPath || m.from;
+          r.path = m.to;
+          r.status = 'quarantined';
+          r.quarantinedAt = now;
+          r.relativePath = null;
+          r.updatedAt = now;
+        }
+        duplicates.annotate(lib);
+      }, 'broken-quarantine');
+    }
+    return { ok, failed, dir };
+  }
+
+  /** 从隔离区移回原处 */
+  async brokenRestore(ids) {
+    const list = Array.isArray(ids) ? ids : [ids];
+    const ok = [], failed = [];
+    const moves = [];
+    const settings = this.store.getSettings() || {};
+    for (const id of list) {
+      const rec = this.library.get(id);
+      if (!rec) { failed.push({ id, error: '找不到该模型' }); continue; }
+      if (rec.status !== 'quarantined') { ok.push(id); continue; }
+      const target = rec.origPath;
+      if (!target) { failed.push({ id, error: '没有记录原来的位置，无法移回' }); continue; }
+      if (!fs.existsSync(rec.path)) { failed.push({ id, error: '隔离区里的文件已不存在' }); continue; }
+      try {
+        const dst = quarantine.moveFile(rec.path, target);
+        moves.push({ id, to: dst });
+        ok.push(id);
+      } catch (e) {
+        failed.push({ id, error: '移回失败：' + e.message });
+      }
+    }
+    if (moves.length) {
+      try { this.snapshot(moves.map((m) => m.id)); } catch (_) { /* 忽略 */ }
+      await this.store.updateLibrary((lib) => {
+        const now = U.now();
+        for (const m of moves) {
+          const r = lib.models[m.id];
+          if (!r) continue;
+          r.path = m.to;
+          r.status = 'ok';
+          r.quarantinedAt = null;
+          delete r.origPath;
+          r.updatedAt = now;
+          const st = fs.existsSync(m.to) ? fs.statSync(m.to) : null;
+          if (st) { r.size = st.size; r.mtime = Math.round(st.mtimeMs); }
+          // 相对路径：沿用监控目录的口径
+          const folders = Array.isArray(settings.folders) ? settings.folders : [];
+          const f = folders.find((x) => x && x.path && U.pathKey(m.to).startsWith(U.pathKey(x.path)));
+          r.relativePath = f ? path.relative(U.normalizePath(f.path), m.to) : path.basename(m.to);
+        }
+        duplicates.annotate(lib);
+      }, 'broken-restore');
+    }
+    return { ok, failed };
+  }
+
+  async brokenForget(ids) {
+    const list = Array.isArray(ids) ? ids : [ids];
+    try { this.snapshot(list); } catch (_) { /* 忽略 */ }
+    return this.library.remove(list);
+  }
+
+  // ---- A · 几何指纹 ----
+
+  shapeEnabled() {
+    const s = (this.store.getSettings() || {}).scan || {};
+    return s.shapePrint !== false;
+  }
+
+  /** 还没算过（或文件变了要重算）的模型 */
+  _shapeTargets(force) {
+    const models = (this.store.getLibrary() || {}).models || {};
+    const out = [];
+    for (const r of Object.values(models)) {
+      if (!r || r.aliasOf || !r.path) continue;
+      if (r.status !== 'ok' || r.parseErrorKind) continue;
+      const sig = this.shapeIndex.get(r.id);
+      // 算过失败的（切片文件没有网格等）不重复算，除非手动点「重新计算」
+      if (force || !sig || (sig.s && r.hash && sig.s !== r.hash)) out.push(r);
+    }
+    return out;
+  }
+
+  shapeStatus() {
+    const st = this.shapeIndex.status();
+    const targets = this._shapeTargets(false);
+    return {
+      total: st.total, failed: st.failed, pending: targets.length,
+      running: !!this._shapeRunning, enabled: this.shapeEnabled(),
+    };
+  }
+
+  scheduleShapeRun(delayMs) {
+    if (this._shapeTimer) clearTimeout(this._shapeTimer);
+    this._shapeTimer = setTimeout(() => {
+      this._shapeTimer = null;
+      try { this.shapeRun({}); } catch (_) { /* 忽略 */ }
+    }, Math.max(500, Number(delayMs) || 4000));
+    if (this._shapeTimer.unref) this._shapeTimer.unref();
+  }
+
+  /** 后台补算几何指纹。同一时刻只跑一个；stop 可以中途停。 */
+  shapeRun({ force = false } = {}) {
+    if (this._shapeRunning) return { started: false, reason: '正在计算中' };
+    if (!force && !this.shapeEnabled()) return { started: false, reason: '已在设置里关闭' };
+    const targets = this._shapeTargets(!!force);
+    if (!targets.length) {
+      // 没有要算的，也顺手按现有指纹重算一次分组（比如扫描刚加进来的记录）
+      this._annotateVariants().catch(() => {});
+      return { started: false, reason: '没有需要计算的模型', pending: 0 };
+    }
+    this._shapeRunning = true;
+    this._shapeStop = false;
+    let done = 0;
+    let failed = 0;
+    const total = targets.length;
+    setImmediate(async () => {
+      for (const rec of targets) {
+        if (this._shapeStop) break;
+        try {
+          const sig = computeSignature(rec.path);
+          if (sig.failed) {
+            failed++;
+            // 切片盘文件没有网格，属于正常情况，不算「失败」
+            this.shapeIndex.set(rec.id, { failed: sig.failed, s: rec.hash || null, t: U.now() });
+          } else {
+            this.shapeIndex.set(rec.id, Object.assign(sig, { s: rec.hash || null, t: U.now() }));
+            done++;
+          }
+        } catch (e) {
+          failed++;
+          this.shapeIndex.set(rec.id, { failed: 'read-error', detail: String((e && e.message) || e), s: rec.hash || null, t: U.now() });
+        }
+        if ((done + failed) % 10 === 0) this.shapeIndex.flush();
+        // 让出事件循环，别把界面卡住
+        await new Promise((r) => setImmediate(r));
+      }
+      this.shapeIndex.flush();
+      this._shapeRunning = false;
+      const ann = await this._annotateVariants();
+      const stopped = this._shapeStop;
+      if ((done || failed || force) && !stopped) {
+        this.emitToRenderer('app:toast', {
+          type: 'info',
+          message: '几何指纹已计算 ' + done + ' 个模型' + (failed ? '，' + failed + ' 个没有 3D 网格已跳过' : '')
+            + (ann && ann.groups ? '，发现 ' + ann.groups + ' 组同款变体' : ''),
+          duration: 5000,
+        });
+      }
+    });
+    return { started: true, pending: total };
+  }
+
+  shapeStop() {
+    this._shapeStop = true;
+    return { ok: true };
+  }
+
+  /** 按现有指纹重算「同款变体」分组并写回库。返回 { groups, members }。 */
+  async _annotateVariants() {
+    if (!this.shapeIndex || this.shapeIndex.size === 0) return null;
+    let out = null;
+    await this.store.updateLibrary((lib) => {
+      try { out = this.shapeIndex.annotate(lib, {}); } catch (_) { out = null; }
+    }, 'variants');
+    this.shapeIndex.flush();
+    return out;
+  }
+
+  // ---- C · 重复模型智能合并 ----
+
+  mergePreview() {
+    const lib = this.store.getLibrary();
+    return { groups: merge.buildGroups(lib).map(merge.toClientGroup), summary: merge.summarize(lib) };
+  }
+
+  /**
+   * selection: { [groupKey]: keepId }；opts.trash = true 时先把别名文件移入回收站。
+   * 回收站一条失败一条：成功的降为「已回收」别名，失败的保持独立记录。
+   */
+  async mergeApply(selection = {}, opts = {}) {
+    const plan = merge.planMerge(this.store.getLibrary(), selection || {});
+    if (!plan.items.length) return { merged: 0, shadow: 0, trashed: 0, freedBytes: 0, failed: [], skipped: [] };
+    try { this.snapshot(plan.aliasIds.concat(plan.keepIds)); } catch (_) { /* 忽略 */ }
+    let outcome = null;
+    if (opts.trash) {
+      outcome = {};
+      for (const a of plan.aliasIds) {
+        const rec = this.library.get(a.id);
+        if (!rec || !fs.existsSync(rec.path)) { outcome[a.id] = { ok: false, error: '文件已不存在' }; continue; }
+        let done = false;
+        try {
+          await shell.trashItem(rec.path);
+          done = true;
+        } catch (e1) {
+          try {
+            const r = await this.slicer.trash([rec.path]);
+            done = (r.ok || []).includes(rec.path);
+            if (!done) throw new Error(((r.failed || [])[0] || {}).error || '回收站操作失败');
+          } catch (e2) {
+            outcome[a.id] = { ok: false, error: '移入回收站失败：' + e2.message };
+          }
+        }
+        if (done) outcome[a.id] = { ok: true };
+      }
+    }
+    let result = null;
+    await this.store.updateLibrary((lib) => { result = merge.applyMergeInLibrary(lib, plan, outcome); }, 'dup-merge');
+    return result;
+  }
+
+  aliasesOf(id) {
+    return this.library.aliasesOf(id).map((r) => ({
+      id: r.id, fileName: r.fileName || '', title: r.title || '', path: r.path || '', size: r.size,
+      thumbnail: r.thumbnail || null, note: r.note || '', aliasState: r.aliasState || 'shadow', aliasAt: r.aliasAt || null,
+    }));
+  }
+
+  async aliasDetach(ids) {
+    const r = await this.library.detachAliases(ids);
+    if (r.detached) await this.store.updateLibrary((lib) => { duplicates.annotate(lib); }, 'alias-detach');
+    return r;
   }
 
   /** 把优化结果纳入模型库：必要时登记它所在的目录并重扫一次 */
