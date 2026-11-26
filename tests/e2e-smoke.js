@@ -85,6 +85,9 @@ function group(n) { console.log('\n' + n); }
     await svc.init({ autoWatch: false });
     ok(svc.initialized);
     ok(fs.existsSync(paths.getLibraryPath()));
+    // 默认 scan.dropMissing=true 会把删掉的文件直接移出库；本套要验证 missing → 重新定位的旧流程，
+    // 所以显式关掉。默认模式的覆盖在 tests/run-tests.js「文件消失（默认模式）」里。
+    await svc.store.updateSettings({ scan: { dropMissing: false } });
   });
   await t('添加自包含样本目录为监控目录', async () => {
     const f = await svc.folderAdd(scanRoot);

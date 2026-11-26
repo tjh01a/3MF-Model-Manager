@@ -201,7 +201,7 @@ class Scanner extends EventEmitter {
     // 扫描时的即时分类以前没有，会把不存在的 categoryId 写进新记录。
     const autoLiveIds = new Set(autoCategories.map((c) => c.id));
     const report = {
-      added: 0, updated: 0, unchanged: 0, missing: 0, failed: 0,
+      added: 0, updated: 0, unchanged: 0, missing: 0, removed: 0, failed: 0,
       duration: 0, files: [], duplicateGroups: 0, autoClassified: 0,
     };
 
@@ -531,6 +531,11 @@ class Scanner extends EventEmitter {
         }
 
         // 失效检测：用当前记录的最新 path 复核，而不是旧快照里的 path。
+        // scan.dropMissing（默认 true）：文件被删掉就直接移出库，不再留在「失效文件」里。
+        // 关掉这个开关则退回旧行为：标 missing、保留备注与打印记录，等用户重新定位。
+        const scanCfg = ((this.store.getSettings && this.store.getSettings()) || {}).scan || {};
+        const dropMissing = scanCfg.dropMissing !== false;
+        const removedIds = [];
         for (const r of Object.values(models)) {
           if (!r || !r.path || r.status === 'missing') continue;
           if (r.status === 'quarantined') continue;           // B：隔离区里的文件不归这里管
@@ -540,11 +545,22 @@ class Scanner extends EventEmitter {
           let stillExists = false;
           try { await fsp.stat(r.path); stillExists = true; } catch (_) { stillExists = false; }
           if (stillExists) continue;
+          if (dropMissing) {
+            delete models[r.id];
+            removedIds.push(r.id);
+            report.removed++;
+            report.files.push({ path: r.path, action: 'removed' });
+            continue;
+          }
           r.status = 'missing';
           r.missingSince = nowMs;
           r.updatedAt = nowMs;
           report.missing++;
           report.files.push({ path: r.path, action: 'missing' });
+        }
+        // 顺手清掉这些模型在几何指纹索引里的条目，别让已删除的记录继续参与同款分组
+        if (removedIds.length && this.shapeIndex && typeof this.shapeIndex.remove === 'function') {
+          try { this.shapeIndex.remove(removedIds); } catch (_) { /* 索引清理失败不影响扫描 */ }
         }
 
         if (!target.scanMeta) target.scanMeta = {};

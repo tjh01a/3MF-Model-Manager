@@ -190,20 +190,34 @@ class FolderWatcher {
       try { await this.scanner.scanFolder(folder); } catch (_) { /* 单目录失败不中断 */ }
     }
 
-    // unlink -> 通过 store.updateLibrary 标记 missing（保留全部字段，不删除）
+    // unlink -> 默认直接移出模型库（scan.dropMissing）；关掉开关则退回旧行为：
+    // 标 missing 并保留全部字段，等用户重新定位。隔离中 / 回收站别名存根不动。
     if (unlinkKeys.size) {
       const now = utils.now();
+      const scanCfg = ((this.store.getSettings && this.store.getSettings()) || {}).scan || {};
+      const dropMissing = scanCfg.dropMissing !== false;
+      const removedIds = [];
       try {
         await this.store.updateLibrary((lib) => {
           const models = lib.models || (lib.models = {});
           for (const r of Object.values(models)) {
-            if (r && r.path && r.status !== 'missing' && unlinkKeys.has(utils.pathKey(r.path))) {
-              r.status = 'missing';
-              r.missingSince = now;
-              r.updatedAt = now;
+            if (!r || !r.path || r.status === 'missing') continue;
+            if (r.status === 'quarantined') continue;
+            if (r.aliasState === 'trashed') continue;
+            if (!unlinkKeys.has(utils.pathKey(r.path))) continue;
+            if (dropMissing) {
+              delete models[r.id];
+              removedIds.push(r.id);
+              continue;
             }
+            r.status = 'missing';
+            r.missingSince = now;
+            r.updatedAt = now;
           }
         });
+        if (removedIds.length && this.scanner && this.scanner.shapeIndex) {
+          this.scanner.shapeIndex.remove(removedIds);
+        }
       } catch (_) { /* 写库失败不中断 */ }
     }
 

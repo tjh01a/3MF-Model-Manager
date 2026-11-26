@@ -154,6 +154,9 @@ const DEFAULT_SETTINGS = {
     excludeDirs: [], maxDepth: 12, autoWatch: true,
     hashEnabled: true, parseMeta: true, concurrency: 4,
     shapePrint: true,      // A · 几何指纹：后台计算「同款变体」
+    // 文件在监控目录里被删除后：true = 直接移出模型库（不显示也不计数）；
+    // false = 保留为「失效文件」，可重新定位（备注/分类/打印记录不丢）
+    dropMissing: true,
   },
   // B · 隔离区：dir 留空 = 数据目录下的 quarantine/
   quarantine: { dir: '' },

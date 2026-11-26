@@ -110,7 +110,11 @@ function renderFolders() {
       ) +
       row(
         sw(tr('后台计算几何指纹（识别同款变体）'), scan.shapePrint !== false, 'data-bind="scan.shapePrint" data-kind="bool"')
-      )
+      ) +
+      row(
+        sw(tr('文件被删除后直接移出模型库'), scan.dropMissing !== false, 'data-bind="scan.dropMissing" data-kind="bool"')
+      ) +
+      '<p class="hint">' + tr('开启后：在资源管理器里删掉 3MF，下次扫描或监控到删除时会直接把这条记录移出模型库（不再出现在「失效文件」，也不计数）。关闭后：保留为「失效文件」，可以重新定位，备注、分类和打印记录都不会丢。注意：移动或重命名文件在开启时会被当作「旧文件已删除」，备注等人工字段不会跟着走。') + '</p>'
     ) +
     sec(tr('隔离区'),
       row(field(tr('隔离目录'),

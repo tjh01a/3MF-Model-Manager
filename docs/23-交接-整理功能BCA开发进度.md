@@ -86,3 +86,10 @@ node launch.js --capture=%TEMP%/probe-variants.png --ui-script=tools/probe-varia
 - 探针：`probe-broken` 18 条断言、`probe-merge` 20 条、`probe-variants` 13 条，全绿；截图在 `%TEMP%/probe-*.png`（样本缩略图是 1x1 红点，卡片大红块是夹具现象，不是回归）。
 - 文档：`09` §15 + §12.2，`03` IPC 表，`18` 变更记录，README 中英。
 - 还没做：GitHub 推送 / 打包 1.2.1 / 真实库跑一遍三视图（建议先备份 `data/`）。
+
+## 8. 追加：删除文件默认移出库（2026-11-26）
+
+- 新增 `scan.dropMissing`（默认 `true`）：监控目录里的 3MF 被删/改名/移走时，扫描器与 watcher 直接移出记录并清指纹，不再进「失效文件」；关掉则退回旧的 missing→重新定位流程（保留备注/分类/打印记录）。
+- 设置页「扫描选项」加了开关和风险提示（移动/重命名会被当成删旧建新）。
+- 已有历史 `missing` 记录不会被自动清掉，「失效文件」视图仍可用；要清理得手动「移出索引」。
+- 测试：`run-tests` 两种模式各一条、`robustness-tests` watcher unlink 两条、`probe-drop-missing.js` UI 走查；全量 573 条 0 失败。

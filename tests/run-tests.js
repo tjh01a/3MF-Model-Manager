@@ -626,19 +626,39 @@ function group(name) { console.log('\n' + name); }
     const r = await scanner.scanAll({ force: true });
     ok(r.updated >= 2, 'force 应触发更新：' + r.updated);
   });
-  await t('文件消失 → 标记 missing 且保留人工字段', async () => {
+  await t('文件消失（保留失效模式） → 标记 missing 且保留人工字段', async () => {
+    await store.updateSettings({ scan: { dropMissing: false } });   // 显式关掉「删了就移出」，验证旧流程仍在
     const target = fs.readdirSync(modelDir).find((f) => f.endsWith('.3mf'));
     const full = path.join(modelDir, target);
-    const before = Object.values(store.getLibrary().models).find((m) => U.pathKey(m.path) === U.pathKey(full));
-    ok(before, '应能在索引中找到该文件');
-    await lib.update(before.id, { note: '重要备注' });
-    fs.renameSync(full, full + '.bak');
+    try {
+      const before = Object.values(store.getLibrary().models).find((m) => U.pathKey(m.path) === U.pathKey(full));
+      ok(before, '应能在索引中找到该文件');
+      await lib.update(before.id, { note: '重要备注' });
+      fs.renameSync(full, full + '.bak');
+      const r = await scanner.scanAll({ force: false });
+      ok(r.missing >= 1, '应检测到失效：' + r.missing);
+      const rec = lib.get(before.id);
+      eq(rec.status, 'missing');
+      eq(rec.note, '重要备注', '失效不应丢备注');
+    } finally {
+      if (fs.existsSync(full + '.bak')) fs.renameSync(full + '.bak', full);
+      await store.updateSettings({ scan: { dropMissing: true } });
+    }
+  });
+  await t('文件消失（默认模式） → 直接移出模型库，不再占统计', async () => {
+    await store.updateSettings({ scan: { dropMissing: true } });
+    const dropPath = path.join(modelDir, 'drop-me.3mf');
+    fs.copyFileSync(SAMPLE.normal, dropPath);
+    await scanner.scanAll({ force: false });
+    const rec = Object.values(store.getLibrary().models).find((m) => U.pathKey(m.path) === U.pathKey(dropPath));
+    ok(rec, '临时样本未入库');
+    const totalBefore = lib.stats().total;
+    fs.unlinkSync(dropPath);
     const r = await scanner.scanAll({ force: false });
-    ok(r.missing >= 1, '应检测到失效：' + r.missing);
-    const rec = lib.get(before.id);
-    eq(rec.status, 'missing');
-    eq(rec.note, '重要备注', '失效不应丢备注');
-    fs.renameSync(full + '.bak', full);
+    ok(r.removed >= 1, '应计入 removed：' + r.removed);
+    eq(lib.get(rec.id), null, '记录应已移出库');
+    eq(lib.stats().total, totalBefore - 1, '总数应减一');
+    eq(lib.query({ smart: 'missing' }).total, 0, '「失效文件」里不应再出现');
   });
   await t('cancel：运行中才置取消标记，空闲时无副作用', () => {
     ok(scanner.getStatus().running === false, '此刻不应在扫描');

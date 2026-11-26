@@ -1899,6 +1899,8 @@ export default {
   "同一个模型改了颜色、放大缩小、换个姿势重新导出，文件名和哈希都会变，但形状是一样的。软件会在后台按形状比对，把这类文件归到这里。": "A model recolored, scaled or re-exported from another angle keeps the same shape even though name and hash change. The app compares shapes in the background and groups them here.",
   "同款变体": "Variants",
   "后台计算几何指纹（识别同款变体）": "Compute shape fingerprints in the background (find variants)",
+  "文件被删除后直接移出模型库": "Remove records when files are deleted",
+  "开启后：在资源管理器里删掉 3MF，下次扫描或监控到删除时会直接把这条记录移出模型库（不再出现在「失效文件」，也不计数）。关闭后：保留为「失效文件」，可以重新定位，备注、分类和打印记录都不会丢。注意：移动或重命名文件在开启时会被当作「旧文件已删除」，备注等人工字段不会跟着走。": "On: deleting a 3MF in Explorer removes the record at the next scan or when the folder watcher sees the deletion, so it no longer shows under Damaged/Missing files and is not counted. Off: the record is kept as Missing and can be re-linked, preserving notes, categories and print history. Note: with this on, moving or renaming a file counts as deleting the old file and adding a new one, so manual metadata does not follow.",
   "如果它的文件已经在回收站里，请到系统回收站还原后再扫描一次；这里只解除记录关系，不会替你取回文件。": "If its file is already in the Recycle Bin, restore it there and rescan; detaching only changes records and cannot bring the file back.",
   "尝试修复": "Try repair",
   "已合并 ": "Merged ",

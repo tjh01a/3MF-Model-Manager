@@ -58,6 +58,7 @@ The project folder is still named `PrintShelf` locally; that is a historical pac
 - **Duplicates stay quiet**: identical files collapse into one card; open Details to switch copies, or pick a primary and merge the rest into aliases (optionally sending their files to the Recycle Bin).
 - **Damaged files have a home**: 3MF files that fail to parse appear under **Damaged files**, where you can retry, attempt a repair, quarantine them, or recycle them instead of leaving a placeholder card unmanaged.
 - **Variants**: files with the same mesh shape (recolored, scaled, re-exported) are grouped under **Variants**, regardless of file name, and can be merged once confirmed.
+- **Deleting means deleting**: remove a 3MF in Explorer and the record is dropped from the library by default — it no longer appears under Missing files and the total goes down. To keep notes, categories and print history for later re-linking, turn this off under Settings → Scan; with it on, moving or renaming a file counts as delete + add, so manual metadata does not follow.
 - **Source pages are recognized**: MakerWorld links appear on the card. If the 3MF description has no URL, `DesignModelId` is used to look up the model page.
 - **Print status and notes**: mark models as printed, record print counts, write notes and rate models in Details.
 - **Rough cost estimates**: Chinese installs include three sample filaments; English installs start empty. Add your own filaments, set a default, and estimate cost from model weight. Hover the swatch to see per-color shares.

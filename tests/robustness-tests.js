@@ -198,6 +198,31 @@ async function testWatcher() {
   await sleep(1300);
   ok('扫描进行中时不调用 scanFolder', calls.length === before, String(calls.length - before));
 
+  // 删除文件：默认直接移出库；关掉 dropMissing 则标 missing
+  fakeRunning = false;   // 上一段模拟了「扫描中让路」，这里要放行
+  const gonePath = path.join(watchDir, 'gone.3mf');
+  fs.writeFileSync(gonePath, 'gone');
+  await store.updateLibrary((lib) => {
+    lib.models.gone = { id: 'gone', path: gonePath, status: 'ok', meta: {} };
+  });
+  await sleep(500);          // 让 chokidar 先看见这个文件，否则 add+unlink 可能并成一次
+  fs.unlinkSync(gonePath);
+  await sleep(1400);
+  ok('unlink 后记录直接移出库', !store.getLibrary().models.gone);
+
+  const keepPath = path.join(watchDir, 'keep.3mf');
+  fs.writeFileSync(keepPath, 'keep');
+  await store.updateSettings({ scan: { dropMissing: false } });
+  await store.updateLibrary((lib) => {
+    lib.models.keep = { id: 'keep', path: keepPath, status: 'ok', meta: {} };
+  });
+  await sleep(500);
+  fs.unlinkSync(keepPath);
+  await sleep(1400);
+  const kept = store.getLibrary().models.keep;
+  ok('dropMissing=false 时 unlink 标 missing 且保留记录', kept && kept.status === 'missing', kept && kept.status);
+  await store.updateSettings({ scan: { dropMissing: true } });
+
   await watcher.stop();
   ok('stop 后不再运行', watcher.isRunning() === false);
 }
