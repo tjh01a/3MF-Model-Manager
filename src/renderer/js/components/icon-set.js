@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 图标集回退数据 —— 由 tools/icons/apply-sprite.js 生成，请勿手工编辑。
  *
@@ -154,7 +156,7 @@ export function applyIconSet(set) {
     '<symbol id="' + id + '" viewBox="0 0 24 24">' + table[id] + '</symbol>').join('');
   const nodes = parseSymbols(html);
   if (!nodes || nodes.length !== Object.keys(table).length) {
-    console.warn('[icon-set] sprite 解析失败，保持原有图标');
+    console.warn(tr('[icon-set] sprite 解析失败，保持原有图标'));
     return root.dataset.iconset;
   }
   sprite.replaceChildren(...nodes);

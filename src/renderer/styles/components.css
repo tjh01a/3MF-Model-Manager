@@ -110,6 +110,10 @@
 .icon-btn .ico { width: 17px; height: 17px; }
 .icon-btn:disabled { opacity: .4; pointer-events: none; }
 
+/* 顶栏中英切换：显示当前语言的目标标记（中文界面显示「中」，英文界面显示 EN） */
+.lang-btn { font-size: 11px; font-weight: 700; letter-spacing: .02em; }
+.lang-btn #lang-label { line-height: 1; }
+
 /* 窗口控制按钮 */
 .win-btn {
   display: inline-grid;

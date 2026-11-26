@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 批量操作浮条：依据 state.selection 显示，按钮完成分类/标签/状态/收藏/打开/移出索引/删除/清空。
  * 同时负责顶部统计条右侧「删除勾选 · 取消勾选」的显隐与计数（同一个 selection 状态）。
@@ -11,11 +13,11 @@ import { openModelsWithChoice } from './openwith.js';
 
 // constants.js 为 CommonJS，渲染层不可 import，按冻结值内联
 const PRINT_STATUS = {
-  unprinted: { label: '未打印', color: '#94a3b8' },
-  queued:    { label: '待打印', color: '#f59e0b' },
-  printing:  { label: '打印中', color: '#3b82f6' },
-  printed:   { label: '已完成', color: '#10b981' },
-  failed:    { label: '失败',   color: '#ef4444' },
+  unprinted: { label: tr('未打印'), color: '#94a3b8' },
+  queued:    { label: tr('待打印'), color: '#f59e0b' },
+  printing:  { label: tr('打印中'), color: '#3b82f6' },
+  printed:   { label: tr('已完成'), color: '#10b981' },
+  failed:    { label: tr('失败'),   color: '#ef4444' },
 };
 const PRINT_STATUS_ORDER = ['unprinted', 'queued', 'printing', 'printed', 'failed'];
 
@@ -64,11 +66,11 @@ async function runBulk(list, fields, doPatch, opts = {}) {
     const restore = opts.remove
       ? async () => {          // 移出索引用后端 undo 恢复记录
           const r = await api.undo();
-          if (r && r.ok === false) throw new Error(r.reason || '后端没有可撤销的操作');
+          if (r && r.ok === false) throw new Error(r.reason || tr('后端没有可撤销的操作'));
         }
       : async () => { await restoreSnapshot(snap); };
-    emitToast('success', '已更新 ' + list.length + ' 个模型', {
-      actionLabel: '撤销',
+    emitToast('success', tr('已更新 ') + list.length + tr(' 个模型'), {
+      actionLabel: tr('撤销'),
       action: async () => {
         // 同步消费，先删栈再恢复：用户紧接着按 Ctrl+Z 时不会再吃到这一条
         consumeSnapshot();
@@ -77,7 +79,7 @@ async function runBulk(list, fields, doPatch, opts = {}) {
           d.toastConsumed = (d.toastConsumed || 0) + 1;
         }
         try { await restore(); }
-        catch (e) { emitToast('error', (e && e.message) || '撤销失败'); }
+        catch (e) { emitToast('error', (e && e.message) || tr('撤销失败')); }
         emitRefresh('undo');
       },
     });
@@ -88,18 +90,18 @@ async function runBulk(list, fields, doPatch, opts = {}) {
       const d = (window.__printshelfUndo = window.__printshelfUndo || {});
       d.failedConsumed = (d.failedConsumed || 0) + 1;
     }
-    emitToast('error', (e && e.message) || '操作失败');
+    emitToast('error', (e && e.message) || tr('操作失败'));
   }
 }
 
 async function setCategory() {
   const list = selectedIds();
   if (!list.length) return;
-  const options = [{ value: null, label: '不分类', icon: 'i-folder-open', color: '#94a3b8' }]
+  const options = [{ value: null, label: tr('不分类'), icon: 'i-folder-open', color: '#94a3b8' }]
     .concat((state.categories || []).map((c) => ({
       value: c.id, label: c.name, icon: c.icon || 'i-folder', color: c.color,
     })));
-  const r = await selectDialog({ title: '设置分类', message: '为选中的模型指定分类', options, mode: 'single' });
+  const r = await selectDialog({ title: tr('设置分类'), message: tr('为选中的模型指定分类'), options, mode: 'single' });
   if (r === undefined) return;                    // 取消；null 表示"不分类"
   await runBulk(list, ['categoryId'], () => api.bulk(list, { categoryId: r }));
 }
@@ -109,8 +111,8 @@ async function addTags() {
   if (!list.length) return;
   const options = (state.tags || []).map((t) => ({ value: t.id, label: t.name, icon: 'i-tag', color: t.color }));
   const r = await selectDialog({
-    title: '添加标签', message: '可多选；选择"无 / 清除全部"将清空所选模型的标签',
-    options, mode: 'multi', confirmText: '添加',
+    title: tr('添加标签'), message: tr('可多选；选择"无 / 清除全部"将清空所选模型的标签'),
+    options, mode: 'multi', confirmText: tr('添加'),
   });
   if (r === undefined) return;
   if (!r.length) {
@@ -126,7 +128,7 @@ async function setStatus() {
   const options = PRINT_STATUS_ORDER.map((k) => ({
     value: k, label: PRINT_STATUS[k].label, icon: 'i-printer', color: PRINT_STATUS[k].color,
   }));
-  const r = await selectDialog({ title: '设置打印状态', options, mode: 'single' });
+  const r = await selectDialog({ title: tr('设置打印状态'), options, mode: 'single' });
   if (r === undefined) return;
   await runBulk(list, ['printStatus'], () => api.setPrintStatus(list, r));
 }
@@ -151,12 +153,12 @@ async function bulkRemove() {
     return m ? (m.path || m.fileName || id) : id;
   });
   const ok = await confirmDialog({
-    title: '移出索引',
-    message: '确定把选中的 ' + list.length + ' 个模型移出索引吗？磁盘文件不会被删除。',
-    detail: '以下路径将从模型库移除：',
+    title: tr('移出索引'),
+    message: tr('确定把选中的 ') + list.length + tr(' 个模型移出索引吗？磁盘文件不会被删除。'),
+    detail: tr('以下路径将从模型库移除：'),
     items: paths,
     danger: true,
-    confirmText: '移出索引',
+    confirmText: tr('移出索引'),
   });
   if (!ok) return;
   await runBulk(list, [], async () => { await api.remove(list); }, { remove: true });
@@ -174,27 +176,27 @@ async function bulkTrash() {
   let ok = false;
   try {
     ok = await confirmDialog({
-      title: '删除到回收站',
-      message: '确定删除选中的 ' + list.length + ' 个文件吗？文件会被移入系统回收站，之后可以从回收站还原。',
-      detail: '以下文件将被移入回收站：',
+      title: tr('删除到回收站'),
+      message: tr('确定删除选中的 ') + list.length + tr(' 个文件吗？文件会被移入系统回收站，之后可以从回收站还原。'),
+      detail: tr('以下文件将被移入回收站：'),
       items: paths,
       danger: true,
-      confirmText: '移入回收站',
+      confirmText: tr('移入回收站'),
     });
   } catch (_) { return; }
   if (!ok) return;
   let res = null;
   try { res = await api.trash(list); }
-  catch (e) { emitToast('error', (e && e.message) || '删除失败'); return; }
+  catch (e) { emitToast('error', (e && e.message) || tr('删除失败')); return; }
   const done = (res && res.ok) || [];
   const failed = (res && res.failed) || [];
   state.selection.clear();
   syncBulkbar();
   if (failed.length) {
     emitToast(failed.length === list.length ? 'error' : 'warn',
-      failed.length + ' 个文件删除失败：' + ((failed[0] && failed[0].error) || '未知原因'));
+      failed.length + tr(' 个文件删除失败：') + ((failed[0] && failed[0].error) || tr('未知原因')));
   }
-  if (done.length) emitToast('success', '已删除 ' + done.length + ' 个文件（可在回收站还原）');
+  if (done.length) emitToast('success', tr('已删除 ') + done.length + tr(' 个文件（可在回收站还原）'));
   emitRefresh('trash');
 }
 
@@ -252,7 +254,7 @@ export function mountBulkbar() {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener('click', () => {
-      Promise.resolve(map[id]()).catch((e) => emitToast('error', (e && e.message) || '操作失败'));
+      Promise.resolve(map[id]()).catch((e) => emitToast('error', (e && e.message) || tr('操作失败')));
     });
   });
 }

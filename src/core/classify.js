@@ -65,6 +65,54 @@ const DEFAULT_RULES = [
   },
 ];
 
+/**
+ * 英文界面用的预设词库。关键词来自英文模型站常见标题词，不是中文词库的直译。
+ * 只有库里存在对应英文分类时才会生成规则，绝不覆盖用户自己的分类。
+ */
+const DEFAULT_RULES_EN = [
+  {
+    id: 'rule_test',
+    categoryNames: ['Test & Calibration', '测试校准', '测试', '校准'],
+    keywords: [
+      'benchy', 'calibration', 'tolerance', 'flow test', 'retraction', 'temperature tower',
+      'temp tower', 'first layer', 'overhang', 'stringing', 'test print', 'calibration cube',
+      'xy cube', 'imension', 'prusa sieve',
+    ],
+  },
+  {
+    id: 'rule_part',
+    categoryNames: ['Spare Parts & Repair', '备件维修', '备件', '维修'],
+    keywords: [
+      'replacement part', 'spare part', 'repair', 'nozzle', 'hotend', 'heatbed',
+      'heated bed', 'belt', 'fan shroud', 'extruder', 'filament guide', 'pulley',
+      'idler', 'lead screw', ' Coupler', 'broken part',
+    ],
+  },
+  {
+    id: 'rule_func',
+    categoryNames: ['Functional Parts', '功能件', '功能', '工具'],
+    keywords: [
+      'holder', 'stand', 'mount', 'bracket', 'organizer', 'storage', 'tray', 'hook',
+      'clip', 'cable management', 'case', 'enclosure', 'box', 'shelf', 'tool holder',
+      'pegboard', 'drawer', 'adapter', 'jig', 'fixture', 'clamp', 'desktop',
+    ],
+  },
+  {
+    id: 'rule_deco',
+    categoryNames: ['Figures & Decor', '摆件装饰', '摆件', '装饰'],
+    keywords: [
+      'figure', 'miniature', 'statue', 'bust', 'decor', 'decoration', 'cosplay',
+      'helmet', 'mask', 'keychain', 'ornament', 'figurine', 'pokemon', 'marvel',
+      'dinosaur', 'dragon', 'anime', 'sculpture', 'display stand', 'fan art',
+    ],
+  },
+];
+
+function languageOf(store) {
+  const s = store && typeof store.getSettings === 'function' ? store.getSettings() : null;
+  return (s && s.ui && s.ui.language) || null;
+}
+
 /** 关键词清洗：去空、去重、转小写不在这里做（匹配时统一小写） */
 function cleanKeywords(list) {
   const out = [];
@@ -97,14 +145,18 @@ function normalizeRules(rules) {
 }
 
 /** 按当前分类表把预设词库落成 categoryId（首次使用 / 恢复预设时调） */
-function presetRules(categories) {
+function presetRules(categories, language) {
   const byName = new Map();
   for (const c of Array.isArray(categories) ? categories : []) {
     const n = String(c && c.name != null ? c.name : '').trim();
     if (n && !byName.has(n)) byName.set(n, c.id);
   }
+  // 英文界面优先用英文词库；库里仍是中文分类时自动回退到中文词库。
+  const prefersEn = language === 'en-US'
+    || (language == null && ['Functional Parts', 'Figures & Decor'].some((n) => byName.has(n)));
+  const rules = prefersEn ? DEFAULT_RULES_EN : DEFAULT_RULES;
   const out = [];
-  for (const r of DEFAULT_RULES) {
+  for (const r of rules) {
     const names = Array.isArray(r.categoryNames) ? r.categoryNames : [];
     const hitName = names.find((n) => byName.has(n));
     if (!hitName) continue;              // 该分类不存在，这条规则先不用
@@ -114,9 +166,9 @@ function presetRules(categories) {
 }
 
 /** 实际生效的规则：用户存了就用用户的，没存过就用预设 */
-function resolveRules(rawRules, categories) {
+function resolveRules(rawRules, categories, language) {
   const normalized = normalizeRules(rawRules);
-  return normalized.length ? normalized : presetRules(categories);
+  return normalized.length ? normalized : presetRules(categories, language);
 }
 
 /** 配置补齐默认值（settings.classify 可能是空对象） */
@@ -222,7 +274,7 @@ async function classifyUncategorized(store, options = {}) {
   }
   const lib = typeof store.getLibrary === 'function' ? (store.getLibrary() || {}) : {};
   const categories = Array.isArray(lib.categories) ? lib.categories : [];
-  const rules = resolveRules(cfg.rules, categories);
+  const rules = resolveRules(cfg.rules, categories, languageOf(store));
   // unmatched：一次都没匹配上的记录（最多 20 条），启动后由渲染层弹窗提示用户
   const stat = {
     scanned: 0, assigned: 0, skipped: 0, pending: 0,
@@ -268,7 +320,7 @@ async function classifyUncategorized(store, options = {}) {
 
   await store.updateLibrary((target) => {
     const cats = Array.isArray(target.categories) ? target.categories : [];
-    const live = resolveRules(cfg.rules, cats);
+    const live = resolveRules(cfg.rules, cats, languageOf(store));
     const ids = new Set(cats.map((c) => c.id));
     for (const rec of Object.values(target.models || {})) {
       if (!rec) continue;
@@ -311,7 +363,7 @@ function collectUnmatchedIds(store) {
   const cfg = configOf(store && typeof store.getSettings === 'function' ? store.getSettings() : null);
   const lib = typeof store.getLibrary === 'function' ? (store.getLibrary() || {}) : {};
   const categories = Array.isArray(lib.categories) ? lib.categories : [];
-  const rules = resolveRules(cfg.rules, categories);
+  const rules = resolveRules(cfg.rules, categories, languageOf(store));
   if (!rules.length) return [];
   const liveIds = new Set(categories.map((c) => c.id));
   const out = [];

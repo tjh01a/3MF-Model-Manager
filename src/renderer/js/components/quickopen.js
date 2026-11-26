@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 卡片上「用切片软件打开」按钮的悬停选择层。
  *
@@ -22,23 +24,23 @@ function build() {
   el.innerHTML =
     '<button type="button" class="qpop-item" role="menuitem" data-pick="bambu">' +
       '<span class="qpop-ic has-app"><img class="qpop-app" alt="" src="./assets/slicers/bambu-studio.png"></span>' +
-      '<span class="qpop-body"><strong>用拓竹打开 3mf</strong>' +
-      '<small>原文件直接打开，不做转换</small></span>' +
+      tr('<span class="qpop-body"><strong>用拓竹打开 3mf</strong>') +
+      tr('<small>原文件直接打开，不做转换</small></span>') +
     '</button>' +
     '<button type="button" class="qpop-item" role="menuitem" data-pick="orca-official-direct">' +
       '<span class="qpop-ic has-app"><img class="qpop-app" alt="" src="./assets/slicers/orcaslicer.png"></span>' +
-      '<span class="qpop-body"><strong>用官方 Orca 打开 3mf</strong>' +
-      '<small>原文件直接打开，不做转换</small></span>' +
+      tr('<span class="qpop-body"><strong>用官方 Orca 打开 3mf</strong>') +
+      tr('<small>原文件直接打开，不做转换</small></span>') +
     '</button>' +
     '<button type="button" class="qpop-item" role="menuitem" data-pick="snapmaker">' +
       '<span class="qpop-ic has-app"><img class="qpop-app" alt="" src="./assets/slicers/snapmaker-orca.svg"></span>' +
-      '<span class="qpop-body"><strong>用 Orca 打开 3mf（快造 U1）</strong>' +
-      '<small>先转为 U1 工程，再用快造 Orca 打开</small></span>' +
+      tr('<span class="qpop-body"><strong>用 Orca 打开 3mf（快造 U1）</strong>') +
+      tr('<small>先转为 U1 工程，再用快造 Orca 打开</small></span>') +
     '</button>' +
     '<button type="button" class="qpop-item" role="menuitem" data-pick="orca-official">' +
       '<span class="qpop-ic has-app"><img class="qpop-app" alt="" src="./assets/slicers/orcaslicer.png"></span>' +
-      '<span class="qpop-body"><strong>转换后用官方 Orca 打开</strong>' +
-      '<small>先用快造 U1 工具转换，再交给官方 Orca</small></span>' +
+      tr('<span class="qpop-body"><strong>转换后用官方 Orca 打开</strong>') +
+      tr('<small>先用快造 U1 工具转换，再交给官方 Orca</small></span>') +
     '</button>';
   document.body.appendChild(el);
 
@@ -89,8 +91,8 @@ export function showQuickOpen(anchor, ids, onPick) {
   const sub = pop.querySelector('[data-pick="bambu"] small');
   if (sub) {
     sub.textContent = currentIds.length > 1
-      ? '原文件直接打开，不做转换（' + currentIds.length + ' 个）'
-      : '原文件直接打开，不做转换';
+      ? tr('原文件直接打开，不做转换（') + currentIds.length + tr(' 个）')
+      : tr('原文件直接打开，不做转换');
   }
   pop.classList.add('qpop-in');
   place();

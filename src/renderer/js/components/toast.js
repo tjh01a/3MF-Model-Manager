@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /** Toast：订阅 shelf:toast，支持 4 色图标、撤销动作、2.5s 自动消失、hover 暂停、最多 4 条堆叠。 */
 import { escapeHtml, icon } from '../utils.js';
 
@@ -16,7 +18,7 @@ function onToastEvent(e) {
   toast({
     type: d.type || 'info',
     message: d.message || '',
-    actionLabel: d.actionLabel,
+    actionLabel: d.actionLabel ? tr(d.actionLabel) : d.actionLabel,
     action: d.action,
     duration: d.duration,
   });
@@ -59,7 +61,7 @@ export function toast({ type = 'info', message = '', actionLabel = '', action = 
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
   closeBtn.className = 'toast-close';
-  closeBtn.setAttribute('aria-label', '关闭');
+  closeBtn.setAttribute('aria-label', tr('关闭'));
   closeBtn.innerHTML = icon('i-close', 'ico');
   el.appendChild(closeBtn);
   root.appendChild(el);

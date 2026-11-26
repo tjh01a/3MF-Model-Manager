@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 模型体检 / 优化弹窗（渲染层）。
  * 原生 ES Modules + 原生 CSS，零框架、零构建、零 CDN、离线可用。
@@ -26,10 +28,10 @@ const esc = (v) => escapeHtml(v == null ? '' : String(v));
 // 常量与默认值
 // ---------------------------------------------------------------------------
 const PRESETS = [
-  { key: 'gentle',   name: '温和',               desc: '仅做轻度平滑，几乎不改变外形与尺寸。' },
-  { key: 'standard', name: '标准',               desc: '平衡平滑与保形，适合大多数模型（推荐）。' },
-  { key: 'strong',   name: '较强',               desc: '更明显的平滑，可能损失细小特征。' },
-  { key: 'deep',     name: '深度 · 体素重网格',   desc: '重建网格、去除内部与伪影，顶点数会变化。' },
+  { key: 'gentle',   name: tr('温和'),               desc: tr('仅做轻度平滑，几乎不改变外形与尺寸。') },
+  { key: 'standard', name: tr('标准'),               desc: tr('平衡平滑与保形，适合大多数模型（推荐）。') },
+  { key: 'strong',   name: tr('较强'),               desc: tr('更明显的平滑，可能损失细小特征。') },
+  { key: 'deep',     name: tr('深度 · 体素重网格'),   desc: tr('重建网格、去除内部与伪影，顶点数会变化。') },
 ];
 const DEFAULTS = { preset: 'standard', clampMm: 0.15, voxelMm: 0.25, includeAngular: false };
 const MAX_LOG_LINES = 60;
@@ -37,11 +39,11 @@ const MAX_LOG_LINES = 60;
 const HEALTH = { angleMean: 25, gt15: 15, thinPct: 10 };
 // Blender 不可用原因的中文兜底（主进程可直接下发中文，这里只兜常见英文 code）
 const BLENDER_REASON = {
-  notfound: '未找到 Blender 可执行文件，请检查路径配置。',
-  'not-found': '未找到 Blender 可执行文件，请检查路径配置。',
-  notconfigured: '尚未配置 Blender 可执行文件路径。',
-  notexec: 'Blender 文件不可执行或没有运行权限。',
-  timeout: '检测 Blender 超时，请重试。',
+  notfound: tr('未找到 Blender 可执行文件，请检查路径配置。'),
+  'not-found': tr('未找到 Blender 可执行文件，请检查路径配置。'),
+  notconfigured: tr('尚未配置 Blender 可执行文件路径。'),
+  notexec: tr('Blender 文件不可执行或没有运行权限。'),
+  timeout: tr('检测 Blender 超时，请重试。'),
 };
 
 // ---------------------------------------------------------------------------
@@ -111,7 +113,7 @@ function presetName(key) {
 }
 function reasonText(b) {
   const r = b && b.reason ? String(b.reason) : '';
-  if (!r) return '未检测到可用的 Blender，优化可能无法进行。';
+  if (!r) return tr('未检测到可用的 Blender，优化可能无法进行。');
   return BLENDER_REASON[r.toLowerCase()] || r;   // 已是中文则原样显示
 }
 // ---------------------------------------------------------------------------
@@ -132,14 +134,14 @@ function buildDom() {
   root.className = 'mo-backdrop';
   root.hidden = true;
   root.innerHTML =
-    '<div class="mo-panel" role="dialog" aria-modal="true" aria-label="模型体检与优化">' +
+    tr('<div class="mo-panel" role="dialog" aria-modal="true" aria-label="模型体检与优化">') +
       '<div class="mo-head">' +
         '<span class="mo-head-ico">' + icon('i-tool') + '</span>' +
         '<div class="mo-head-txt">' +
-          '<h2 class="mo-title">模型体检与优化</h2>' +
+          tr('<h2 class="mo-title">模型体检与优化</h2>') +
           '<p class="mo-subtitle" data-role="subtitle">—</p>' +
         '</div>' +
-        '<button type="button" class="mo-close" data-act="close" aria-label="关闭" title="关闭 (Esc)">' + icon('i-close') + '</button>' +
+        tr('<button type="button" class="mo-close" data-act="close" aria-label="关闭" title="关闭 (Esc)">') + icon('i-close') + '</button>' +
       '</div>' +
       '<div class="mo-statusbar" data-role="statusbar" hidden>' +
         '<span class="mo-statusbar-ico" data-role="statusbar-ico"></span>' +
@@ -157,12 +159,12 @@ function buildDom() {
         '<div class="mo-view" data-view="done" hidden></div>' +
       '</div>' +
       '<div class="mo-confirm" data-role="confirm" hidden>' +
-        '<div class="mo-confirm-box" role="alertdialog" aria-modal="true" aria-label="确认关闭">' +
-          '<div class="mo-confirm-title">' + icon('i-warning') + '<span>优化正在进行</span></div>' +
-          '<p class="mo-confirm-desc">关闭面板会中断当前优化并取消任务，确定要关闭吗？</p>' +
+        tr('<div class="mo-confirm-box" role="alertdialog" aria-modal="true" aria-label="确认关闭">') +
+          '<div class="mo-confirm-title">' + icon('i-warning') + tr('<span>优化正在进行</span></div>') +
+          tr('<p class="mo-confirm-desc">关闭面板会中断当前优化并取消任务，确定要关闭吗？</p>') +
           '<div class="mo-confirm-actions">' +
-            '<button type="button" class="mo-btn mo-btn-ghost" data-act="confirm-keep">继续优化</button>' +
-            '<button type="button" class="mo-btn mo-btn-danger" data-act="confirm-close">取消并关闭</button>' +
+            tr('<button type="button" class="mo-btn mo-btn-ghost" data-act="confirm-keep">继续优化</button>') +
+            tr('<button type="button" class="mo-btn mo-btn-danger" data-act="confirm-close">取消并关闭</button>') +
           '</div>' +
         '</div>' +
       '</div>' +
@@ -187,7 +189,7 @@ function view(name) { return qs('.mo-view[data-view="' + name + '"]', root); }
 function renderLoading() {
   return '<div class="mo-loading">' +
       '<div class="mo-loading-ico">' + icon('i-refresh') + '</div>' +
-      '<p class="mo-loading-text">正在分析模型网格与拓扑…</p>' +
+      tr('<p class="mo-loading-text">正在分析模型网格与拓扑…</p>') +
       '<div class="mo-skel-grid">' +
         '<div class="mo-skel-cell mo-skel"></div><div class="mo-skel-cell mo-skel"></div>' +
         '<div class="mo-skel-cell mo-skel"></div><div class="mo-skel-cell mo-skel"></div>' +
@@ -203,19 +205,19 @@ function renderStateBox(tone, icoName, title, desc) {
       '<h3 class="mo-statebox-title">' + esc(title) + '</h3>' +
       '<p class="mo-statebox-desc">' + esc(desc) + '</p>' +
       '<div class="mo-statebox-actions">' +
-        '<button type="button" class="mo-btn mo-btn-primary" data-act="retry">' + icon('i-refresh') + '<span>重新体检</span></button>' +
-        '<button type="button" class="mo-btn mo-btn-ghost" data-act="close">关闭</button>' +
+        '<button type="button" class="mo-btn mo-btn-primary" data-act="retry">' + icon('i-refresh') + tr('<span>重新体检</span></button>') +
+        tr('<button type="button" class="mo-btn mo-btn-ghost" data-act="close">关闭</button>') +
       '</div>' +
     '</div>';
 }
 function showError(msg) {
   const v = view('error');
-  if (v) v.innerHTML = renderStateBox('error', 'i-alert', '体检失败', msg || '无法完成模型体检，请稍后重试。');
+  if (v) v.innerHTML = renderStateBox('error', 'i-alert', tr('体检失败'), msg || tr('无法完成模型体检，请稍后重试。'));
   showStatus('error');
 }
 function showEmpty(msg) {
   const v = view('empty');
-  if (v) v.innerHTML = renderStateBox('empty', 'i-box', '没有可分析的网格', msg || '该文件未检测到可分析的网格部件，可能不是有效的 3MF / 网格模型。');
+  if (v) v.innerHTML = renderStateBox('empty', 'i-box', tr('没有可分析的网格'), msg || tr('该文件未检测到可分析的网格部件，可能不是有效的 3MF / 网格模型。'));
   showStatus('empty');
 }
 
@@ -233,11 +235,11 @@ function renderBlender(b) {
   const sub = qs('[data-role="statusbar-sub"]', root);
   const hint = qs('[data-role="statusbar-hint"]', root);
   if (ic) ic.innerHTML = icon(ok ? 'i-check-circle' : 'i-alert');
-  if (t) t.textContent = ok ? ('Blender 就绪' + (b.version ? ' · v' + b.version : '')) : 'Blender 不可用';
+  if (t) t.textContent = ok ? (tr('Blender 就绪') + (b.version ? ' · v' + b.version : '')) : tr('Blender 不可用');
   if (sub) { sub.textContent = ok ? (b.path || '') : reasonText(b); sub.title = sub.textContent; }
   if (hint) {
     hint.innerHTML = ok ? ''
-      : '未找到 Blender · <button type="button" class="mo-link" data-act="pickblender">手动选择 blender.exe</button>';
+      : tr('未找到 Blender · <button type="button" class="mo-link" data-act="pickblender">手动选择 blender.exe</button>');
   }
 }
 
@@ -257,22 +259,22 @@ function statGridHtml(data) {
   const boundary = nv(t.boundaryEdges), nonman = nv(t.nonmanifoldEdges);
   const closed = boundary === 0 && nonman === 0;
   const closedVal = closed
-    ? icon('i-check-circle') + '<span>封闭流形</span>'
-    : esc('边界 ' + fmtInt(boundary) + (nonman ? ' · 非流形 ' + fmtInt(nonman) : ''));
+    ? icon('i-check-circle') + tr('<span>封闭流形</span>')
+    : esc(tr('边界 ') + fmtInt(boundary) + (nonman ? tr(' · 非流形 ') + fmtInt(nonman) : ''));
   const ang = has(t.angleMean) ? Number(t.angleMean) : weightedAngle(parts);
   const gt15Tone = (toPct(t.gt15) || 0) > HEALTH.gt15 ? 'warn' : '';
   const thinTone = (toPct(t.thinPct) || 0) > HEALTH.thinPct ? 'warn' : '';
   const angTone = (ang != null && ang > HEALTH.angleMean) ? 'warn' : '';
   return '<section class="mo-sec">' +
-      '<div class="mo-sec-head"><h3 class="mo-sec-title">体检概览</h3>' +
-        '<span class="mo-sec-hint">' + esc(data.format ? ('格式 ' + data.format) : '网格质量指标') + '</span></div>' +
+      tr('<div class="mo-sec-head"><h3 class="mo-sec-title">体检概览</h3>') +
+        '<span class="mo-sec-hint">' + esc(data.format ? (tr('格式 ') + data.format) : tr('网格质量指标')) + '</span></div>' +
       '<div class="mo-statgrid">' +
-        statCell('部件数', esc(fmtInt(t.parts != null ? t.parts : parts.length)), '') +
-        statCell('三角面数', esc(fmtInt(t.faces)), '') +
-        statCell('拓扑 / 边界', closedVal, closed ? 'good' : 'warn') +
-        statCell('相邻面平均夹角', esc(fmtAngle(ang)), angTone) +
-        statCell('>15° 边占比', esc(fmtPct(t.gt15)), gt15Tone) +
-        statCell('细长三角形占比', esc(fmtPct(t.thinPct)), thinTone) +
+        statCell(tr('部件数'), esc(fmtInt(t.parts != null ? t.parts : parts.length)), '') +
+        statCell(tr('三角面数'), esc(fmtInt(t.faces)), '') +
+        statCell(tr('拓扑 / 边界'), closedVal, closed ? 'good' : 'warn') +
+        statCell(tr('相邻面平均夹角'), esc(fmtAngle(ang)), angTone) +
+        statCell(tr('>15° 边占比'), esc(fmtPct(t.gt15)), gt15Tone) +
+        statCell(tr('细长三角形占比'), esc(fmtPct(t.thinPct)), thinTone) +
       '</div>' +
     '</section>';
 }
@@ -287,15 +289,15 @@ function hintsHtml(data) {
   }
   for (const h of hints) {
     if (!h || typeof h !== 'object') continue;
-    const key = esc(h.key || '切片参数');
-    const cur = h.current != null ? '<span class="mo-hint-cur">当前 ' + esc(h.current) + '</span>' : '';
+    const key = esc(h.key || tr('切片参数'));
+    const cur = h.current != null ? tr('<span class="mo-hint-cur">当前 ') + esc(h.current) + '</span>' : '';
     rows.push('<li class="mo-hint">' + icon('i-sliders') +
       '<span class="mo-hint-text"><span class="mo-hint-key">' + key + '</span>' + cur +
       esc(h.advice || '') + '</span></li>');
   }
   if (!rows.length) return '';
   return '<section class="mo-sec">' +
-      '<div class="mo-sec-head"><h3 class="mo-sec-title">提示与建议</h3></div>' +
+      tr('<div class="mo-sec-head"><h3 class="mo-sec-title">提示与建议</h3></div>') +
       '<ul class="mo-hints">' + rows.join('') + '</ul>' +
     '</section>';
 }
@@ -303,19 +305,19 @@ function partsHtml(data) {
   const parts = Array.isArray(data.parts) ? data.parts : [];
   const head = '<button type="button" class="mo-parts-toggle" data-act="toggle-parts">' +
       '<span class="mo-parts-chevron' + (partsExpanded ? ' is-open' : '') + '">' + icon('i-chevron-right') + '</span>' +
-      '<span>部件明细（' + esc(fmtInt(parts.length)) + '）</span>' +
-      '<span class="mo-sec-hint">' + (partsExpanded ? '点击收起' : '点击展开') + '</span>' +
+      tr('<span>部件明细（') + esc(fmtInt(parts.length)) + '）</span>' +
+      '<span class="mo-sec-hint">' + (partsExpanded ? tr('点击收起') : tr('点击展开')) + '</span>' +
     '</button>';
   let body;
   if (!parts.length) {
-    body = '<div class="mo-parts-empty">无部件数据</div>';
+    body = tr('<div class="mo-parts-empty">无部件数据</div>');
   } else {
     const rows = parts.map((p) => {
-      const name = (p && (p.name || p.entry)) || '未命名部件';
+      const name = (p && (p.name || p.entry)) || tr('未命名部件');
       const angular = !!(p && p.isAngular);
       const skip = !!(p && (p.isAngular || p.skip));
       const badge = skip
-        ? '<span class="mo-badge is-warn">' + esc(angular ? '棱角件 · 将跳过' : '将跳过') + '</span>'
+        ? '<span class="mo-badge is-warn">' + esc(angular ? tr('棱角件 · 将跳过') : tr('将跳过')) + '</span>'
         : '';
       return '<tr>' +
           '<td class="mo-td-name" title="' + esc(name) + '">' + esc(name) + '</td>' +
@@ -327,11 +329,11 @@ function partsHtml(data) {
         '</tr>';
     }).join('');
     body = '<div class="mo-parts-scroll"><table class="mo-table">' +
-        '<thead><tr><th>部件</th><th>V / F</th><th>夹角均值</th><th>>30°</th><th>细长</th><th></th></tr></thead>' +
+        tr('<thead><tr><th>部件</th><th>V / F</th><th>夹角均值</th><th>>30°</th><th>细长</th><th></th></tr></thead>') +
         '<tbody>' + rows + '</tbody></table></div>';
   }
   return '<section class="mo-sec">' +
-      '<div class="mo-sec-head"><h3 class="mo-sec-title">部件清单</h3></div>' +
+      tr('<div class="mo-sec-head"><h3 class="mo-sec-title">部件清单</h3></div>') +
       head +
       '<div class="mo-parts-body" data-role="parts-body"' + (partsExpanded ? '' : ' hidden') + '>' + body + '</div>' +
     '</section>';
@@ -345,27 +347,27 @@ function presetsHtml() {
       '<span class="mo-preset-desc">' + esc(p.desc) + '</span></span>' +
     '</button>').join('');
   return '<section class="mo-sec">' +
-      '<div class="mo-sec-head"><h3 class="mo-sec-title">优化档位</h3>' +
-        '<span class="mo-sec-hint">默认「标准」</span></div>' +
+      tr('<div class="mo-sec-head"><h3 class="mo-sec-title">优化档位</h3>') +
+        tr('<span class="mo-sec-hint">默认「标准」</span></div>') +
       '<div class="mo-presets">' + cards + '</div>' +
       '<div class="mo-alert is-warn mo-deepwarn" data-role="deepwarn"' + (form.preset === 'deep' ? '' : ' hidden') + '>' +
-        icon('i-warning') + '<span>深度档会重建部件、顶点数发生变化，且需要重新切片。</span>' +
+        icon('i-warning') + tr('<span>深度档会重建部件、顶点数发生变化，且需要重新切片。</span>') +
       '</div>' +
     '</section>';
 }
 function paramsHtml() {
   return '<section class="mo-sec">' +
-      '<div class="mo-sec-head"><h3 class="mo-sec-title">参数</h3></div>' +
+      tr('<div class="mo-sec-head"><h3 class="mo-sec-title">参数</h3></div>') +
       '<div class="mo-params">' +
         '<div class="mo-param">' +
-          '<label class="mo-param-label" for="mo-clamp">位移上限</label>' +
+          tr('<label class="mo-param-label" for="mo-clamp">位移上限</label>') +
           '<div class="mo-param-ctrl">' +
             '<input type="range" class="mo-range" id="mo-clamp" data-field="clampMm" min="0.05" max="0.40" step="0.01" value="' + esc(form.clampMm) + '">' +
             '<span class="mo-range-val" data-role="clamp-val">' + esc(Number(form.clampMm).toFixed(2)) + ' mm</span>' +
           '</div>' +
         '</div>' +
         '<div class="mo-param mo-param-voxel" data-role="voxel"' + (form.preset === 'deep' ? '' : ' hidden') + '>' +
-          '<label class="mo-param-label" for="mo-voxel">体素大小</label>' +
+          tr('<label class="mo-param-label" for="mo-voxel">体素大小</label>') +
           '<div class="mo-param-ctrl">' +
             '<input type="number" class="mo-number" id="mo-voxel" data-field="voxelMm" min="0.05" max="5" step="0.05" value="' + esc(form.voxelMm) + '">' +
             '<span class="mo-param-unit">mm</span>' +
@@ -373,23 +375,23 @@ function paramsHtml() {
         '</div>' +
         '<div class="mo-param">' +
           '<label class="mo-check-row"><input type="checkbox" class="mo-checkbox" data-field="includeAngular"' + (form.includeAngular ? ' checked' : '') + '>' +
-          '<span>包含棱角件（默认跳过，避免磨圆锐边）</span></label>' +
+          tr('<span>包含棱角件（默认跳过，避免磨圆锐边）</span></label>') +
         '</div>' +
       '</div>' +
     '</section>';
 }
 function actionsHtml() {
   return '<div class="mo-actions">' +
-      '<button type="button" class="mo-btn mo-btn-primary" data-act="start" data-role="start">' + icon('i-play') + '<span>开始优化</span></button>' +
-      '<button type="button" class="mo-btn mo-btn-ghost" data-act="cancel" data-role="cancel" hidden>' + icon('i-close') + '<span>取消优化</span></button>' +
+      '<button type="button" class="mo-btn mo-btn-primary" data-act="start" data-role="start">' + icon('i-play') + tr('<span>开始优化</span></button>') +
+      '<button type="button" class="mo-btn mo-btn-ghost" data-act="cancel" data-role="cancel" hidden>' + icon('i-close') + tr('<span>取消优化</span></button>') +
       '<span class="mo-actions-spacer"></span>' +
-      '<span class="mo-actions-hint">优化会生成新文件，不覆盖原模型</span>' +
+      tr('<span class="mo-actions-hint">优化会生成新文件，不覆盖原模型</span>') +
     '</div>';
 }
 function progressHtml() {
   return '<div class="mo-progressbox" data-role="progressbox" hidden>' +
       '<div class="mo-progress-top">' +
-        '<span class="mo-stage" data-role="stage">准备中…</span>' +
+        tr('<span class="mo-stage" data-role="stage">准备中…</span>') +
         '<span class="mo-progress-pct" data-role="pct"></span>' +
       '</div>' +
       '<div class="mo-progress-track"><div class="mo-progress-fill" data-role="fill"></div></div>' +
@@ -420,40 +422,40 @@ function compareRow(label, bv, av, fmt) {
 function renderDone(res) {
   const b = res.before || {}, a = res.after || {};
   const rows =
-    compareRow('夹角均值', b.angleMean, a.angleMean, fmtAngle) +
-    compareRow('>15° 边占比', b.gt15, a.gt15, fmtPct) +
-    compareRow('>30° 边占比', b.gt30, a.gt30, fmtPct) +
-    compareRow('细长三角形占比', b.thinPct, a.thinPct, fmtPct) +
-    compareRow('体积', b.volumeMm3, a.volumeMm3, fmtVol);
+    compareRow(tr('夹角均值'), b.angleMean, a.angleMean, fmtAngle) +
+    compareRow(tr('>15° 边占比'), b.gt15, a.gt15, fmtPct) +
+    compareRow(tr('>30° 边占比'), b.gt30, a.gt30, fmtPct) +
+    compareRow(tr('细长三角形占比'), b.thinPct, a.thinPct, fmtPct) +
+    compareRow(tr('体积'), b.volumeMm3, a.volumeMm3, fmtVol);
   const skipped = Array.isArray(res.skipped) ? res.skipped : [];
   const skipHtml = skipped.length
     ? '<ul class="mo-list">' + skipped.map((s) =>
-        '<li class="mo-list-item"><span>' + esc((s && s.name) || '部件') + '</span>' +
+        '<li class="mo-list-item"><span>' + esc((s && s.name) || tr('部件')) + '</span>' +
         '<span class="mo-list-reason">' + esc((s && s.reason) || '') + '</span></li>').join('') + '</ul>'
-    : '<div class="mo-list-empty">没有跳过的部件</div>';
+    : tr('<div class="mo-list-empty">没有跳过的部件</div>');
   const tips = Array.isArray(res.tips) ? res.tips : [];
   const tipsHtml = tips.length
     ? '<ul class="mo-list">' + tips.map((t) =>
         '<li class="mo-list-item">' + icon('i-sparkle') + '<span>' + esc(tipText(t)) + '</span></li>').join('') + '</ul>'
-    : '<div class="mo-list-empty">暂无额外打印建议</div>';
+    : tr('<div class="mo-list-empty">暂无额外打印建议</div>');
   const out = res.outPath || '';
   return '<div class="mo-done">' +
-      '<div class="mo-done-banner">' + icon('i-check-circle') + '<span>优化完成，以下为前后质量对比（下降为改善）。</span></div>' +
-      '<section class="mo-sec"><div class="mo-sec-head"><h3 class="mo-sec-title">前后指标对比</h3>' +
-        '<span class="mo-sec-hint">绿色 = 改善 · 红色 = 变差</span></div>' +
-        '<table class="mo-compare"><thead><tr><th>指标</th><th>前 → 后</th><th>变化</th></tr></thead>' +
+      '<div class="mo-done-banner">' + icon('i-check-circle') + tr('<span>优化完成，以下为前后质量对比（下降为改善）。</span></div>') +
+      tr('<section class="mo-sec"><div class="mo-sec-head"><h3 class="mo-sec-title">前后指标对比</h3>') +
+        tr('<span class="mo-sec-hint">绿色 = 改善 · 红色 = 变差</span></div>') +
+        tr('<table class="mo-compare"><thead><tr><th>指标</th><th>前 → 后</th><th>变化</th></tr></thead>') +
         '<tbody>' + rows + '</tbody></table></section>' +
-      '<section class="mo-sec"><div class="mo-sec-head"><h3 class="mo-sec-title">跳过部件</h3></div>' + skipHtml + '</section>' +
-      '<section class="mo-sec"><div class="mo-sec-head"><h3 class="mo-sec-title">打印建议</h3></div>' + tipsHtml + '</section>' +
-      '<section class="mo-sec"><div class="mo-sec-head"><h3 class="mo-sec-title">输出文件</h3></div>' +
+      tr('<section class="mo-sec"><div class="mo-sec-head"><h3 class="mo-sec-title">跳过部件</h3></div>') + skipHtml + '</section>' +
+      tr('<section class="mo-sec"><div class="mo-sec-head"><h3 class="mo-sec-title">打印建议</h3></div>') + tipsHtml + '</section>' +
+      tr('<section class="mo-sec"><div class="mo-sec-head"><h3 class="mo-sec-title">输出文件</h3></div>') +
         '<div class="mo-outpath"><span class="mo-outpath-text mo-num" title="' + esc(out) + '">' + esc(out || '—') + '</span>' +
-        '<button type="button" class="mo-btn mo-btn-ghost mo-outpath-copy" data-act="copy">' + icon('i-copy') + '<span>复制路径</span></button></div>' +
+        '<button type="button" class="mo-btn mo-btn-ghost mo-outpath-copy" data-act="copy">' + icon('i-copy') + tr('<span>复制路径</span></button></div>') +
       '</section>' +
       '<div class="mo-done-actions">' +
         '<button type="button" class="mo-btn mo-btn-primary" data-act="addlib" data-role="addlib"' + (added ? ' disabled' : '') + '>' +
-          icon(added ? 'i-check' : 'i-save') + '<span>' + (added ? '已在模型库中' : '加入模型库') + '</span></button>' +
-        '<button type="button" class="mo-btn mo-btn-ghost" data-act="reveal">' + icon('i-folder-open') + '<span>在资源管理器中显示</span></button>' +
-        '<button type="button" class="mo-btn mo-btn-ghost" data-act="close">' + icon('i-close') + '<span>关闭</span></button>' +
+          icon(added ? 'i-check' : 'i-save') + '<span>' + (added ? tr('已在模型库中') : tr('加入模型库')) + '</span></button>' +
+        '<button type="button" class="mo-btn mo-btn-ghost" data-act="reveal">' + icon('i-folder-open') + tr('<span>在资源管理器中显示</span></button>') +
+        '<button type="button" class="mo-btn mo-btn-ghost" data-act="close">' + icon('i-close') + tr('<span>关闭</span></button>') +
       '</div>' +
     '</div>';
 }
@@ -478,7 +480,7 @@ function toggleParts() {
   if (body) body.hidden = !partsExpanded;
   if (chev) chev.classList.toggle('is-open', partsExpanded);
   const hint = qs('.mo-parts-toggle .mo-sec-hint', root);
-  if (hint) hint.textContent = partsExpanded ? '点击收起' : '点击展开';
+  if (hint) hint.textContent = partsExpanded ? tr('点击收起') : tr('点击展开');
 }
 function onField(e) {
   const t = e.target;
@@ -530,7 +532,7 @@ function setRunning(on, keepProgress) {
     start.disabled = on;
     start.classList.toggle('is-loading', on);
     const s = qs('span', start);
-    if (s) s.textContent = on ? '优化中…' : '开始优化';
+    if (s) s.textContent = on ? tr('优化中…') : tr('开始优化');
   }
   if (cancel) cancel.hidden = !on;
   if (box) box.hidden = on ? false : !keepProgress;
@@ -578,19 +580,19 @@ async function runInspect(id) {
     data = await api.meshInspect(id);
   } catch (err) {
     // api 封装已 emitToast，这里只补面板内中文错误态，避免重复 Toast
-    fail((err && err.message) || '模型体检失败，无法读取该文件。', { toast: false });
+    fail((err && err.message) || tr('模型体检失败，无法读取该文件。'), { toast: false });
     return;
   }
   // 结果返回前用户已关闭 / 切换了模型：丢弃过期结果
   if (!isMeshOptOpen() || currentId !== id) return;
   if (!data || data.ok === false) {
-    fail((data && (data.reason || data.message)) || '模型体检失败，无法解析该文件。', { toast: true });
+    fail((data && (data.reason || data.message)) || tr('模型体检失败，无法解析该文件。'), { toast: true });
     return;
   }
   const parts = Array.isArray(data.parts) ? data.parts : [];
   const t = data.totals || {};
   if (parts.length === 0 && nv(t.parts) === 0 && nv(t.faces) === 0) {
-    showEmpty(data.format ? ('当前格式（' + data.format + '）未解析出网格部件。') : '');
+    showEmpty(data.format ? (tr('当前格式（') + data.format + tr('）未解析出网格部件。')) : '');
     return;
   }
   renderBlender(data.blender);
@@ -618,38 +620,38 @@ function startOptimize() {
   const logBox = qs('[data-role="log"]', root);
   if (logBox) logBox.innerHTML = '';
   setRunning(true);
-  setStage('准备中…');
+  setStage(tr('准备中…'));
   setPct('');
   setFill(0);
-  appendLog('开始优化 · 档位：' + presetName(form.preset));
+  appendLog(tr('开始优化 · 档位：') + presetName(form.preset));
   Promise.resolve(api.meshOptimize(params))
     .then((res) => {
       // 主进程若直接以返回值给出最终 result，作为兜底（与 mesh:done 去重）
       if (res && res.ok !== false && res.outPath && !finishGuard) handleDone({ result: res });
-      else if (res && res.ok === false && !finishGuard) fail(res.message || '优化未成功', { toast: true });
+      else if (res && res.ok === false && !finishGuard) fail(res.message || tr('优化未成功'), { toast: true });
     })
     .catch((err) => {
       // api 封装已 emitToast；仅当尚未由事件通道结算时补面板错误态
-      if (!finishGuard && running) fail((err && err.message) || '优化失败', { toast: false });
+      if (!finishGuard && running) fail((err && err.message) || tr('优化失败'), { toast: false });
     });
 }
 
 function cancelOptimize() {
   if (!running) return;
-  appendLog('正在请求取消…');
+  appendLog(tr('正在请求取消…'));
   Promise.resolve(api.meshCancel()).catch(() => { /* api 封装已 Toast */ });
   running = false;
   finishGuard = true;          // 忽略取消后主进程补发的 done / error
   setRunning(false, true);     // 保留进度区展示「已取消」
-  setStage('已取消优化');
-  appendLog('优化已取消，可调整参数后重新开始。');
-  emitToast('info', '已取消优化');
+  setStage(tr('已取消优化'));
+  appendLog(tr('优化已取消，可调整参数后重新开始。'));
+  emitToast('info', tr('已取消优化'));
 }
 
 function handleProgress(d) {
   if (!isMeshOptOpen() || !running) return;
   const p = d || {};
-  setStage(p.message || p.stage || '处理中…');
+  setStage(p.message || p.stage || tr('处理中…'));
   const cur = Number(p.current), total = Number(p.total);
   if (isFinite(total) && total > 0 && isFinite(cur)) {
     const pct = cur / total * 100;
@@ -668,7 +670,7 @@ function handleLog(d) {
 function handleDone(d) {
   if (!isMeshOptOpen() || finishGuard) return;
   const res = (d && d.result) ? d.result : ((d && d.outPath) ? d : null);
-  if (res && res.ok === false) { fail(res.message || '优化未成功', { toast: true }); return; }
+  if (res && res.ok === false) { fail(res.message || tr('优化未成功'), { toast: true }); return; }
   if (!res) return;
   finishGuard = true;
   running = false;
@@ -678,19 +680,19 @@ function handleDone(d) {
   const dv = view('done');
   if (dv) dv.innerHTML = renderDone(res);
   showStatus('done');
-  emitToast('success', '模型优化完成');
+  emitToast('success', tr('模型优化完成'));
 }
 function handleError(d) {
   if (!isMeshOptOpen() || finishGuard || status === 'done') return;
   // 事件通道错误不经过 api 封装，需手动 Toast
-  fail((d && d.message) || '优化过程发生错误。', { toast: true });
+  fail((d && d.message) || tr('优化过程发生错误。'), { toast: true });
 }
 function fail(msg, opts) {
   const o = opts || {};
   running = false;
   setRunning(false);
-  if (o.toast !== false) emitToast('error', msg || '发生错误');
-  showError(msg || '发生错误');
+  if (o.toast !== false) emitToast('error', msg || tr('发生错误'));
+  showError(msg || tr('发生错误'));
 }
 
 async function pickBlender() {
@@ -701,42 +703,42 @@ async function pickBlender() {
     const r = await api.meshBlenderSet(p);
     renderBlender(r);
     emitToast(r && r.ok ? 'success' : 'error',
-      r && r.ok ? ('Blender 已就绪 · v' + (r.version || '?')) : ((r && r.reason) || '该可执行文件不是可用的 Blender'));
+      r && r.ok ? (tr('Blender 已就绪 · v') + (r.version || '?')) : ((r && r.reason) || tr('该可执行文件不是可用的 Blender')));
   } catch (e) {
-    emitToast('error', (e && e.message) || '配置 Blender 路径失败');
+    emitToast('error', (e && e.message) || tr('配置 Blender 路径失败'));
   }
 }
 
 async function addToLibrary() {
   if (added) return;
   const p = result && result.outPath;
-  if (!p) { emitToast('warn', '没有可加入的输出文件'); return; }
+  if (!p) { emitToast('warn', tr('没有可加入的输出文件')); return; }
   const b = qs('[data-role="addlib"]', root);
   if (b) b.disabled = true;
   try {
     const r = await api.meshAddToLibrary(p);
     added = true;
-    emitToast('success', r && r.folderAdded ? '已登记目录并把优化结果加入模型库' : '已把优化结果加入模型库');
+    emitToast('success', r && r.folderAdded ? tr('已登记目录并把优化结果加入模型库') : tr('已把优化结果加入模型库'));
     window.dispatchEvent(new CustomEvent('shelf:refresh', { detail: { reason: 'meshopt' } }));
     if (b) {
       b.classList.add('is-done');
-      b.innerHTML = icon('i-check') + '<span>已在模型库中</span>';
+      b.innerHTML = icon('i-check') + tr('<span>已在模型库中</span>');
     }
   } catch (e) {
     if (b) b.disabled = false;
     // api 封装已统一 Toast，这里只恢复按钮状态
-    if (!e) emitToast('error', '加入模型库失败');
+    if (!e) emitToast('error', tr('加入模型库失败'));
   }
 }
 function revealOutPath() {
   const p = result && result.outPath;
-  if (!p) { emitToast('warn', '没有可显示的输出路径'); return; }
+  if (!p) { emitToast('warn', tr('没有可显示的输出路径')); return; }
   Promise.resolve(api.reveal(p)).catch(() => { /* api 封装已 Toast */ });
 }
 function copyOutPath() {
   const text = (result && result.outPath) || '';
-  if (!text) { emitToast('warn', '没有可复制的路径'); return; }
-  const done = () => emitToast('success', '已复制输出路径');
+  if (!text) { emitToast('warn', tr('没有可复制的路径')); return; }
+  const done = () => emitToast('success', tr('已复制输出路径'));
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
   } else {
@@ -752,7 +754,7 @@ function fallbackCopy(text, done) {
   let ok = false;
   try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
   ta.remove();
-  if (ok) done(); else emitToast('error', '复制失败，请手动选中路径复制');
+  if (ok) done(); else emitToast('error', tr('复制失败，请手动选中路径复制'));
 }
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 侧栏折叠状态的唯一入口。
  *
@@ -24,7 +26,7 @@ export function applySidebar(collapsed, { persist = false } = {}) {
   const btn = root && root.getElementById ? root.getElementById('sidebar-toggle') : null;
   if (btn) {
     btn.setAttribute('aria-expanded', on ? 'false' : 'true');
-    btn.title = on ? '展开侧栏' : '收起侧栏';
+    btn.title = on ? tr('展开侧栏') : tr('收起侧栏');
   }
   if (persist) api.settingsUpdate({ ui: { sidebarCollapsed: on } }).catch(() => {});
   return on;

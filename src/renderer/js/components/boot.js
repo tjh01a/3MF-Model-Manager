@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 启动动画控制器。
  *
@@ -22,14 +24,14 @@ const STAGE_EACH_MS = 200;
 const MAX_STAGE_WAIT_MS = 900;
 
 const STAGE_LABELS = {
-  starting: '正在启动 PrintShelf',
-  dirs: '正在准备本地数据目录',
-  store: '正在读取本地模型库',
-  data: '正在加载耗材与记录',
-  services: '正在准备转换与设备服务',
-  ipc: '正在连接应用功能',
-  backend: '后端就绪，正在绘制界面',
-  paint: '界面准备完成',
+  starting: tr('正在启动 PrintShelf'),
+  dirs: tr('正在准备本地数据目录'),
+  store: tr('正在读取本地模型库'),
+  data: tr('正在加载耗材与记录'),
+  services: tr('正在准备转换与设备服务'),
+  ipc: tr('正在连接应用功能'),
+  backend: tr('后端就绪，正在绘制界面'),
+  paint: tr('界面准备完成'),
 };
 
 const boot = {
@@ -65,7 +67,7 @@ function applyStage({ name, percent }) {
     track.style.setProperty('--boot-pct', Math.round(percent || 0) + '%');
   }
   if (text) {
-    text.textContent = STAGE_LABELS[name] || (name === 'paint' ? '界面准备完成' : '正在加载…');
+    text.textContent = STAGE_LABELS[name] || (name === 'paint' ? tr('界面准备完成') : tr('正在加载…'));
     if (hint) {
       hint.classList.remove('is-changing');
       // 强制回流，让同一个节点上的动画能重播
@@ -144,7 +146,7 @@ export function bootFailed(reason = 'error', message = '') {
   if (el) el.classList.add('is-error');
   // 后端明确失败 / 超时时给出具体中文原因；没有具体原因才用兜底文案
   boot.errorMessage = message || boot.errorMessage || '';
-  if (hint) hint.textContent = message || '启动时遇到问题，已进入主界面；如有异常可查看界面提示';
+  if (hint) hint.textContent = message || tr('启动时遇到问题，已进入主界面；如有异常可查看界面提示');
   // 留 ~900ms 让人看清提示，但仍受硬超时约束
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => finish(reason), 900);

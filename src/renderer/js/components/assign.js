@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 手动归类：把模型放进分类 / 打标签的统一入口。
  * 拖拽落地、右键菜单、空分类页的「手动添加」都走这里，保证提示与撤销行为一致。
@@ -36,12 +38,12 @@ export async function setCategory(ids, categoryId) {
   try {
     await api.bulk(list, { categoryId: target });
   } catch (e) {
-    emitToast('error', (e && e.message) || '归类失败');
+    emitToast('error', (e && e.message) || tr('归类失败'));
     return { ok: false, count: 0 };
   }
-  const name = target ? ('「' + (catName(target) || '分类') + '」') : '未分类';
-  emitToast('success', '已把 ' + list.length + ' 个模型放入' + name, {
-    actionLabel: '撤销',
+  const name = target ? ('「' + (catName(target) || tr('分类')) + '」') : tr('未分类');
+  emitToast('success', tr('已把 ') + list.length + tr(' 个模型放入') + name, {
+    actionLabel: tr('撤销'),
     action: async () => {
       for (const id of list) {
         const back = Object.prototype.hasOwnProperty.call(before, id) ? before[id] : null;
@@ -67,11 +69,11 @@ export async function addTag(ids, tagId) {
   try {
     await api.tagAssign(list, [tagId], 'add');
   } catch (e) {
-    emitToast('error', (e && e.message) || '添加标签失败');
+    emitToast('error', (e && e.message) || tr('添加标签失败'));
     return { ok: false, count: 0 };
   }
-  emitToast('success', '已给 ' + list.length + ' 个模型加上「' + (tag.name || '标签') + '」', {
-    actionLabel: '撤销',
+  emitToast('success', tr('已给 ') + list.length + tr(' 个模型加上「') + (tag.name || tr('标签')) + '」', {
+    actionLabel: tr('撤销'),
     action: async () => {
       for (const id of list) {
         try { await api.update(id, { tagIds: before[id] || [] }); } catch (_) { /* 忽略 */ }
@@ -87,15 +89,15 @@ export async function addTag(ids, tagId) {
 export async function chooseCategory(ids) {
   const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
   if (!list.length) return;
-  const options = [{ value: '__none__', label: '不分类（移出分类）', icon: 'i-folder-open', color: '#94a3b8' }]
+  const options = [{ value: '__none__', label: tr('不分类（移出分类）'), icon: 'i-folder-open', color: '#94a3b8' }]
     .concat((state.categories || []).map((c) => ({
       value: c.id, label: c.name, icon: c.icon || 'i-folder', color: c.color,
     })));
   let r;
   try {
     r = await selectDialog({
-      title: '添加到分类',
-      message: '把选中的 ' + list.length + ' 个模型放入哪个分类？',
+      title: tr('添加到分类'),
+      message: tr('把选中的 ') + list.length + tr(' 个模型放入哪个分类？'),
       options, mode: 'single',
     });
   } catch (_) { return; }
@@ -110,11 +112,11 @@ export async function createCategoryWith(ids) {
   let r = null;
   try {
     r = await nameColorDialog({
-      title: '新建分类',
-      label: '分类名称' + (list.length ? '（建好后直接放入这 ' + list.length + ' 个模型）' : ''),
-      placeholder: '例如：功能件',
+      title: tr('新建分类'),
+      label: tr('分类名称') + (list.length ? tr('（建好后直接放入这 ') + list.length + tr(' 个模型）') : ''),
+      placeholder: tr('例如：功能件'),
       colors: CATEGORY_COLORS,
-      confirmText: '创建',
+      confirmText: tr('创建'),
     });
   } catch (_) { return; }
   if (!r || !r.value) return;
@@ -122,13 +124,13 @@ export async function createCategoryWith(ids) {
   try {
     cat = await api.categoryCreate({ name: r.value, color: r.color });
   } catch (e) {
-    emitToast('error', (e && e.message) || '创建分类失败');
+    emitToast('error', (e && e.message) || tr('创建分类失败'));
     return;
   }
   try { state.categories = await api.categories(); } catch (_) { /* 忽略 */ }
-  if (!cat || !cat.id) { emitToast('warn', '分类已创建，但未能自动放入模型'); afterAssign(); return; }
+  if (!cat || !cat.id) { emitToast('warn', tr('分类已创建，但未能自动放入模型')); afterAssign(); return; }
   if (!list.length) {
-    emitToast('success', '已创建分类「' + r.value + '」');
+    emitToast('success', tr('已创建分类「') + r.value + '」');
     afterAssign();
     return;
   }
@@ -142,11 +144,11 @@ export async function createTagWith(ids) {
   let r = null;
   try {
     r = await nameColorDialog({
-      title: '新建标签',
-      label: '标签名称' + (list.length ? '（建好后直接打到这 ' + list.length + ' 个模型上）' : ''),
-      placeholder: '例如：高精度',
+      title: tr('新建标签'),
+      label: tr('标签名称') + (list.length ? tr('（建好后直接打到这 ') + list.length + tr(' 个模型上）') : ''),
+      placeholder: tr('例如：高精度'),
       colors: DEFAULT_TAG_COLORS,
-      confirmText: '创建',
+      confirmText: tr('创建'),
     });
   } catch (_) { return; }
   if (!r || !r.value) return;
@@ -154,12 +156,12 @@ export async function createTagWith(ids) {
   try {
     tag = await api.tagCreate({ name: r.value, color: r.color });
   } catch (e) {
-    emitToast('error', (e && e.message) || '创建标签失败');
+    emitToast('error', (e && e.message) || tr('创建标签失败'));
     return;
   }
   try { state.tags = await api.tags(); } catch (_) { /* 忽略 */ }
-  if (!tag || !tag.id) { emitToast('warn', '标签已创建，但未能自动打上'); afterAssign(); return; }
-  if (!list.length) { emitToast('success', '已创建标签「' + r.value + '」'); afterAssign(); return; }
+  if (!tag || !tag.id) { emitToast('warn', tr('标签已创建，但未能自动打上')); afterAssign(); return; }
+  if (!list.length) { emitToast('success', tr('已创建标签「') + r.value + '」'); afterAssign(); return; }
   await addTag(list, tag.id);
 }
 
@@ -178,23 +180,23 @@ export async function pickModelsForCategory(categoryId) {
     all = (state.items || []).slice();
   }
   if (!all.length) {
-    emitToast('warn', '模型库还是空的，先添加目录并扫描吧');
+    emitToast('warn', tr('模型库还是空的，先添加目录并扫描吧'));
     return;
   }
   const inCat = all.filter((m) => m && m.categoryId === categoryId).map((m) => m.id);
   const options = all.map((m) => {
     const bits = [];
-    if (m.categoryId && m.categoryId !== categoryId) bits.push(catName(m.categoryId) || '其他分类');
-    else if (!m.categoryId) bits.push('未分类');
+    if (m.categoryId && m.categoryId !== categoryId) bits.push(catName(m.categoryId) || tr('其他分类'));
+    else if (!m.categoryId) bits.push(tr('未分类'));
     if (m.fileName && m.title && m.fileName !== m.title) bits.push(m.fileName);
     return { value: m.id, label: m.title || m.fileName || m.id, hint: bits.join(' · ') };
   });
   let picked;
   try {
     picked = await pickerDialog({
-      title: '加入「' + cat.name + '」',
-      message: '勾选要放进这个分类的模型（可搜索）；已勾选的可以取消，取消会移回「未分类」。',
-      options, selected: inCat, confirmText: '保存', placeholder: '搜索名称 / 文件名…',
+      title: tr('加入「') + cat.name + '」',
+      message: tr('勾选要放进这个分类的模型（可搜索）；已勾选的可以取消，取消会移回「未分类」。'),
+      options, selected: inCat, confirmText: tr('保存'), placeholder: tr('搜索名称 / 文件名…'),
     });
   } catch (_) { return; }
   if (picked === undefined) return;
@@ -202,15 +204,15 @@ export async function pickModelsForCategory(categoryId) {
   const pickedSet = new Set(picked);
   const add = picked.filter((id) => !inCat.includes(id));
   const drop = inCat.filter((id) => !pickedSet.has(id));
-  if (!add.length && !drop.length) { emitToast('info', '分类没有变化'); return; }
+  if (!add.length && !drop.length) { emitToast('info', tr('分类没有变化')); return; }
 
   if (add.length) await setCategory(add, categoryId);
   if (drop.length) {
     try {
       await api.bulk(drop, { categoryId: null });
-      emitToast('success', '已把 ' + drop.length + ' 个模型移回「未分类」');
+      emitToast('success', tr('已把 ') + drop.length + tr(' 个模型移回「未分类」'));
     } catch (e) {
-      emitToast('error', (e && e.message) || '移出失败');
+      emitToast('error', (e && e.message) || tr('移出失败'));
     }
   }
   afterAssign();

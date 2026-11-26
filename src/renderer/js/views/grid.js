@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /** 网格 / 列表渲染：卡片结构严格照 DOM CONTRACT，事件委托 + 多选 + 懒加载。 */
 import { state, setState } from '../state.js';
 import { api, emitRefresh, emitToast } from '../api.js';
@@ -17,8 +19,8 @@ import { motionEnabled, enterView } from '../components/motion.js';
 
 // constants.js 为 CommonJS，渲染层不可 import，按冻结值内联
 const PRINT_STATUS = {
-  unprinted: { label: '未打印' }, queued: { label: '待打印' },
-  printing: { label: '打印中' }, printed: { label: '已完成' }, failed: { label: '失败' },
+  unprinted: { label: tr('未打印') }, queued: { label: tr('待打印') },
+  printing: { label: tr('打印中') }, printed: { label: tr('已完成') }, failed: { label: tr('失败') },
 };
 const STATUS_CYCLE = ['unprinted', 'queued', 'printing', 'printed'];
 // 色板最多 6 个圆点，再多显示 +N；卡片最窄 140px，多了会和左下角徽标挤在一起
@@ -119,8 +121,8 @@ function colorShareData(meta) {
 
   if (!values.size) {
     return {
-      basisLabel: '暂无数据',
-      note: '这个 3MF 没有逐色克数，也没有可用的对象面数；切片后重新导入可显示真实占比。',
+      basisLabel: tr('暂无数据'),
+      note: tr('这个 3MF 没有逐色克数，也没有可用的对象面数；切片后重新导入可显示真实占比。'),
       rows: colors.map((c, i) => ({
         color: c, type: types[i] || '', pct: '—', amount: '',
       })),
@@ -140,8 +142,8 @@ function colorShareData(meta) {
   const total = ordered.reduce((s, v) => s + v.amount, 0);
   if (!(total > 0)) {
     return {
-      basisLabel: '暂无数据',
-      note: '这个 3MF 没有可用的逐色用量数据。',
+      basisLabel: tr('暂无数据'),
+      note: tr('这个 3MF 没有可用的逐色用量数据。'),
       rows: colors.map((c, i) => ({ color: c, type: types[i] || '', pct: '—', amount: '' })),
     };
   }
@@ -155,17 +157,17 @@ function colorShareData(meta) {
     return s.replace(/\.0$/, '') + '%';
   };
   return {
-    basisLabel: basis === 'usage' ? '按耗材用量' : '按三角面估算',
+    basisLabel: basis === 'usage' ? tr('按耗材用量') : tr('按三角面估算'),
     note: basis === 'usage'
-      ? '按切片逐色克数计算。'
-      : '未切片，按对象三角面数估算，仅用于比较各色大致比例。',
+      ? tr('按切片逐色克数计算。')
+      : tr('未切片，按对象三角面数估算，仅用于比较各色大致比例。'),
     rows: ordered.map((v, i) => ({
       color: v.color,
       type: v.type || '',
       pct: fmtPct(pcts[i]),
       amount: basis === 'usage'
         ? (Math.round(v.amount * 10) / 10).toFixed(1) + ' g'
-        : Math.round(v.amount).toLocaleString('zh-CN') + ' 面',
+        : Math.round(v.amount).toLocaleString('zh-CN') + tr(' 面'),
     })),
   };
 }
@@ -179,10 +181,10 @@ function colorsHtml(meta) {
   const shown = colors.slice(0, MAX_SWATCHES);
   const more = colors.length - shown.length;
   const desc = (meta.colorSource === 'project'
-    ? '切片配置中的耗材颜色（未找到零件挤出机映射）'
-    : '零件用到的耗材颜色') + '：' +
+    ? tr('切片配置中的耗材颜色（未找到零件挤出机映射）')
+    : tr('零件用到的耗材颜色')) + '：' +
     colors.map((c, i) => (types[i] ? types[i] + ' ' : '') + c).join('、') +
-    (more ? '，共 ' + colors.length + ' 色' : '') + '；悬停查看各色占比';
+    (more ? tr('，共 ') + colors.length + tr(' 色') : '') + tr('；悬停查看各色占比');
   const label = escapeHtml(desc);
   const payload = escapeHtml(JSON.stringify(shares));
   let html = '<div class="card-colors" role="group" tabindex="0" aria-label="' + label +
@@ -226,13 +228,13 @@ function showColorTip(el) {
     const color = SAFE_HEX.test(String(r.color || '')) ? String(r.color) : '#999999';
     return '<div class="color-tip-row">' +
       '<i class="color-tip-dot" style="background:' + color + '"></i>' +
-      '<div class="color-tip-main"><span class="color-tip-type">' + escapeHtml(r.type || '耗材') + '</span>' +
+      '<div class="color-tip-main"><span class="color-tip-type">' + escapeHtml(r.type || tr('耗材')) + '</span>' +
         '<span class="color-tip-hex">' + escapeHtml(color.toUpperCase()) + '</span></div>' +
       '<b class="color-tip-pct">' + escapeHtml(r.pct || '—') + '</b>' +
       (r.amount ? '<small class="color-tip-amount">' + escapeHtml(r.amount) + '</small>' : '') +
       '</div>';
   }).join('');
-  tip.innerHTML = '<div class="color-tip-head"><span>耗材颜色占比</span>' +
+  tip.innerHTML = tr('<div class="color-tip-head"><span>耗材颜色占比</span>') +
     '<span class="color-tip-basis">' + escapeHtml(data.basisLabel || '') + '</span></div>' +
     rows + (data.note ? '<div class="color-tip-note">' + escapeHtml(data.note) + '</div>' : '');
   tip.classList.add('is-on');
@@ -272,20 +274,20 @@ function priceHtml(m) {
   const knownWeight = !known && Number.isFinite(weightG) && weightG > 0;
   if (knownWeight) text = (weightG >= 100 ? Math.round(weightG) : weightG.toFixed(1)) + ' g';
   const costSource = c && c.source;
-  const how = costSource === 'default' ? '按默认耗材单价 × 模型重量估算'
-    : (c && c.complete ? '按已分配耗材与用量计算的估算成本' : '按切片重量与耗材单价估算的成本');
+  const how = costSource === 'default' ? tr('按默认耗材单价 × 模型重量估算')
+    : (c && c.complete ? tr('按已分配耗材与用量计算的估算成本') : tr('按切片重量与耗材单价估算的成本'));
   const title = known
-    ? how + '：' + text + '（点进详情看明细）'
+    ? how + '：' + text + tr('（点进详情看明细）')
     : (knownWeight
-      ? '已识别切片重量 ' + weightG.toFixed(2) + ' g，但还没有可用单价：去耗材库设一个默认耗材或给模型分配耗材即可算价'
-      : '这个文件里没有切片重量（未切片的 3MF 很常见）。点进详情可手填重量，或去耗材库设默认耗材后按重量估算。');
+      ? tr('已识别切片重量 ') + weightG.toFixed(2) + tr(' g，但还没有可用单价：去耗材库设一个默认耗材或给模型分配耗材即可算价')
+      : tr('这个文件里没有切片重量（未切片的 3MF 很常见）。点进详情可手填重量，或去耗材库设默认耗材后按重量估算。'));
   return '<span class="card-price' + (known ? '' : ' is-unknown') + '" data-price="' +
     (known ? String(total) : (knownWeight ? 'w' + weightG : '??')) + '" title="' + escapeHtml(title) + '">' + text + '</span>';
 }
 
 function cardHtml(m) {
   const id = escapeHtml(m.id);
-  const title = escapeHtml(m.title || m.fileName || '未命名');
+  const title = escapeHtml(m.title || m.fileName || tr('未命名'));
   const src = escapeHtml(m.thumbnail ? 'shelf://thumbs/' + m.thumbnail : 'assets/placeholder.svg');
   const st = PRINT_STATUS[m.printStatus] ? m.printStatus : 'unprinted';
   const meta = m.meta || {};
@@ -303,14 +305,14 @@ function cardHtml(m) {
   const sourceClass = srcUrl ? ' class="has-source"' : '';
   const sourceUrlAttr = srcUrl ? ' data-url="' + escapeHtml(srcUrl) + '"' : '';
 
-  const badges = ['<span class="badge status-' + st + '" data-act="status" title="点击切换打印状态">' +
+  const badges = ['<span class="badge status-' + st + tr('" data-act="status" title="点击切换打印状态">') +
     PRINT_STATUS[st].label + '</span>'];
   // 失效记录不会出现在普通视图（见 library.query），所以这里不再画「失效」徽标
-  if (m.status === 'error') badges.push('<span class="badge badge-warn">解析失败</span>');
+  if (m.status === 'error') badges.push(tr('<span class="badge badge-warn">解析失败</span>'));
   if (m.duplicateGroup) {
     const dn = dupGroupSize(m);
-    badges.push('<span class="badge badge-dup" title="内容完全相同，点开详情可在文件间切换">' +
-      '重复' + (dn > 1 ? ' ×' + dn : '') + '</span>');
+    badges.push(tr('<span class="badge badge-dup" title="内容完全相同，点开详情可在文件间切换">') +
+      tr('重复') + (dn > 1 ? ' ×' + dn : '') + '</span>');
   }
 
   // 勾选态不写进 HTML：由 syncSelectionDom() 统一刷，这样勾一张卡不会让所有卡片重建
@@ -318,20 +320,20 @@ function cardHtml(m) {
     '<div class="card-media">' +
       '<img class="card-img" src="' + src + '" loading="lazy" alt="">' +
       '<label class="card-check"><input type="checkbox" class="card-cb"></label>' +
-      '<button class="card-fav' + (m.favorite ? ' is-fav' : '') + '" data-act="fav" title="收藏">' + icon('i-star') + '</button>' +
+      '<button class="card-fav' + (m.favorite ? ' is-fav' : '') + tr('" data-act="fav" title="收藏">') + icon('i-star') + '</button>' +
       '<div class="card-badges">' + badges.join('') + '</div>' +
       colorsHtml(meta) +
       '<div class="card-quick">' +
         // 常态高亮的主按钮：悬停弹出「拓竹 / Orca（快造）/ Orca（官方）」三选一，直接点按默认方式打开
         '<span class="q-open-wrap">' +
-          '<button data-act="open" class="q-open" title="用切片软件打开（悬停可选拓竹 / Orca）">' + icon('i-printer') + '</button>' +
+          tr('<button data-act="open" class="q-open" title="用切片软件打开（悬停可选拓竹 / Orca）">') + icon('i-printer') + '</button>' +
         '</span>' +
         // 浏览器图标：有来源链接就打开原网页；没有就静默无反应（不做假动作）
         '<button data-act="source"' + sourceClass + sourceUrlAttr +
-          ' title="' + (srcUrl ? '在浏览器打开来源网页' : '没有来源链接') + '">' + icon('i-globe') + '</button>' +
-        '<button data-act="reveal" title="在资源管理器中显示">' + icon('i-folder-open') + '</button>' +
-        '<button data-act="trash" class="q-del" title="删除（移入系统回收站）">' + icon('i-trash') + '</button>' +
-        '<button data-act="more" title="更多">' + icon('i-more') + '</button>' +
+          ' title="' + (srcUrl ? tr('在浏览器打开来源网页') : tr('没有来源链接')) + '">' + icon('i-globe') + '</button>' +
+        tr('<button data-act="reveal" title="在资源管理器中显示">') + icon('i-folder-open') + '</button>' +
+        tr('<button data-act="trash" class="q-del" title="删除（移入系统回收站）">') + icon('i-trash') + '</button>' +
+        tr('<button data-act="more" title="更多">') + icon('i-more') + '</button>' +
       '</div>' +
     '</div>' +
     '<div class="card-info">' +
@@ -513,11 +515,11 @@ async function removeModels(ids) {
   let ok = false;
   try {
     ok = await confirmDialog({
-      title: '移出索引',
-      message: '确定把选中的 ' + ids.length + ' 个模型移出索引吗？磁盘文件不会被删除。',
-      detail: '以下模型将从库中移除：',
+      title: tr('移出索引'),
+      message: tr('确定把选中的 ') + ids.length + tr(' 个模型移出索引吗？磁盘文件不会被删除。'),
+      detail: tr('以下模型将从库中移除：'),
       items: ids.map((id) => { const m = findItem(id); return m ? (m.path || m.fileName || id) : id; }),
-      danger: true, confirmText: '移出索引',
+      danger: true, confirmText: tr('移出索引'),
     });
   } catch (_) { return; }
   if (!ok) return;
@@ -530,11 +532,11 @@ async function trashModels(ids) {
   let ok = false;
   try {
     ok = await confirmDialog({
-      title: '删除到回收站',
-      message: '确定删除选中的 ' + ids.length + ' 个文件吗？文件会被移入系统回收站，之后可以从回收站还原。',
-      detail: '以下文件将被移入回收站：',
+      title: tr('删除到回收站'),
+      message: tr('确定删除选中的 ') + ids.length + tr(' 个文件吗？文件会被移入系统回收站，之后可以从回收站还原。'),
+      detail: tr('以下文件将被移入回收站：'),
       items: ids.map((id) => { const m = findItem(id); return m ? (m.path || m.fileName || id) : id; }),
-      danger: true, confirmText: '移入回收站',
+      danger: true, confirmText: tr('移入回收站'),
     });
   } catch (_) { return; }
   if (!ok) return;
@@ -544,9 +546,9 @@ async function trashModels(ids) {
   const failed = (res && res.failed) || [];
   if (failed.length) {
     emitToast(failed.length === ids.length ? 'error' : 'warn',
-      failed.length + ' 个文件删除失败：' + ((failed[0] && failed[0].error) || '未知原因'));
+      failed.length + tr(' 个文件删除失败：') + ((failed[0] && failed[0].error) || tr('未知原因')));
   }
-  if (done.length) emitToast('success', '已删除 ' + done.length + ' 个文件（可在回收站还原）');
+  if (done.length) emitToast('success', tr('已删除 ') + done.length + tr(' 个文件（可在回收站还原）'));
   for (const id of ids) state.selection.delete(id);
   syncBulkbar();
   emitRefresh('trash');
@@ -556,26 +558,26 @@ function menuItemsFor(ids) {
   const one = ids.length === 1 ? findItem(ids[0]) : null;
   const allIds = visibleItems().map((m) => m.id);
   return [
-    { label: '用切片软件打开', icon: 'i-printer', action: () => openModels(ids) },
-    { label: '用拓竹打开', icon: 'i-box', action: () => openModels(ids, 'bambu') },
-    { label: '用官方 Orca 打开（原文件）', icon: 'i-printer', action: () => openModels(ids, 'orca-official-direct') },
-    { label: '用 Orca 打开（快造 U1，先转换）', icon: 'i-cube', action: () => openModels(ids, 'snapmaker') },
-    { label: '转换后用官方 Orca 打开', icon: 'i-printer', action: () => openModels(ids, 'orca-official') },
-    { label: '仅转换为快造格式…', icon: 'i-shuffle', action: () => convertOnly(ids) },
-    { label: '大图预览', icon: 'i-eye', action: () => openLightbox(allIds, Math.max(0, allIds.indexOf(ids[0]))) },
-    { label: '模型体检 / 优化…', icon: 'i-sparkle', action: () => openMeshOpt(ids[0]) },
+    { label: tr('用切片软件打开'), icon: 'i-printer', action: () => openModels(ids) },
+    { label: tr('用拓竹打开'), icon: 'i-box', action: () => openModels(ids, 'bambu') },
+    { label: tr('用官方 Orca 打开（原文件）'), icon: 'i-printer', action: () => openModels(ids, 'orca-official-direct') },
+    { label: tr('用 Orca 打开（快造 U1，先转换）'), icon: 'i-cube', action: () => openModels(ids, 'snapmaker') },
+    { label: tr('转换后用官方 Orca 打开'), icon: 'i-printer', action: () => openModels(ids, 'orca-official') },
+    { label: tr('仅转换为快造格式…'), icon: 'i-shuffle', action: () => convertOnly(ids) },
+    { label: tr('大图预览'), icon: 'i-eye', action: () => openLightbox(allIds, Math.max(0, allIds.indexOf(ids[0]))) },
+    { label: tr('模型体检 / 优化…'), icon: 'i-sparkle', action: () => openMeshOpt(ids[0]) },
     { divider: true },
-    { label: '添加到分类…', icon: 'i-folder', action: () => chooseCategory(ids) },
-    { label: one && one.favorite ? '取消收藏' : '收藏', icon: 'i-star',
+    { label: tr('添加到分类…'), icon: 'i-folder', action: () => chooseCategory(ids) },
+    { label: one && one.favorite ? tr('取消收藏') : tr('收藏'), icon: 'i-star',
       action: () => api.bulk(ids, { favorite: one ? !one.favorite : true }).then(() => emitRefresh('fav')).catch(() => {}) },
-    { label: '设为已完成', icon: 'i-check',
+    { label: tr('设为已完成'), icon: 'i-check',
       action: () => api.setPrintStatus(ids, 'printed').then(() => emitRefresh('status')).catch(() => {}) },
     { divider: true },
-    { label: '在资源管理器中显示', icon: 'i-folder-open', action: () => ids.forEach((id) => api.reveal(id).catch(() => {})) },
-    { label: '复制路径', icon: 'i-copy', action: () => ids.forEach((id) => api.copyPath(id).catch(() => {})) },
+    { label: tr('在资源管理器中显示'), icon: 'i-folder-open', action: () => ids.forEach((id) => api.reveal(id).catch(() => {})) },
+    { label: tr('复制路径'), icon: 'i-copy', action: () => ids.forEach((id) => api.copyPath(id).catch(() => {})) },
     { divider: true },
-    { label: '移出索引', icon: 'i-minus', danger: true, action: () => removeModels(ids) },
-    { label: '删除（移入回收站）', icon: 'i-trash', danger: true, action: () => trashModels(ids) },
+    { label: tr('移出索引'), icon: 'i-minus', danger: true, action: () => removeModels(ids) },
+    { label: tr('删除（移入回收站）'), icon: 'i-trash', danger: true, action: () => trashModels(ids) },
   ];
 }
 function handleAct(act, el, card, e) {
@@ -594,7 +596,12 @@ function handleAct(act, el, card, e) {
     case 'source': {
       const url = (el && el.getAttribute && el.getAttribute('data-url')) || '';
       if (!url) break;                      // 没有来源链接：按用户要求，点了没反应
-      api.openExternal(url).catch(() => {});
+      // 交给主进程按站点设置选 cn / global，并在目标站缺模型时回退。
+      api.openSource(id).then((r) => {
+        if (r && r.fallback) {
+          emitToast('info', tr(r.fallback === 'cn' ? 'makerworld.fallbackCn' : 'makerworld.fallbackGlobal'));
+        }
+      }).catch(() => {});
       break;
     }
     case 'reveal': api.reveal(id).catch(() => {}); break;
@@ -741,8 +748,8 @@ function buildGhost(ids) {
   const first = findItem(ids[0]) || {};
   const thumb = first.thumbnail ? 'shelf://thumbs/' + first.thumbnail : 'assets/placeholder.svg';
   const label = ids.length > 1
-    ? (ids.length + ' 个模型')
-    : (first.title || first.fileName || '1 个模型');
+    ? (ids.length + tr(' 个模型'))
+    : (first.title || first.fileName || tr('1 个模型'));
   const el = document.createElement('div');
   el.className = 'drag-ghost';
   el.innerHTML = '<img src="' + escapeHtml(thumb) + '" alt="">' +

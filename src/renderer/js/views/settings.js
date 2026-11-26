@@ -1,4 +1,7 @@
 'use strict';
+import { t as tr, setLanguage } from '../i18n.js';
+import { applyMakerWorldLinks } from '../components/site-links.js';
+
 /**
  * 设置页：目录 / 切片软件 / 外观 / 数据 / 关于 5 个 tab。
  * 所有内容使用统一 .settings-section/.form-row/.field/.switch 结构；变更后立即应用并持久化。
@@ -15,16 +18,16 @@ import { startOnboarding, startGuide } from '../components/onboarding.js';
 
 const esc = (v) => escapeHtml(v == null ? '' : String(v));
 const el = (id) => document.getElementById(id);
-const toastErr = (e) => emitToast('error', (e && e.message) || '操作失败');
+const toastErr = (e) => emitToast('error', (e && e.message) || tr('操作失败'));
 
 const TABS = [
-  { key: 'folders',    label: '监控目录', icon: 'i-folder' },
-  { key: 'slicers',    label: '切片软件', icon: 'i-printer' },
-  { key: 'appearance', label: '外观',     icon: 'i-sun' },
-  { key: 'monitor',    label: '打印监控', icon: 'i-printer' },
-  { key: 'classify',   label: '自动分类', icon: 'i-sparkle' },
-  { key: 'data',       label: '数据管理', icon: 'i-hard-drive' },
-  { key: 'about',      label: '关于',     icon: 'i-info' },
+  { key: 'folders',    label: tr('监控目录'), icon: 'i-folder' },
+  { key: 'slicers',    label: tr('切片软件'), icon: 'i-printer' },
+  { key: 'appearance', label: tr('外观'),     icon: 'i-sun' },
+  { key: 'monitor',    label: tr('打印监控'), icon: 'i-printer' },
+  { key: 'classify',   label: tr('自动分类'), icon: 'i-sparkle' },
+  { key: 'data',       label: tr('数据管理'), icon: 'i-hard-drive' },
+  { key: 'about',      label: tr('关于'),     icon: 'i-info' },
 ];
 
 let mounted = false;
@@ -69,12 +72,12 @@ function folderRow(f) {
   return '<div class="folder-row">' +
     '<div class="folder-main">' + icon('i-folder') +
       '<div><div class="mono">' + esc(f.path) + '</div>' +
-        '<div class="muted">上次扫描：' + esc(f.lastScanAt ? fmtDate(f.lastScanAt) : '从未') +
-        ' · ' + (f.recursive ? '递归' : '仅本层') + '</div></div></div>' +
+        tr('<div class="muted">上次扫描：') + esc(f.lastScanAt ? fmtDate(f.lastScanAt) : tr('从未')) +
+        ' · ' + (f.recursive ? tr('递归') : tr('仅本层')) + '</div></div></div>' +
     '<div class="folder-ctrls">' +
-      sw('启用', f.enabled !== false, 'data-folder-toggle="enabled" data-id="' + esc(f.id) + '"') +
-      sw('递归', !!f.recursive, 'data-folder-toggle="recursive" data-id="' + esc(f.id) + '"') +
-      '<button type="button" class="icon-btn danger" data-act="folder-remove" data-id="' + esc(f.id) + '" title="移除目录">' + icon('i-trash') + '</button>' +
+      sw(tr('启用'), f.enabled !== false, 'data-folder-toggle="enabled" data-id="' + esc(f.id) + '"') +
+      sw(tr('递归'), !!f.recursive, 'data-folder-toggle="recursive" data-id="' + esc(f.id) + '"') +
+      '<button type="button" class="icon-btn danger" data-act="folder-remove" data-id="' + esc(f.id) + tr('" title="移除目录">') + icon('i-trash') + '</button>' +
     '</div></div>';
 }
 
@@ -83,27 +86,27 @@ function renderFolders() {
   const scan = (state.settings && state.settings.scan) || {};
   const list = folders.length
     ? folders.map(folderRow).join('')
-    : '<div class="empty">还没有监控目录，点击下方按钮添加。</div>';
-  return sec('监控目录',
+    : tr('<div class="empty">还没有监控目录，点击下方按钮添加。</div>');
+  return sec(tr('监控目录'),
       '<div class="folder-list">' + list + '</div>' +
       '<div class="btn-row">' +
-        actionBtn('add-folder', 'i-plus', '添加目录', 'btn btn-primary btn-sm') +
-        actionBtn('scan-all', 'i-refresh', '扫描全部') +
+        actionBtn('add-folder', 'i-plus', tr('添加目录'), 'btn btn-primary btn-sm') +
+        actionBtn('scan-all', 'i-refresh', tr('扫描全部')) +
       '</div>'
     ) +
-    sec('扫描选项',
-      row(field('排除目录名（逗号分隔）',
+    sec(tr('扫描选项'),
+      row(field(tr('排除目录名（逗号分隔）'),
         '<input class="input" data-bind="scan.excludeDirs" data-kind="csv" value="' +
-        esc((scan.excludeDirs || []).join(', ')) + '" placeholder="例如：temp, backup, old">')) +
+        esc((scan.excludeDirs || []).join(', ')) + tr('" placeholder="例如：temp, backup, old">'))) +
       row(
-        field('最大递归深度', '<input class="input" type="number" min="1" max="32" data-bind="scan.maxDepth" data-kind="number" value="' +
+        field(tr('最大递归深度'), '<input class="input" type="number" min="1" max="32" data-bind="scan.maxDepth" data-kind="number" value="' +
           esc(scan.maxDepth != null ? scan.maxDepth : 12) + '">') +
-        field('并发数', '<input class="input" type="number" min="1" max="16" data-bind="scan.concurrency" data-kind="number" value="' +
+        field(tr('并发数'), '<input class="input" type="number" min="1" max="16" data-bind="scan.concurrency" data-kind="number" value="' +
           esc(scan.concurrency != null ? scan.concurrency : 4) + '">')
       ) +
       row(
-        sw('自动监视目录变化', scan.autoWatch !== false, 'data-bind="scan.autoWatch" data-kind="bool"') +
-        sw('计算内容哈希（精确去重）', scan.hashEnabled !== false, 'data-bind="scan.hashEnabled" data-kind="bool"')
+        sw(tr('自动监视目录变化'), scan.autoWatch !== false, 'data-bind="scan.autoWatch" data-kind="bool"') +
+        sw(tr('计算内容哈希（精确去重）'), scan.hashEnabled !== false, 'data-bind="scan.hashEnabled" data-kind="bool"')
       )
     );
 }
@@ -112,20 +115,20 @@ function slicerRow(s) {
   return '<div class="slicer-row">' +
     '<div class="slicer-head">' +
       '<label class="switch"><input type="radio" name="slicer-default"' + (s.isDefault ? ' checked' : '') +
-        ' data-act="slicer-default" data-id="' + esc(s.id) + '"><span class="switch-label">' + esc(s.name) + '（设为默认）</span></label>' +
-      '<span class="badge">' + esc(s.detected ? '自动探测' : '手动添加') + '</span>' +
+        ' data-act="slicer-default" data-id="' + esc(s.id) + '"><span class="switch-label">' + esc(s.name) + tr('（设为默认）</span></label>') +
+      '<span class="badge">' + esc(s.detected ? tr('自动探测') : tr('手动添加')) + '</span>' +
     '</div>' +
     '<div class="mono slicer-path">' + esc(s.exePath || '') + '</div>' +
     '<div class="form-row">' +
-      field('启动参数', '<input class="input" data-slicer-args data-id="' + esc(s.id) + '" value="' +
-        esc(s.args || '') + '" placeholder="可选，如 --slice">') +
-      sw('启用', s.enabled !== false, 'data-slicer-toggle="enabled" data-id="' + esc(s.id) + '"') +
+      field(tr('启动参数'), '<input class="input" data-slicer-args data-id="' + esc(s.id) + '" value="' +
+        esc(s.args || '') + tr('" placeholder="可选，如 --slice">')) +
+      sw(tr('启用'), s.enabled !== false, 'data-slicer-toggle="enabled" data-id="' + esc(s.id) + '"') +
     '</div>' +
     '<div class="btn-row">' +
       '<button type="button" class="btn btn-ghost btn-sm" data-act="slicer-validate" data-id="' + esc(s.id) + '">' +
-        icon('i-check') + '<span>校验 / 测试启动</span></button>' +
+        icon('i-check') + tr('<span>校验 / 测试启动</span></button>') +
       '<button type="button" class="btn btn-ghost btn-sm danger" data-act="slicer-remove" data-id="' + esc(s.id) + '">' +
-        icon('i-trash') + '<span>移除</span></button>' +
+        icon('i-trash') + tr('<span>移除</span></button>') +
       '<span class="validate-result" data-role="validate-' + esc(s.id) + '"></span>' +
     '</div></div>';
 }
@@ -134,22 +137,22 @@ function renderSlicers() {
   const slicers = state.slicers || (state.settings && state.settings.slicers) || [];
   const list = slicers.length
     ? slicers.map(slicerRow).join('')
-    : '<div class="empty">尚未配置切片软件，可一键探测或手动添加。</div>';
-  return sec('切片软件',
-      '<div class="btn-row">' + actionBtn('detect-slicers', 'i-search', '一键探测', 'btn btn-primary btn-sm') + '</div>' +
+    : tr('<div class="empty">尚未配置切片软件，可一键探测或手动添加。</div>');
+  return sec(tr('切片软件'),
+      '<div class="btn-row">' + actionBtn('detect-slicers', 'i-search', tr('一键探测'), 'btn btn-primary btn-sm') + '</div>' +
       '<div class="slicer-list">' + list + '</div>' +
-      '<p class="hint">提示：选中模型后点击「用切片软件打开」即可送入切片软件。</p>'
+      tr('<p class="hint">提示：选中模型后点击「用切片软件打开」即可送入切片软件。</p>')
     ) +
-    sec('手动添加',
+    sec(tr('手动添加'),
       row(
-        field('名称', '<input class="input" id="slicer-new-name" placeholder="例如：OrcaSlicer">') +
-        field('可执行文件路径', '<input class="input" id="slicer-new-path" placeholder="C:\\Program Files\\...\\xxx.exe">')
+        field(tr('名称'), tr('<input class="input" id="slicer-new-name" placeholder="例如：OrcaSlicer">')) +
+        field(tr('可执行文件路径'), '<input class="input" id="slicer-new-path" placeholder="C:\\Program Files\\...\\xxx.exe">')
       ) +
       '<div class="btn-row">' +
-        actionBtn('slicer-pick-exe', 'i-folder-open', '浏览…') +
-        actionBtn('slicer-add', 'i-plus', '添加', 'btn btn-primary btn-sm') +
+        actionBtn('slicer-pick-exe', 'i-folder-open', tr('浏览…')) +
+        actionBtn('slicer-add', 'i-plus', tr('添加'), 'btn btn-primary btn-sm') +
       '</div>' +
-      '<p class="hint">也可以直接粘贴安装目录（例如 C:\\Program Files\\Snapmaker_Orca），会自动找出里面的可执行文件。</p>'
+      tr('<p class="hint">也可以直接粘贴安装目录（例如 C:\\Program Files\\Snapmaker_Orca），会自动找出里面的可执行文件。</p>')
     ) +
     renderU1();
 }
@@ -159,19 +162,19 @@ function u1Select(kind, cur, list, emptyLabel) {
   const opts = ['<option value="">' + esc(emptyLabel) + '</option>'];
   for (const p of list) {
     opts.push('<option value="' + esc(p.name) + '"' + (p.name === cur ? ' selected' : '') + '>' +
-      esc(p.name) + (p.inherits ? '（继承 ' + esc(p.inherits) + '）' : '') + '</option>');
+      esc(p.name) + (p.inherits ? tr('（继承 ') + esc(p.inherits) + '）' : '') + '</option>');
   }
   return '<select class="input" data-u1="' + kind + '">' + opts.join('') + '</select>';
 }
 
 function renderU1() {
   if (u1Loading && !u1Info) {
-    return sec('快造 U1 转换', '<p class="hint">正在读取快造预设…</p>');
+    return sec(tr('快造 U1 转换'), tr('<p class="hint">正在读取快造预设…</p>'));
   }
   if (!u1Info) {
-    return sec('快造 U1 转换',
-      '<p class="hint">尚未读取到快造 Orca 的预设。请确认已安装快造 Orca 并在上方添加。</p>' +
-      '<div class="btn-row">' + actionBtn('u1-refresh', 'i-refresh', '重新读取') + '</div>');
+    return sec(tr('快造 U1 转换'),
+      tr('<p class="hint">尚未读取到快造 Orca 的预设。请确认已安装快造 Orca 并在上方添加。</p>') +
+      '<div class="btn-row">' + actionBtn('u1-refresh', 'i-refresh', tr('重新读取')) + '</div>');
   }
 
   const cur = (u1Info.settings || {});
@@ -181,44 +184,44 @@ function renderU1() {
   const cache = u1Info.cache || { count: 0, bytes: 0 };
 
   const summaryLine = sum
-    ? '解析结果：' + esc(sum.material || '—') + ' · 喷嘴 ' + esc(sum.nozzle || '—') + '°C' +
-      ' · 热床 ' + esc(sum.bed || '—') + '°C' + (sum.flow ? ' · 流量 ' + esc(sum.flow) : '')
-    : (cur.filamentPreset ? '预设已选中，但没能解析出参数（会只写入名字）' : '不选则沿用 U1 样板自带的耗材参数');
+    ? tr('解析结果：') + esc(sum.material || '—') + tr(' · 喷嘴 ') + esc(sum.nozzle || '—') + '°C' +
+      tr(' · 热床 ') + esc(sum.bed || '—') + '°C' + (sum.flow ? tr(' · 流量 ') + esc(sum.flow) : '')
+    : (cur.filamentPreset ? tr('预设已选中，但没能解析出参数（会只写入名字）') : tr('不选则沿用 U1 样板自带的耗材参数'));
 
   const openWith = cur.openWith || 'ask';
   const keepAll = cur.keepAllColours !== false;
   const owOpts = [
-    ['ask', '每次询问（推荐）'],
-    ['bambu', '总是用拓竹打开'],
-    ['orca-official-direct', '总是用官方 Orca 打开（原文件）'],
-    ['snapmaker', '总是用 Orca 打开（快造 U1）'],
-    ['orca-official', '总是转换后用官方 Orca 打开'],
+    ['ask', tr('每次询问（推荐）')],
+    ['bambu', tr('总是用拓竹打开')],
+    ['orca-official-direct', tr('总是用官方 Orca 打开（原文件）')],
+    ['snapmaker', tr('总是用 Orca 打开（快造 U1）')],
+    ['orca-official', tr('总是转换后用官方 Orca 打开')],
   ].map(([v, l]) => '<option value="' + v + '"' + (v === openWith ? ' selected' : '') + '>' + l + '</option>').join('');
 
   const orcaLine = u1Info.orcaDir
-    ? '<p class="hint">快造 Orca：' + esc(u1Info.orcaDir) + '</p>'
-    : '<p class="hint">⚠ 没有找到快造 Orca 安装目录，预设无法解析。可在上方「一键探测」或手动添加。</p>';
+    ? tr('<p class="hint">快造 Orca：') + esc(u1Info.orcaDir) + '</p>'
+    : tr('<p class="hint">⚠ 没有找到快造 Orca 安装目录，预设无法解析。可在上方「一键探测」或手动添加。</p>');
 
-  return sec('快造 U1 转换',
-    '<p class="hint">把拓竹下载的 3MF 转换成快造 U1 能正确切片的格式。转换产物放在本地缓存里，<b>原文件不会被改动</b>。</p>' +
+  return sec(tr('快造 U1 转换'),
+    tr('<p class="hint">把拓竹下载的 3MF 转换成快造 U1 能正确切片的格式。转换产物放在本地缓存里，<b>原文件不会被改动</b>。</p>') +
     row(
-      field('耗材预设', u1Select('filamentPreset', cur.filamentPreset, filaments, '不指定（沿用 U1 样板）'), summaryLine) +
-      field('进程预设', u1Select('processPreset', cur.processPreset, processes, '不指定（U1 样板 0.20mm）'),
-        '选中后会把该预设的参数一并写进配置')
+      field(tr('耗材预设'), u1Select('filamentPreset', cur.filamentPreset, filaments, tr('不指定（沿用 U1 样板）')), summaryLine) +
+      field(tr('进程预设'), u1Select('processPreset', cur.processPreset, processes, tr('不指定（U1 样板 0.20mm）')),
+        tr('选中后会把该预设的参数一并写进配置'))
     ) +
-    row(field('打开模型时', '<select class="input" data-u1="openWith">' + owOpts + '</select>',
-      '「每次询问」会在打开时弹一句，可勾选记住；官方 Orca 需先装 Snapmaker U1 共享配置')) +
-    row(field('颜色超过 4 色时',
+    row(field(tr('打开模型时'), '<select class="input" data-u1="openWith">' + owOpts + '</select>',
+      tr('「每次询问」会在打开时弹一句，可勾选记住；官方 Orca 需先装 Snapmaker U1 共享配置'))) +
+    row(field(tr('颜色超过 4 色时'),
       '<select class="input" data-u1="keepAllColours">' +
-        '<option value="1"' + (keepAll ? ' selected' : '') + '>保留全部颜色（推荐）</option>' +
-        '<option value="0"' + (keepAll ? '' : ' selected') + '>自动压到 4 色</option>' +
+        '<option value="1"' + (keepAll ? ' selected' : '') + tr('>保留全部颜色（推荐）</option>') +
+        '<option value="0"' + (keepAll ? '' : ' selected') + tr('>自动压到 4 色</option>') +
       '</select>',
-      'U1 只有 4 个工具头：保留全部颜色时，多出来的颜色要在 Orca 里手动换料；自动压色能直接打，但可能把某种颜色并掉')) +
+      tr('U1 只有 4 个工具头：保留全部颜色时，多出来的颜色要在 Orca 里手动换料；自动压色能直接打，但可能把某种颜色并掉'))) +
     orcaLine +
     '<div class="btn-row">' +
-      actionBtn('u1-open-cache', 'i-folder-open', '打开缓存目录') +
-      actionBtn('u1-clear-cache', 'i-trash', '清空缓存（' + fmtBytes(cache.bytes || 0) + '）', 'btn btn-ghost btn-sm danger') +
-      actionBtn('u1-refresh', 'i-refresh', '重新读取预设') +
+      actionBtn('u1-open-cache', 'i-folder-open', tr('打开缓存目录')) +
+      actionBtn('u1-clear-cache', 'i-trash', tr('清空缓存（') + fmtBytes(cache.bytes || 0) + '）', 'btn btn-ghost btn-sm danger') +
+      actionBtn('u1-refresh', 'i-refresh', tr('重新读取预设')) +
     '</div>'
   ) + renderPresetGuard() + renderFileAssoc();
 }
@@ -233,13 +236,13 @@ function renderU1() {
 function renderPresetGuard() {
   const g = presetHealth;
   if (!g) {
-    return sec('预设保护（快造用户预设）', '<p class="hint">正在检查…</p>' +
-      '<div class="btn-row">' + actionBtn('preset-check', 'i-refresh', '重新检查') + '</div>');
+    return sec(tr('预设保护（快造用户预设）'), tr('<p class="hint">正在检查…</p>') +
+      '<div class="btn-row">' + actionBtn('preset-check', 'i-refresh', tr('重新检查')) + '</div>');
   }
   if (g.ok === false) {
-    return sec('预设保护（快造用户预设）',
-      '<p class="hint">检查失败：' + esc(g.error || '未知原因') + '</p>' +
-      '<div class="btn-row">' + actionBtn('preset-check', 'i-refresh', '重新检查') + '</div>');
+    return sec(tr('预设保护（快造用户预设）'),
+      tr('<p class="hint">检查失败：') + esc(g.error || tr('未知原因')) + '</p>' +
+      '<div class="btn-row">' + actionBtn('preset-check', 'i-refresh', tr('重新检查')) + '</div>');
   }
 
   const c = g.counts || {};
@@ -250,46 +253,46 @@ function renderPresetGuard() {
 
   const syncLine = sync.known
     ? (sync.enabled
-      ? '云同步：<b>开着</b> —— 预设会跟着快造账号走。'
-      : '云同步：<b class="warn-text">关着</b> —— 预设只存在本机这一份，快造云端没有副本。')
-    : '云同步：读不到快造配置，按「不同步」处理。';
+      ? tr('云同步：<b>开着</b> —— 预设会跟着快造账号走。')
+      : tr('云同步：<b class="warn-text">关着</b> —— 预设只存在本机这一份，快造云端没有副本。'))
+    : tr('云同步：读不到快造配置，按「不同步」处理。');
 
   const backupLine = latest
-    ? '最近一次备份：' + esc(fmtDate(latest.at)) + '（' + esc(latest.reason || '') + '，' + (latest.files || 0) + ' 个文件，' +
+    ? tr('最近一次备份：') + esc(fmtDate(latest.at)) + '（' + esc(latest.reason || '') + '，' + (latest.files || 0) + tr(' 个文件，') +
       fmtBytes(latest.bytes || 0) + '）'
-    : '<b class="warn-text">还没有备份过</b>，点下面的「立即备份」留一份。';
+    : tr('<b class="warn-text">还没有备份过</b>，点下面的「立即备份」留一份。');
 
   const brokenHtml = broken.length
-    ? '<div class="hint warn-block">⚠ 有 ' + broken.length + ' 个预设的继承链断了，快造里会看不到它们：' +
+    ? tr('<div class="hint warn-block">⚠ 有 ') + broken.length + tr(' 个预设的继承链断了，快造里会看不到它们：') +
       '<ul>' + broken.map((b) => '<li>' + esc(b.name) + '（' + esc(b.kind) + '）' +
-        (b.missing.length ? ' 缺少：' + esc(b.missing.join('、')) : '') + '</li>').join('') + '</ul></div>'
+        (b.missing.length ? tr(' 缺少：') + esc(b.missing.join('、')) : '') + '</li>').join('') + '</ul></div>'
     : '';
 
   const foreignHtml = foreign.length
-    ? '<p class="hint">检测到原版 <b>' + foreign.map((f) => esc(f.app)).join('、') + '</b> 的预设目录（共 '
+    ? tr('<p class="hint">检测到原版 <b>') + foreign.map((f) => esc(f.app)).join('、') + tr('</b> 的预设目录（共 ')
       + foreign.reduce((s, f) => s + (f.presets || 0), 0)
-      + ' 个预设）。它是另一个程序，<b>不会被读取</b>，也不会和快造混在一起。</p>'
+      + tr(' 个预设）。它是另一个程序，<b>不会被读取</b>，也不会和快造混在一起。</p>')
     : '';
 
   const backupOpts = (g.backups || []).map((b) =>
-    '<option value="' + esc(b.id) + '">' + esc(b.id) + ' · ' + esc(b.reason || '') + ' · ' + (b.files || 0) + ' 个</option>'
+    '<option value="' + esc(b.id) + '">' + esc(b.id) + ' · ' + esc(b.reason || '') + ' · ' + (b.files || 0) + tr(' 个</option>')
   ).join('');
 
-  return sec('预设保护（快造用户预设）',
-    '<p class="hint">当前用户预设：耗材 <b>' + (c.filament || 0) + '</b> 个 · 工艺 <b>' + (c.process || 0) + '</b> 个 · 机型 <b>' + (c.machine || 0) + '</b> 个。' +
+  return sec(tr('预设保护（快造用户预设）'),
+    tr('<p class="hint">当前用户预设：耗材 <b>') + (c.filament || 0) + tr('</b> 个 · 工艺 <b>') + (c.process || 0) + tr('</b> 个 · 机型 <b>') + (c.machine || 0) + tr('</b> 个。') +
       syncLine + '</p>' +
-    (g.userRoot ? '<p class="hint">位置：' + esc(g.userRoot) + '</p>' : '') +
+    (g.userRoot ? tr('<p class="hint">位置：') + esc(g.userRoot) + '</p>' : '') +
     '<p class="hint">' + backupLine + '</p>' +
     brokenHtml + foreignHtml +
     '<div class="btn-row">' +
-      actionBtn('preset-snapshot', 'i-save', '立即备份', 'btn btn-primary btn-sm') +
-      actionBtn('preset-check', 'i-search', '重新检查') +
-      actionBtn('preset-open', 'i-folder-open', '打开备份目录') +
+      actionBtn('preset-snapshot', 'i-save', tr('立即备份'), 'btn btn-primary btn-sm') +
+      actionBtn('preset-check', 'i-search', tr('重新检查')) +
+      actionBtn('preset-open', 'i-folder-open', tr('打开备份目录')) +
     '</div>' +
     (backupOpts
-      ? row(field('从备份恢复', '<select class="input" id="preset-restore-id">' + backupOpts + '</select>',
-          '只会新增和覆盖，不会删除现有预设；恢复前会先把当前状态再备份一次') +
-        '<div class="btn-row">' + actionBtn('preset-restore', 'i-refresh', '恢复这份', 'btn btn-ghost btn-sm') + '</div>')
+      ? row(field(tr('从备份恢复'), '<select class="input" id="preset-restore-id">' + backupOpts + '</select>',
+          tr('只会新增和覆盖，不会删除现有预设；恢复前会先把当前状态再备份一次')) +
+        '<div class="btn-row">' + actionBtn('preset-restore', 'i-refresh', tr('恢复这份'), 'btn btn-ghost btn-sm') + '</div>')
       : '')
   );
 }
@@ -298,28 +301,28 @@ function renderPresetGuard() {
 function renderFileAssoc() {
   const a = fileAssoc;
   if (!a) {
-    return sec('双击 .3mf 用哪个程序打开', '<p class="hint">正在检查文件关联…</p>' +
-      '<div class="btn-row">' + actionBtn('assoc-check', 'i-refresh', '重新检查') + '</div>');
+    return sec(tr('双击 .3mf 用哪个程序打开'), tr('<p class="hint">正在检查文件关联…</p>') +
+      '<div class="btn-row">' + actionBtn('assoc-check', 'i-refresh', tr('重新检查')) + '</div>');
   }
   const curExe = a.defaultExe ? String(a.defaultExe).replace(/\\/g, '/').split('/').pop() : '';
   const curLine = a.defaultExe
-    ? '当前默认：<b>' + esc(curExe) + '</b>' + (a.defaultExists ? '' : ' <b class="warn-text">（文件不存在）</b>') +
+    ? tr('当前默认：<b>') + esc(curExe) + '</b>' + (a.defaultExists ? '' : tr(' <b class="warn-text">（文件不存在）</b>')) +
       '<br><span class="mono-sm">' + esc(a.defaultExe) + '</span>'
-    : '当前没有可用的默认程序（双击会弹「打开方式」）。';
+    : tr('当前没有可用的默认程序（双击会弹「打开方式」）。');
 
   const candRows = (a.candidates || []).map((c) => {
     const bad = c.exists === false || c.isStoreOrca;
     const missing = c.exists === false;
     return '<li' + (bad ? ' class="warn-text"' : '') + '>' + esc(c.name) +
-      (c.isStoreOrca ? ' <b>（商店版原版 OrcaSlicer，非快造，启动即崩溃）</b>' : '') +
-      (missing ? ' <b>（文件不存在）</b>' : '') + '</li>';
+      (c.isStoreOrca ? tr(' <b>（商店版原版 OrcaSlicer，非快造，启动即崩溃）</b>') : '') +
+      (missing ? tr(' <b>（文件不存在）</b>') : '') + '</li>';
   }).join('');
 
   const problems = (a.problems || []).map((p) => '<p class="hint warn-text">⚠ ' + esc(p.message) + '</p>').join('');
 
   const dangling = (a.problems || []).find((p) => p.code === 'progid-dangling');
   const fixBtn = dangling
-    ? actionBtn('assoc-fix', 'i-wrench', '修好（指回真实的处理器）', 'btn btn-primary btn-sm')
+    ? actionBtn('assoc-fix', 'i-wrench', tr('修好（指回真实的处理器）'), 'btn btn-primary btn-sm')
     : '';
 
   const useBtns = (a.suggestions || []).map((s) =>
@@ -327,17 +330,17 @@ function renderFileAssoc() {
       + (s.exePath && /snapmaker/i.test(s.exePath) ? 'snapmaker' : 'bambu') + '">' + esc(s.label) + '</button>'
   ).join('');
 
-  return sec('双击 .3mf 用哪个程序打开',
+  return sec(tr('双击 .3mf 用哪个程序打开'),
     '<p class="hint">' + curLine + '</p>' +
-    (a.userChoice ? '<p class="hint">系统里记着一次显式选择：' + esc(a.userChoice) + '</p>' : '') +
+    (a.userChoice ? tr('<p class="hint">系统里记着一次显式选择：') + esc(a.userChoice) + '</p>' : '') +
     problems +
-    (candRows ? '<p class="hint">「打开方式」里的候选：</p><ul class="hint">' + candRows + '</ul>' : '') +
+    (candRows ? tr('<p class="hint">「打开方式」里的候选：</p><ul class="hint">') + candRows + '</ul>' : '') +
     '<div class="btn-row">' + fixBtn + useBtns + '</div>' +
-    '<p class="hint">修复会写 HKCU 的类注册（不需要管理员）。Windows 的「默认应用」选择带防篡改校验，' +
-      '如果修完还不生效，就点下面的按钮到系统设置里手动点一次，找到 <b>.3mf</b> 选你要的程序。</p>' +
+    tr('<p class="hint">修复会写 HKCU 的类注册（不需要管理员）。Windows 的「默认应用」选择带防篡改校验，') +
+      tr('如果修完还不生效，就点下面的按钮到系统设置里手动点一次，找到 <b>.3mf</b> 选你要的程序。</p>') +
     '<div class="btn-row">' +
-      actionBtn('assoc-open-settings', 'i-gear', '打开系统默认应用设置') +
-      actionBtn('assoc-check', 'i-refresh', '重新检查') +
+      actionBtn('assoc-open-settings', 'i-gear', tr('打开系统默认应用设置')) +
+      actionBtn('assoc-check', 'i-refresh', tr('重新检查')) +
     '</div>'
   );
 }
@@ -356,44 +359,51 @@ function renderAppearance() {
   // 不解释一句的话，用户会觉得「选了完整却没动效」是 bug。
   const sysReduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const followSystem = ui.motionFollowSystem === true;
-  const makerWorldCn = ui.makerWorldCn === true;
-  return sec('外观',
+  const language = ui.language === 'en-US' ? 'en-US' : 'zh-CN';
+  const region = ['auto', 'cn', 'global'].includes(ui.makerWorldRegion) ? ui.makerWorldRegion : 'auto';
+  return sec(tr('外观'),
     row(
-      field('主题', '<select class="select" data-bind="ui.theme" data-kind="string">' +
-        opt('light', '浅色', theme) + opt('dark', '深色', theme) + opt('system', '跟随系统', theme) + '</select>') +
-      field('默认视图', '<select class="select" data-bind="ui.view" data-kind="string">' +
-        opt('grid', '网格', view) + opt('list', '列表', view) + '</select>')
+      field(tr('主题'), '<select class="select" data-bind="ui.theme" data-kind="string">' +
+        opt('light', tr('浅色'), theme) + opt('dark', tr('深色'), theme) + opt('system', tr('跟随系统'), theme) + '</select>') +
+      field(tr('默认视图'), '<select class="select" data-bind="ui.view" data-kind="string">' +
+        opt('grid', tr('网格'), view) + opt('list', tr('列表'), view) + '</select>')
     ) +
     row(
-      field('卡片尺寸', '<input class="input" type="range" min="140" max="340" step="10" data-bind="ui.cardSize" data-kind="number" value="' + esc(size) + '">') +
-      field('界面密度', '<select class="select" data-bind="ui.density" data-kind="string">' +
-        opt('comfortable', '宽松', density) + opt('compact', '紧凑', density) + '</select>')
+      field(tr('卡片尺寸'), '<input class="input" type="range" min="140" max="340" step="10" data-bind="ui.cardSize" data-kind="number" value="' + esc(size) + '">') +
+      field(tr('界面密度'), '<select class="select" data-bind="ui.density" data-kind="string">' +
+        opt('comfortable', tr('宽松'), density) + opt('compact', tr('紧凑'), density) + '</select>')
     ) +
     row(
-      sw('显示统计条', showStats, 'data-bind="ui.showStats" data-kind="bool"') +
-      sw('侧栏默认折叠', collapsed, 'data-bind="ui.sidebarCollapsed" data-kind="bool"')
+      sw(tr('显示统计条'), showStats, 'data-bind="ui.showStats" data-kind="bool"') +
+      sw(tr('侧栏默认折叠'), collapsed, 'data-bind="ui.sidebarCollapsed" data-kind="bool"')
     ) +
     row(
-      field('图标风格', '<select class="select" data-bind="ui.iconSet" data-kind="string">' +
-        opt('lucide', '统一线性图标', iconSet) + opt('legacy', '经典自绘图标', iconSet) + '</select>') +
-      field('界面动效', '<select class="select" data-bind="ui.motionLevel" data-kind="string">' +
-        opt('full', '完整', motion) + opt('reduced', '精简', motion) + opt('off', '关闭', motion) + '</select>')
+      field(tr('图标风格'), '<select class="select" data-bind="ui.iconSet" data-kind="string">' +
+        opt('lucide', tr('统一线性图标'), iconSet) + opt('legacy', tr('经典自绘图标'), iconSet) + '</select>') +
+      field(tr('界面动效'), '<select class="select" data-bind="ui.motionLevel" data-kind="string">' +
+        opt('full', tr('完整'), motion) + opt('reduced', tr('精简'), motion) + opt('off', tr('关闭'), motion) + '</select>')
     ) +
     row(
-      sw('MakerWorld 链接优先打开中国站', makerWorldCn, 'data-bind="ui.makerWorldCn" data-kind="bool"') +
-      sw('跟随系统「减少动态效果」', followSystem, 'data-bind="ui.motionFollowSystem" data-kind="bool"')
+      field(tr('language.label'), '<select class="select" data-bind="ui.language" data-kind="string">' +
+        opt('zh-CN', tr('language.zh'), language) + opt('en-US', tr('language.en'), language) + '</select>') +
+      field(tr('settings.makerWorldRegion'), '<select class="select" data-bind="ui.makerWorldRegion" data-kind="string">' +
+        opt('auto', tr('settings.makerWorldAuto'), region) +
+        opt('cn', tr('settings.makerWorldCn'), region) +
+        opt('global', tr('settings.makerWorldGlobal'), region) + '</select>')
     ) +
-    '<p class="hint">外观设置会立即生效并保存到本机。' +
+    row(
+      sw(tr('跟随系统「减少动态效果」'), followSystem, 'data-bind="ui.motionFollowSystem" data-kind="bool"')
+    ) +
+    tr('<p class="hint">外观设置会立即生效并保存到本机。') +
       (followSystem && sysReduced
-        ? '已跟随系统：系统关闭了动画，应用降到精简档（只保留淡入，不做位移与转场）。'
+        ? tr('已跟随系统：系统关闭了动画，应用降到精简档（只保留淡入，不做位移与转场）。')
         : (!followSystem && sysReduced
-          ? '系统当前关闭了「显示动画」，但应用按你选的档位播放（默认如此，和多数桌面软件一致）。' +
-            '如果反而觉得晃眼，可以打开「跟随系统」或把界面动效设为关闭。'
-          : '动效按你选的档位播放：视图切换与状态反馈都是不超过 220ms 的短促过渡。')) +
-      '「经典自绘图标」配合关闭动效可一键回到本次美化前的界面。' +
-      'MakerWorld 链接默认自动换成 makerworld.com.cn（语言段也切到 /zh）——' +
-      '两个站是独立的模型库，ID 不通用，极少数国服没同步的模型会提示不存在；' +
-      '需要看国际站时把开关关掉即可。</p>'
+          ? tr('系统当前关闭了「显示动画」，但应用按你选的档位播放（默认如此，和多数桌面软件一致）。') +
+            tr('如果反而觉得晃眼，可以打开「跟随系统」或把界面动效设为关闭。')
+          : tr('动效按你选的档位播放：视图切换与状态反馈都是不超过 220ms 的短促过渡。'))) +
+      tr('「经典自绘图标」配合关闭动效可一键回到本次美化前的界面。') +
+      tr('MakerWorld 站点选「跟随界面语言」时，英文界面打开国际站、中文界面打开中国站；') +
+      tr('两个站是独立的模型库，ID 不通用，找不到对应模型时会自动回退到另一个站并提示。</p>')
   );
 }
 
@@ -405,47 +415,47 @@ function renderMonitor() {
   const n = Object.assign({ enabled: true, onFinished: true, onError: true, onPaused: true, system: true },
     (state.settings && state.settings.notify) || {});
   const statLine = monitorStatus
-    ? '本机已记录 ' + monitorStatus.sessions + ' 次打印、' + monitorStatus.points + ' 个采样点，' +
-      '采样间隔 ' + monitorStatus.intervalSec + ' 秒。文件：' + esc(monitorStatus.file)
-    : '正在读取本机记录…';
+    ? tr('本机已记录 ') + monitorStatus.sessions + tr(' 次打印、') + monitorStatus.points + tr(' 个采样点，') +
+      tr('采样间隔 ') + monitorStatus.intervalSec + tr(' 秒。文件：') + esc(monitorStatus.file)
+    : tr('正在读取本机记录…');
 
-  return sec('主界面常驻监控条',
-      row(sw('在模型列表上方常驻显示打印机状态', ui.monitorBar !== false,
+  return sec(tr('主界面常驻监控条'),
+      row(sw(tr('在模型列表上方常驻显示打印机状态'), ui.monitorBar !== false,
         'data-bind="ui.monitorBar" data-kind="bool"')) +
-      '<p class="hint">不用每次打开「设备」弹窗，进度、喷嘴/热床温度、剩余时间一直挂在列表上方。' +
-        '点卡片可打开设备面板，点「曲线」回看这次打印的温度变化。没配置打印机时这一条会自动隐藏。</p>'
+      tr('<p class="hint">不用每次打开「设备」弹窗，进度、喷嘴/热床温度、剩余时间一直挂在列表上方。') +
+        tr('点卡片可打开设备面板，点「曲线」回看这次打印的温度变化。没配置打印机时这一条会自动隐藏。</p>')
     ) +
-    sec('完成与异常通知',
+    sec(tr('完成与异常通知'),
       row(
-        sw('开启打印提醒', n.enabled !== false, 'data-bind="notify.enabled" data-kind="bool"') +
-        sw('同时弹系统通知', n.system !== false, 'data-bind="notify.system" data-kind="bool"')
+        sw(tr('开启打印提醒'), n.enabled !== false, 'data-bind="notify.enabled" data-kind="bool"') +
+        sw(tr('同时弹系统通知'), n.system !== false, 'data-bind="notify.system" data-kind="bool"')
       ) +
       row(
-        sw('打印完成时提醒我', n.onFinished !== false, 'data-bind="notify.onFinished" data-kind="bool"') +
-        sw('打印报错时提醒我', n.onError !== false, 'data-bind="notify.onError" data-kind="bool"')
+        sw(tr('打印完成时提醒我'), n.onFinished !== false, 'data-bind="notify.onFinished" data-kind="bool"') +
+        sw(tr('打印报错时提醒我'), n.onError !== false, 'data-bind="notify.onError" data-kind="bool"')
       ) +
       row(
-        sw('打印中突然暂停时提醒我（多半是断料）', n.onPaused !== false,
+        sw(tr('打印中突然暂停时提醒我（多半是断料）'), n.onPaused !== false,
           'data-bind="notify.onPaused" data-kind="bool"')
       ) +
-      '<div class="btn-row">' + actionBtn('notify-test', 'i-info', '发一条测试通知') + '</div>' +
-      '<p class="hint">同一个任务的同一种提醒只发一次；打印机断线重连不会重复弹。' +
-        '关掉「系统通知」后仍会在应用内弹提示，不会彻底收不到。</p>'
+      '<div class="btn-row">' + actionBtn('notify-test', 'i-info', tr('发一条测试通知')) + '</div>' +
+      tr('<p class="hint">同一个任务的同一种提醒只发一次；打印机断线重连不会重复弹。') +
+        tr('关掉「系统通知」后仍会在应用内弹提示，不会彻底收不到。</p>')
     ) +
-    sec('温度与进度曲线',
+    sec(tr('温度与进度曲线'),
       row(
-        sw('后台记录温度与进度', m.enabled !== false, 'data-bind="monitor.enabled" data-kind="bool"') +
-        field('采样间隔', '<select class="select" data-bind="monitor.intervalSec" data-kind="number">' +
-          opt(5, '每 5 秒', Number(m.intervalSec)) + opt(10, '每 10 秒', Number(m.intervalSec)) +
-          opt(15, '每 15 秒', Number(m.intervalSec)) + opt(30, '每 30 秒', Number(m.intervalSec)) +
-          opt(60, '每 60 秒', Number(m.intervalSec)) + '</select>')
+        sw(tr('后台记录温度与进度'), m.enabled !== false, 'data-bind="monitor.enabled" data-kind="bool"') +
+        field(tr('采样间隔'), '<select class="select" data-bind="monitor.intervalSec" data-kind="number">' +
+          opt(5, tr('每 5 秒'), Number(m.intervalSec)) + opt(10, tr('每 10 秒'), Number(m.intervalSec)) +
+          opt(15, tr('每 15 秒'), Number(m.intervalSec)) + opt(30, tr('每 30 秒'), Number(m.intervalSec)) +
+          opt(60, tr('每 60 秒'), Number(m.intervalSec)) + '</select>')
       ) +
       '<div class="btn-row">' +
-        actionBtn('monitor-chart', 'i-layers', '查看最近一次曲线', 'btn btn-primary btn-sm') +
-        actionBtn('monitor-clear', 'i-trash', '清除本机历史') +
+        actionBtn('monitor-chart', 'i-layers', tr('查看最近一次曲线'), 'btn btn-primary btn-sm') +
+        actionBtn('monitor-clear', 'i-trash', tr('清除本机历史')) +
       '</div>' +
-      '<p class="hint">' + statLine + ' 采样只在本机进行，按打印任务分段保存；' +
-        '每台机器最多 1800 个点，超过会自动丢最旧的，文件不会无限长大。</p>'
+      '<p class="hint">' + statLine + tr(' 采样只在本机进行，按打印任务分段保存；') +
+        tr('每台机器最多 1800 个点，超过会自动丢最旧的，文件不会无限长大。</p>')
     );
 }
 
@@ -459,16 +469,16 @@ async function clearMonitorHistory() {
   let ok = false;
   try {
     ok = await confirmDialog({
-      title: '清除打印监控历史',
-      message: '删除本机保存的所有温度 / 进度采样记录吗？',
-      detail: '只影响曲线回看，不会改动模型库、设置或打印机。正在进行的打印会重新开始记录。',
-      danger: true, confirmText: '清除',
+      title: tr('清除打印监控历史'),
+      message: tr('删除本机保存的所有温度 / 进度采样记录吗？'),
+      detail: tr('只影响曲线回看，不会改动模型库、设置或打印机。正在进行的打印会重新开始记录。'),
+      danger: true, confirmText: tr('清除'),
     });
   } catch (_) { return; }
   if (!ok) return;
   try {
     const r = await api.monitorClear(null);
-    emitToast('success', '已清除 ' + ((r && r.cleared) || 0) + ' 次打印记录');
+    emitToast('success', tr('已清除 ') + ((r && r.cleared) || 0) + tr(' 次打印记录'));
     await refreshMonitorStatus();
   } catch (e) { toastErr(e); }
 }
@@ -479,42 +489,42 @@ function backupRow(b) {
     '<span class="muted">' + esc(b.size != null ? fmtBytes(b.size) : '—') + ' · ' +
       esc(b.mtime ? fmtDate(b.mtime) : '—') + '</span>' +
     '<button type="button" class="btn btn-ghost btn-sm danger" data-act="restore" data-name="' + esc(b.name) + '">' +
-      icon('i-undo') + '<span>恢复</span></button></div>';
+      icon('i-undo') + tr('<span>恢复</span></button></div>');
 }
 
 function renderData() {
   const info = state.info || {};
   const backups = state.backups || [];
-  const bk = backups.length ? backups.map(backupRow).join('') : '<div class="empty">暂无备份</div>';
-  return sec('数据目录',
+  const bk = backups.length ? backups.map(backupRow).join('') : tr('<div class="empty">暂无备份</div>');
+  return sec(tr('数据目录'),
       '<div class="data-dir"><span class="mono">' + esc(info.dataDir || '—') + '</span>' +
-        actionBtn('open-datadir', 'i-folder-open', '打开目录') + '</div>' +
-      '<p class="hint">所有数据仅保存在本机，不联网、不上传。</p>'
+        actionBtn('open-datadir', 'i-folder-open', tr('打开目录')) + '</div>' +
+      tr('<p class="hint">所有数据仅保存在本机，不联网、不上传。</p>')
     ) +
-    sec('备份与恢复',
-      '<div class="btn-row">' + actionBtn('backup', 'i-save', '立即备份', 'btn btn-primary btn-sm') + '</div>' +
+    sec(tr('备份与恢复'),
+      '<div class="btn-row">' + actionBtn('backup', 'i-save', tr('立即备份'), 'btn btn-primary btn-sm') + '</div>' +
       '<div class="backup-list">' + bk + '</div>'
     ) +
-    sec('导入 / 导出',
+    sec(tr('导入 / 导出'),
       '<div class="btn-row">' +
-        actionBtn('export', 'i-download', '导出 JSON') +
-        actionBtn('import', 'i-upload', '导入 JSON') +
+        actionBtn('export', 'i-download', tr('导出 JSON')) +
+        actionBtn('import', 'i-upload', tr('导入 JSON')) +
       '</div>' +
-      '<p class="hint">导入时可选择合并或覆盖；覆盖会替换现有模型库，需二次确认。</p>'
+      tr('<p class="hint">导入时可选择合并或覆盖；覆盖会替换现有模型库，需二次确认。</p>')
     ) +
-    sec('初始化向导',
+    sec(tr('初始化向导'),
       '<div class="btn-row">' +
-        actionBtn('rerun-onboarding', 'i-sparkle', '重新运行初始化向导', 'btn btn-ghost btn-sm') +
-        actionBtn('rerun-guide', 'i-info', '再看一遍新手引导', 'btn btn-ghost btn-sm') +
+        actionBtn('rerun-onboarding', 'i-sparkle', tr('重新运行初始化向导'), 'btn btn-ghost btn-sm') +
+        actionBtn('rerun-guide', 'i-info', tr('再看一遍新手引导'), 'btn btn-ghost btn-sm') +
       '</div>' +
-      '<p class="hint">换电脑、换了模型盘，或者想重新选一次扫描范围时用这个。向导不会删除已有模型与分类。</p>'
+      tr('<p class="hint">换电脑、换了模型盘，或者想重新选一次扫描范围时用这个。向导不会删除已有模型与分类。</p>')
     ) +
-    sec('缩略图缓存',
+    sec(tr('缩略图缓存'),
       '<div class="btn-row">' +
-        actionBtn('thumb-prune', 'i-trash', '清理无效缓存') +
-        actionBtn('thumb-regen', 'i-refresh', '全部重新生成') +
+        actionBtn('thumb-prune', 'i-trash', tr('清理无效缓存')) +
+        actionBtn('thumb-regen', 'i-refresh', tr('全部重新生成')) +
       '</div>' +
-      '<div class="thumb-stats" data-role="thumb-stats">正在读取缓存统计…</div>'
+      tr('<div class="thumb-stats" data-role="thumb-stats">正在读取缓存统计…</div>')
     );
 }
 
@@ -523,21 +533,21 @@ function renderAbout() {
   const kv = (k, v) => '<div class="meta-cell"><span class="meta-k">' + esc(k) +
     '</span><span class="meta-v mono">' + esc(v || '—') + '</span></div>';
   const keys = [
-    ['/ 或 Ctrl+F', '聚焦搜索'], ['Ctrl+A', '全选'], ['F2', '重命名'], ['Ctrl+D', '收藏'],
-    ['Ctrl+O', '送切片软件'], ['Space', '大图预览'], ['Delete', '移出索引'], ['1~5', '评分'],
-    ['Esc', '逐层关闭'], ['F5', '扫描'],
+    [tr('/ 或 Ctrl+F'), tr('聚焦搜索')], ['Ctrl+A', tr('全选')], ['F2', tr('重命名')], ['Ctrl+D', tr('收藏')],
+    ['Ctrl+O', tr('送切片软件')], ['Space', tr('大图预览')], ['Delete', tr('移出索引')], ['1~5', tr('评分')],
+    ['Esc', tr('逐层关闭')], ['F5', tr('扫描')],
   ];
-  return sec('关于 PrintShelf',
+  return sec(tr('关于 PrintShelf'),
       '<div class="about-logo">' + icon('i-layers') + '<strong>PrintShelf</strong>' +
-        '<span>本地 3MF 模型库</span></div>' +
+        tr('<span>本地 3MF 模型库</span></div>') +
       '<div class="meta-grid">' +
-        kv('应用版本', i.version) + kv('Electron', i.electron) + kv('Node', i.node) +
-        kv('平台', i.platform) + kv('数据目录', i.dataDir) +
+        kv(tr('应用版本'), i.version) + kv('Electron', i.electron) + kv('Node', i.node) +
+        kv(tr('平台'), i.platform) + kv(tr('数据目录'), i.dataDir) +
       '</div>' +
-      '<p class="hint">扫描、分类、预览、去重、一键送切片软件，全部功能离线可用。</p>' +
-      '<div class="privacy-note">' + icon('i-check-circle') + '所有数据仅保存在本机，不联网、不上传。</div>'
+      tr('<p class="hint">扫描、分类、预览、去重、一键送切片软件，全部功能离线可用。</p>') +
+      '<div class="privacy-note">' + icon('i-check-circle') + tr('所有数据仅保存在本机，不联网、不上传。</div>')
     ) +
-    sec('键盘快捷键',
+    sec(tr('键盘快捷键'),
       '<div class="shortcut-list">' + keys.map((pair) =>
         '<div class="shortcut"><kbd>' + esc(pair[0]) + '</kbd><span>' + esc(pair[1]) + '</span></div>').join('') +
       '</div>'
@@ -575,63 +585,63 @@ function renderClassify() {
   const rules = Array.isArray(cfg.rules) ? cfg.rules : [];
   const stat = cfg.lastRunStat;
   const statLine = stat && (stat.assigned || stat.scanned)
-    ? '上次运行：扫描 ' + (stat.scanned || 0) + ' 个，分好 ' + (stat.assigned || 0) +
-      ' 个，跳过 ' + (stat.skipped || 0) + ' 个' +
+    ? tr('上次运行：扫描 ') + (stat.scanned || 0) + tr(' 个，分好 ') + (stat.assigned || 0) +
+      tr(' 个，跳过 ') + (stat.skipped || 0) + tr(' 个') +
       (cfg.lastRunAt ? '（' + esc(fmtDate(cfg.lastRunAt)) + '）' : '')
-    : '还没有跑过批量分类。启动软件或点上面的按钮都会跑一次。';
+    : tr('还没有跑过批量分类。启动软件或点上面的按钮都会跑一次。');
 
   const ruleRows = rules.map((r, i) => {
     const c = byId.get(r.categoryId);
     const dot = '<span class="rule-dot" style="--dot:' + esc((c && c.color) || '#94a3b8') + '"></span>';
-    const name = c ? esc(c.name) : '<span class="muted">分类已删除（规则暂停）</span>';
+    const name = c ? esc(c.name) : tr('<span class="muted">分类已删除（规则暂停）</span>');
     return '<div class="rule-row">' +
       '<div class="rule-head">' + dot +
         '<span class="rule-name">' + name + '</span>' +
-        '<span class="rule-order">优先级 ' + (i + 1) + '</span>' +
+        tr('<span class="rule-order">优先级 ') + (i + 1) + '</span>' +
       '</div>' +
       '<textarea class="textarea rule-kw" rows="3" spellcheck="false" data-rule="' + esc(r.id) + '">' +
         esc((r.keywords || []).join('\n')) + '</textarea>' +
     '</div>';
   }).join('');
 
-  return sec('自动分类',
-      '<p class="hint">导入新模型时按下面的词库自动落进分类。只处理「未分类」的模型，' +
-        '你手动分过的永远不会被改；一个词都没命中就保持未分类，不会硬塞进某个分类。</p>' +
+  return sec(tr('自动分类'),
+      tr('<p class="hint">导入新模型时按下面的词库自动落进分类。只处理「未分类」的模型，') +
+        tr('你手动分过的永远不会被改；一个词都没命中就保持未分类，不会硬塞进某个分类。</p>') +
       row(
-        sw('新模型导入时自动分类', onScan, 'data-bind="classify.onScan" data-kind="bool"') +
-        sw('每次启动补一次未分类', onStartup, 'data-bind="classify.onStartup" data-kind="bool"')
+        sw(tr('新模型导入时自动分类'), onScan, 'data-bind="classify.onScan" data-kind="bool"') +
+        sw(tr('每次启动补一次未分类'), onStartup, 'data-bind="classify.onStartup" data-kind="bool"')
       ) +
       row(
-        sw('有模型没匹配上时，打开软件提醒我', promptUnmatched,
+        sw(tr('有模型没匹配上时，打开软件提醒我'), promptUnmatched,
           'data-bind="classify.promptUnmatched" data-kind="bool"')
       ) +
       '<div class="btn-row">' +
-        actionBtn('classify-run', 'i-sparkle', '立即分类未分类', 'btn btn-primary btn-sm') +
-        actionBtn('classify-preset', 'i-refresh', '恢复预设词库') +
-        actionBtn('classify-undo', 'i-undo', '撤销自动分类') +
+        actionBtn('classify-run', 'i-sparkle', tr('立即分类未分类'), 'btn btn-primary btn-sm') +
+        actionBtn('classify-preset', 'i-refresh', tr('恢复预设词库')) +
+        actionBtn('classify-undo', 'i-undo', tr('撤销自动分类')) +
       '</div>' +
       ((Array.isArray(cfg.skippedIds) && cfg.skippedIds.length)
         ? '<div class="btn-row">' +
-            '<span class="hint">已跳过 ' + cfg.skippedIds.length + ' 个模型的分类提醒。</span>' +
-            actionBtn('classify-skip-reset', 'i-refresh', '恢复提醒') +
+            tr('<span class="hint">已跳过 ') + cfg.skippedIds.length + tr(' 个模型的分类提醒。</span>') +
+            actionBtn('classify-skip-reset', 'i-refresh', tr('恢复提醒')) +
           '</div>'
         : '') +
       '<p class="hint">' + statLine + '</p>'
     ) +
-    sec('词库',
-      '<p class="hint">每行一个关键词，也可以逗号分隔；命中任意一个就归入该分类。' +
-        '越靠上的分类优先级越高，第一条命中即止。少于 2 个字的关键词会被忽略，避免误伤。</p>' +
-      (ruleRows || '<div class="empty">当前没有可用规则。点「恢复预设词库」生成一套。</div>')
+    sec(tr('词库'),
+      tr('<p class="hint">每行一个关键词，也可以逗号分隔；命中任意一个就归入该分类。') +
+        tr('越靠上的分类优先级越高，第一条命中即止。少于 2 个字的关键词会被忽略，避免误伤。</p>') +
+      (ruleRows || tr('<div class="empty">当前没有可用规则。点「恢复预设词库」生成一套。</div>'))
     );
 }
 
 async function runClassify() {
   try {
     const r = await api.classifyRun();
-    if (r && r.disabled) { emitToast('warn', '自动分类已关闭，先打开上面的开关'); return; }
+    if (r && r.disabled) { emitToast('warn', tr('自动分类已关闭，先打开上面的开关')); return; }
     if (r && r.error) { emitToast('warn', r.error); return; }
     const n = (r && r.assigned) || 0;
-    emitToast(n ? 'success' : 'info', n ? ('已自动分类 ' + n + ' 个模型') : '没有需要分类的模型');
+    emitToast(n ? 'success' : 'info', n ? (tr('已自动分类 ') + n + tr(' 个模型')) : tr('没有需要分类的模型'));
     await refreshSettings();
     emitRefresh('classify');
   } catch (e) { toastErr(e); }
@@ -641,11 +651,11 @@ async function restorePreset() {
   try {
     const preset = await api.classifyPreset();
     if (!Array.isArray(preset) || !preset.length) {
-      emitToast('warn', '当前分类里没有能匹配的预设规则，先建好分类再试');
+      emitToast('warn', tr('当前分类里没有能匹配的预设规则，先建好分类再试'));
       return;
     }
     const ok = await updateSettings({ classify: { rules: preset } });
-    if (ok) { emitToast('success', '已恢复预设词库'); await refreshSettings(); }
+    if (ok) { emitToast('success', tr('已恢复预设词库')); await refreshSettings(); }
   } catch (e) { toastErr(e); }
 }
 
@@ -654,15 +664,15 @@ async function resetSkipped() {
   let ok = false;
   try {
     ok = await confirmDialog({
-      title: '恢复分类提醒',
-      message: '让之前点过「全部跳过」的模型重新参与提醒吗？',
-      detail: '只清掉跳过记录，不会改动任何模型的分类；下次启动如果仍未匹配，会再次提示。',
-      confirmText: '恢复',
+      title: tr('恢复分类提醒'),
+      message: tr('让之前点过「全部跳过」的模型重新参与提醒吗？'),
+      detail: tr('只清掉跳过记录，不会改动任何模型的分类；下次启动如果仍未匹配，会再次提示。'),
+      confirmText: tr('恢复'),
     });
   } catch (_) { return; }
   if (!ok) return;
   const r = await updateSettings({ classify: { skippedIds: [] } });
-  if (r) { emitToast('success', '已恢复分类提醒'); await refreshSettings(); }
+  if (r) { emitToast('success', tr('已恢复分类提醒')); await refreshSettings(); }
 }
 
 /** 重新走一次首次启动向导：不删数据，只重新选扫描范围 */
@@ -681,17 +691,17 @@ async function undoClassify() {
   let ok = false;
   try {
     ok = await confirmDialog({
-      title: '撤销自动分类',
-      message: '把所有「自动分好的」模型改回未分类吗？',
-      detail: '你自己手动分过的模型不受影响，只清掉自动分类的结果。',
-      danger: true, confirmText: '撤销',
+      title: tr('撤销自动分类'),
+      message: tr('把所有「自动分好的」模型改回未分类吗？'),
+      detail: tr('你自己手动分过的模型不受影响，只清掉自动分类的结果。'),
+      danger: true, confirmText: tr('撤销'),
     });
   } catch (_) { return; }
   if (!ok) return;
   try {
     const r = await api.classifyUndo();
     const n = (r && r.cleared) || 0;
-    emitToast(n ? 'success' : 'info', n ? ('已撤销 ' + n + ' 个自动分类') : '没有可撤销的记录');
+    emitToast(n ? 'success' : 'info', n ? (tr('已撤销 ') + n + tr(' 个自动分类')) : tr('没有可撤销的记录'));
     await refreshSettings();
     emitRefresh('classify');
   } catch (e) { toastErr(e); }
@@ -712,7 +722,7 @@ async function saveRuleKeywords(id, text) {
   if (uniq.length === before.length && uniq.every((k, i) => k === before[i])) return;
   rules[idx].keywords = uniq;
   const ok = await updateSettings({ classify: { rules } });
-  if (ok) emitToast('success', '词库已保存');
+  if (ok) emitToast('success', tr('词库已保存'));
 }
 
 function renderNav() {
@@ -803,8 +813,18 @@ async function saveBind(t) {
   // 不用等下次开设置页才生效。
   if (okSetting && (scope === 'ui' || scope === 'classify' || scope === 'monitor' || scope === 'notify')) {
     if (scope === 'ui') applyUI(key, value);
+    if (scope === 'ui' && key === 'makerWorldRegion') applyMakerWorldLinks(value === 'auto' ? (languageIsEnglish() ? 'global' : 'cn') : value);
     emitRefresh('settings');
   }
+  // 语言切换要重绘所有模块顶层的预设文案，整页重载最可靠（设置已先落盘）。
+  if (okSetting && scope === 'ui' && key === 'language') {
+    setLanguage(value);
+    setTimeout(() => { api.win('reload').catch(() => {}); }, 80);
+  }
+}
+
+function languageIsEnglish() {
+  return (state.settings && state.settings.ui && state.settings.ui.language) === 'en-US';
 }
 
 // ---------- 目录 ----------
@@ -820,36 +840,36 @@ async function addFolder() {
     const path = await api.pickFolder();
     if (!path) return;
     const f = await api.folderAdd(path);
-    emitToast('success', '已添加目录');
+    emitToast('success', tr('已添加目录'));
     await reloadFolders();
     renderContent();
     emitRefresh('folders');
     const scan = await confirmDialog({
-      title: '立即扫描？', message: '是否立即扫描刚添加的目录？',
-      detail: '目录完整路径：', items: [path], confirmText: '立即扫描',
+      title: tr('立即扫描？'), message: tr('是否立即扫描刚添加的目录？'),
+      detail: tr('目录完整路径：'), items: [path], confirmText: tr('立即扫描'),
     });
     if (scan) {
       await api.scanStart({ folderIds: f && f.id ? [f.id] : undefined });
-      emitToast('info', '已开始扫描');
+      emitToast('info', tr('已开始扫描'));
     }
   } catch (e) { toastErr(e); }
 }
 
 async function scanAll() {
-  try { await api.scanStart({ force: true }); emitToast('info', '已开始扫描全部目录'); }
+  try { await api.scanStart({ force: true }); emitToast('info', tr('已开始扫描全部目录')); }
   catch (e) { toastErr(e); }
 }
 
 async function folderRemove(id) {
   const f = (state.folders || []).find((x) => x && x.id === id);
   const ok = await confirmDialog({
-    title: '移除监控目录', message: '确定移除该监控目录？已入库的模型不会被删除。',
-    detail: '目录完整路径：', items: [f ? f.path : id], danger: true, confirmText: '移除',
+    title: tr('移除监控目录'), message: tr('确定移除该监控目录？已入库的模型不会被删除。'),
+    detail: tr('目录完整路径：'), items: [f ? f.path : id], danger: true, confirmText: tr('移除'),
   });
   if (!ok) return;
   try {
     await api.folderRemove(id);
-    emitToast('success', '已移除目录');
+    emitToast('success', tr('已移除目录'));
     await reloadFolders();
     renderContent();
     emitRefresh('folders');
@@ -865,18 +885,18 @@ async function updateFolder(id, patch) {
 async function detectSlicers() {
   try {
     const found = await api.slicerDetect();
-    if (!Array.isArray(found) || !found.length) { emitToast('info', '未检测到已安装的切片软件'); return; }
+    if (!Array.isArray(found) || !found.length) { emitToast('info', tr('未检测到已安装的切片软件')); return; }
     const options = found.map((s, i) => ({ value: i, label: s.name + ' — ' + s.exePath, icon: 'i-printer' }));
     const r = await selectDialog({
-      title: '探测到的切片软件', message: '选择要添加的软件（可多选）',
-      options, mode: 'multi', confirmText: '添加所选',
+      title: tr('探测到的切片软件'), message: tr('选择要添加的软件（可多选）'),
+      options, mode: 'multi', confirmText: tr('添加所选'),
     });
     if (r === undefined || !r.length) return;
     for (const i of r) {
       const s = found[i];
       if (s) await api.slicerAdd({ name: s.name, exePath: s.exePath, args: s.args || '' });
     }
-    emitToast('success', '已添加 ' + r.length + ' 个切片软件');
+    emitToast('success', tr('已添加 ') + r.length + tr(' 个切片软件'));
     await reloadSlicers();
     renderContent();
     emitRefresh('slicers');
@@ -899,17 +919,17 @@ async function slicerAdd() {
   const pi = document.getElementById('slicer-new-path');
   const name = ((ni && ni.value) || '').trim();
   const path = ((pi && pi.value) || '').trim();
-  if (!name || !path) { emitToast('warn', '请填写名称与可执行文件路径'); return; }
+  if (!name || !path) { emitToast('warn', tr('请填写名称与可执行文件路径')); return; }
   try {
     const v = await api.slicerValidate(path);
-    if (v && v.ok === false) { emitToast('error', (v && v.reason) || '路径无效，无法添加'); return; }
+    if (v && v.ok === false) { emitToast('error', (v && v.reason) || tr('路径无效，无法添加')); return; }
     // 填的是安装目录时后端会自动定位到目录里的可执行文件，这里按纠正后的路径存
     const realPath = (v && v.exePath) || path;
     if (v && v.fixed && pi) pi.value = realPath;
     await api.slicerAdd({ name, exePath: realPath, args: '' });
     emitToast('success', v && v.fixed
-      ? '已添加（这是文件夹，自动用了里面的 ' + String(realPath).replace(/\\/g, '/').split('/').pop() + '）'
-      : '已添加切片软件');
+      ? tr('已添加（这是文件夹，自动用了里面的 ') + String(realPath).replace(/\\/g, '/').split('/').pop() + '）'
+      : tr('已添加切片软件'));
     await reloadSlicers();
     renderContent();
     emitRefresh('slicers');
@@ -919,7 +939,7 @@ async function slicerAdd() {
 async function slicerRemove(id) {
   try {
     await api.slicerRemove(id);
-    emitToast('success', '已移除');
+    emitToast('success', tr('已移除'));
     await reloadSlicers();
     renderContent();
     emitRefresh('slicers');
@@ -927,7 +947,7 @@ async function slicerRemove(id) {
 }
 
 async function setDefault(id) {
-  try { await api.slicerSetDefault(id); emitToast('success', '已设为默认'); await reloadSlicers(); }
+  try { await api.slicerSetDefault(id); emitToast('success', tr('已设为默认')); await reloadSlicers(); }
   catch (e) { toastErr(e); }
 }
 
@@ -942,10 +962,10 @@ async function slicerValidate(id) {
       if (b.getAttribute('data-role') === 'validate-' + id) box = b;
     });
     if (box) {
-      box.textContent = ok ? '可用' : ((v && v.reason) || '不可用');
+      box.textContent = ok ? tr('可用') : ((v && v.reason) || tr('不可用'));
       box.className = 'validate-result ' + (ok ? 'ok' : 'bad');
     }
-    emitToast(ok ? 'success' : 'error', ok ? '路径可用' : ((v && v.reason) || '校验失败'));
+    emitToast(ok ? 'success' : 'error', ok ? tr('路径可用') : ((v && v.reason) || tr('校验失败')));
   } catch (e) { toastErr(e); }
 }
 
@@ -960,12 +980,12 @@ async function loadDataExtras() {
     const bs = await api.backups();
     state.backups = Array.isArray(bs) ? bs : [];
     const list = document.querySelector('.backup-list');
-    if (list) list.innerHTML = state.backups.length ? state.backups.map(backupRow).join('') : '<div class="empty">暂无备份</div>';
+    if (list) list.innerHTML = state.backups.length ? state.backups.map(backupRow).join('') : tr('<div class="empty">暂无备份</div>');
   } catch (e) { toastErr(e); }
   try {
     const st = await api.thumbStats();
     const box = document.querySelector('[data-role="thumb-stats"]');
-    if (box) box.textContent = '缓存文件：' + ((st && st.count) || 0) + ' 个 · 占用：' + fmtBytes((st && st.bytes) || 0);
+    if (box) box.textContent = tr('缓存文件：') + ((st && st.count) || 0) + tr(' 个 · 占用：') + fmtBytes((st && st.bytes) || 0);
   } catch (_) { /* 统计失败不提示 */ }
 }
 
@@ -980,19 +1000,19 @@ async function loadInfo() {
 }
 
 async function backup() {
-  try { const name = await api.backup(); emitToast('success', '备份完成：' + (name || '')); loadDataExtras(); }
+  try { const name = await api.backup(); emitToast('success', tr('备份完成：') + (name || '')); loadDataExtras(); }
   catch (e) { toastErr(e); }
 }
 
 async function restore(name) {
   const ok = await confirmDialog({
-    title: '恢复备份', message: '恢复备份会覆盖当前模型库与设置，建议先手动备份。',
-    detail: '将恢复的备份文件：', items: [name], danger: true, confirmText: '恢复备份',
+    title: tr('恢复备份'), message: tr('恢复备份会覆盖当前模型库与设置，建议先手动备份。'),
+    detail: tr('将恢复的备份文件：'), items: [name], danger: true, confirmText: tr('恢复备份'),
   });
   if (!ok) return;
   try {
     await api.restore(name);
-    emitToast('success', '已恢复备份');
+    emitToast('success', tr('已恢复备份'));
     emitRefresh('restore');
     renderContent();
   } catch (e) { toastErr(e); }
@@ -1003,7 +1023,7 @@ async function exportData() {
     const p = await api.saveJson('printshelf-export.json');
     if (!p) return;
     await api.exportData(p);
-    emitToast('success', '已导出：' + p);
+    emitToast('success', tr('已导出：') + p);
   } catch (e) { toastErr(e); }
 }
 
@@ -1013,22 +1033,22 @@ async function importData() {
     if (!p) return;
     // 选择合并 / 覆盖；覆盖属于危险操作，追加二次确认
     const mode = await selectDialog({
-      title: '导入 JSON', message: '选择导入方式', options: [
-        { value: 'merge', label: '合并（保留现有数据）', icon: 'i-layers' },
-        { value: 'overwrite', label: '覆盖（替换现有模型库）', icon: 'i-alert' },
+      title: tr('导入 JSON'), message: tr('选择导入方式'), options: [
+        { value: 'merge', label: tr('合并（保留现有数据）'), icon: 'i-layers' },
+        { value: 'overwrite', label: tr('覆盖（替换现有模型库）'), icon: 'i-alert' },
       ], mode: 'single',
     });
     if (mode === undefined) return;
     const merge = mode === 'merge';
     if (!merge) {
       const ok = await confirmDialog({
-        title: '确认覆盖导入', message: '覆盖导入将替换现有模型库，此操作不可撤销。',
-        detail: '数据来源文件完整路径：', items: [p], danger: true, confirmText: '确认覆盖',
+        title: tr('确认覆盖导入'), message: tr('覆盖导入将替换现有模型库，此操作不可撤销。'),
+        detail: tr('数据来源文件完整路径：'), items: [p], danger: true, confirmText: tr('确认覆盖'),
       });
       if (!ok) return;
     }
     const r = await api.importData(p, merge);
-    emitToast('success', '已导入 ' + ((r && r.imported != null) ? r.imported : 0) + ' 条记录');
+    emitToast('success', tr('已导入 ') + ((r && r.imported != null) ? r.imported : 0) + tr(' 条记录'));
     emitRefresh('import');
   } catch (e) { toastErr(e); }
 }
@@ -1036,19 +1056,19 @@ async function importData() {
 async function thumbPrune() {
   try {
     const r = await api.thumbPrune();
-    emitToast('success', '已清理 ' + ((r && r.removed) || 0) + ' 个无效缓存');
+    emitToast('success', tr('已清理 ') + ((r && r.removed) || 0) + tr(' 个无效缓存'));
     loadDataExtras();
   } catch (e) { toastErr(e); }
 }
 
 async function thumbRegen() {
   const ok = await confirmDialog({
-    title: '重新生成全部缩略图', message: '将重新解析所有模型并生成缩略图，可能耗时较长。', confirmText: '开始',
+    title: tr('重新生成全部缩略图'), message: tr('将重新解析所有模型并生成缩略图，可能耗时较长。'), confirmText: tr('开始'),
   });
   if (!ok) return;
   try {
     const r = await api.thumbRegenerate([], true);
-    emitToast('success', '已重新生成 ' + ((r && r.done) || 0) + ' 张缩略图' + ((r && r.failed) ? '，失败 ' + r.failed + ' 张' : ''));
+    emitToast('success', tr('已重新生成 ') + ((r && r.done) || 0) + tr(' 张缩略图') + ((r && r.failed) ? tr('，失败 ') + r.failed + tr(' 张') : ''));
     loadDataExtras();
   } catch (e) { toastErr(e); }
 }
@@ -1095,7 +1115,7 @@ async function dispatch(act, node) {
     case 'rerun-guide': return rerunGuide();
     case 'monitor-chart': return openMonitorChart('', '');
     case 'monitor-clear': return clearMonitorHistory();
-    case 'notify-test': return api.notifyTest().then(() => emitToast('info', '已发送测试通知')).catch(toastErr);
+    case 'notify-test': return api.notifyTest().then(() => emitToast('info', tr('已发送测试通知'))).catch(toastErr);
     default: return;                       // slicer-default 等由 change 事件处理
   }
 }
@@ -1149,7 +1169,7 @@ async function refreshU1(force) {
     u1Info = await api.u1Status();
   } catch (e) {
     u1Info = { filaments: [], processes: [], settings: {}, cache: {}, orcaDir: '', error: (e && e.message) || '' };
-    emitToast('warn', '读取快造预设失败：' + ((e && e.message) || '未知原因'));
+    emitToast('warn', tr('读取快造预设失败：') + ((e && e.message) || tr('未知原因')));
   } finally {
     u1Loading = false;
     if (currentTab === 'slicers') renderContent();
@@ -1171,15 +1191,15 @@ async function updateU1(key, value) {
 
 async function clearU1Cache() {
   const ok = await confirmDialog({
-    title: '清空转换缓存',
-    message: '确定清空快造转换缓存吗？只是把已经转换好的副本删掉，下次打开会重新转换，原文件不受影响。',
-    confirmText: '清空',
+    title: tr('清空转换缓存'),
+    message: tr('确定清空快造转换缓存吗？只是把已经转换好的副本删掉，下次打开会重新转换，原文件不受影响。'),
+    confirmText: tr('清空'),
     danger: true,
   });
   if (!ok) return;
   try {
     const r = await api.u1ClearCache(0);
-    emitToast('success', '已清理 ' + (r.removed || 0) + ' 个文件，释放 ' + fmtBytes(r.bytes || 0));
+    emitToast('success', tr('已清理 ') + (r.removed || 0) + tr(' 个文件，释放 ') + fmtBytes(r.bytes || 0));
     await refreshU1(true);
   } catch (e) { toastErr(e); }
 }
@@ -1203,8 +1223,8 @@ async function refreshPresetHealth(force) {
 async function presetSnapshot() {
   try {
     const r = await api.u1PresetSnapshot();
-    if (!r) { emitToast('warn', '没有找到任何用户预设，没什么可备份的'); return; }
-    emitToast('success', '已备份 ' + (r.files || 0) + ' 个预设文件（' + fmtBytes(r.bytes || 0) + '）');
+    if (!r) { emitToast('warn', tr('没有找到任何用户预设，没什么可备份的')); return; }
+    emitToast('success', tr('已备份 ') + (r.files || 0) + tr(' 个预设文件（') + fmtBytes(r.bytes || 0) + '）');
     await refreshPresetHealth(true);
   } catch (e) { toastErr(e); }
 }
@@ -1212,21 +1232,21 @@ async function presetSnapshot() {
 async function presetRestore() {
   const sel = document.getElementById('preset-restore-id');
   const id = sel && sel.value;
-  if (!id) { emitToast('warn', '先选一份备份'); return; }
+  if (!id) { emitToast('warn', tr('先选一份备份')); return; }
   const ok = await confirmDialog({
-    title: '从备份恢复预设',
-    message: '把备份 ' + id + ' 里的预设写回快造的 user 目录。\n'
-      + '只会新增和覆盖，不会删除你现在的其他预设；恢复前会先把当前状态再备份一次。\n'
-      + '恢复完请在快造里重新打开一次，让它重新读取预设。',
-    confirmText: '恢复',
+    title: tr('从备份恢复预设'),
+    message: tr('把备份 ') + id + tr(' 里的预设写回快造的 user 目录。\n')
+      + tr('只会新增和覆盖，不会删除你现在的其他预设；恢复前会先把当前状态再备份一次。\n')
+      + tr('恢复完请在快造里重新打开一次，让它重新读取预设。'),
+    confirmText: tr('恢复'),
   });
   if (!ok) return;
   try {
     const r = await api.u1PresetRestore(id);
     const parts = [];
-    if (r.added.length) parts.push('新增 ' + r.added.length + ' 个');
-    if (r.overwritten.length) parts.push('覆盖 ' + r.overwritten.length + ' 个');
-    emitToast('success', '已恢复：' + (parts.join(' · ') || '没有变化'));
+    if (r.added.length) parts.push(tr('新增 ') + r.added.length + tr(' 个'));
+    if (r.overwritten.length) parts.push(tr('覆盖 ') + r.overwritten.length + tr(' 个'));
+    emitToast('success', tr('已恢复：') + (parts.join(' · ') || tr('没有变化')));
     await refreshPresetHealth(true);
     await refreshU1(true);
   } catch (e) { toastErr(e); }
@@ -1235,18 +1255,18 @@ async function presetRestore() {
 async function assocRepair(target) {
   const isFix = target === 'fix';
   const ok = await confirmDialog({
-    title: isFix ? '修好 .3mf 关联' : '把 .3mf 交给 ' + (target === 'snapmaker' ? '快造 Orca' : 'Bambu Studio'),
+    title: isFix ? tr('修好 .3mf 关联') : tr('把 .3mf 交给 ') + (target === 'snapmaker' ? tr('快造 Orca') : 'Bambu Studio'),
     message: (isFix
-      ? '现在 .3mf 的默认指向一个不存在的注册项，双击解析不出程序。\n修好 = 把它指回真实存在的那个处理器。'
-      : '会写一条你自己的用户级注册项（不需要管理员），并清掉系统里记着的旧选择，让 .3mf 双击就用它打开。')
-      + '\n\n只动 HKCU 里的文件关联，不碰任何模型文件。随时可以在系统「设置 → 默认应用」里改回去。',
-    confirmText: '修复',
+      ? tr('现在 .3mf 的默认指向一个不存在的注册项，双击解析不出程序。\n修好 = 把它指回真实存在的那个处理器。')
+      : tr('会写一条你自己的用户级注册项（不需要管理员），并清掉系统里记着的旧选择，让 .3mf 双击就用它打开。'))
+      + tr('\n\n只动 HKCU 里的文件关联，不碰任何模型文件。随时可以在系统「设置 → 默认应用」里改回去。'),
+    confirmText: tr('修复'),
   });
   if (!ok) return;
   try {
     const r = await api.fileAssocRepair(target);
-    if (r && r.ok === false) { emitToast('warn', r.message || '没修成'); return; }
-    emitToast('success', (r && r.message) || '已修复');
+    if (r && r.ok === false) { emitToast('warn', r.message || tr('没修成')); return; }
+    emitToast('success', (r && r.message) || tr('已修复'));
     await refreshFileAssoc(true);
   } catch (e) { toastErr(e); }
 }
@@ -1259,7 +1279,7 @@ async function refreshFileAssoc(force) {
   try {
     fileAssoc = await api.fileAssocReport();
   } catch (e) {
-    fileAssoc = { problems: [{ code: 'read-fail', message: (e && e.message) || '读取失败' }] };
+    fileAssoc = { problems: [{ code: 'read-fail', message: (e && e.message) || tr('读取失败') }] };
   } finally {
     fileAssocLoading = false;
     if (currentTab === 'slicers') renderContent();

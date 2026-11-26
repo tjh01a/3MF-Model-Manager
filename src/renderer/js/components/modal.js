@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 通用弹窗：确认 / 输入 / 选择。
  * 采用栈式管理，支持堆叠、Esc 与遮罩关闭、焦点陷阱，且任一关闭路径都会 resolve Promise。
@@ -107,7 +109,7 @@ function createShell({ title, body, foot, defaultValue, width }) {
   modal.innerHTML =
     '<div class="modal-head">' +
       '<h3 class="modal-title">' + esc(title || '') + '</h3>' +
-      '<button type="button" class="icon-btn modal-close" data-role="x" aria-label="关闭">' + icon('i-close') + '</button>' +
+      tr('<button type="button" class="icon-btn modal-close" data-role="x" aria-label="关闭">') + icon('i-close') + '</button>' +
     '</div>' +
     '<div class="modal-body">' + body + '</div>' +
     '<div class="modal-foot">' + foot + '</div>';
@@ -134,7 +136,7 @@ function createShell({ title, body, foot, defaultValue, width }) {
   return { entry, modal, promise };
 }
 
-function footButtons(confirmText, danger, hasOk, cancelText = '取消') {
+function footButtons(confirmText, danger, hasOk, cancelText = tr('取消')) {
   const okClass = danger ? 'btn btn-danger danger' : 'btn btn-primary';
   return (
     '<button type="button" class="btn btn-ghost" data-role="cancel">' + esc(cancelText) + '</button>' +
@@ -145,8 +147,8 @@ function footButtons(confirmText, danger, hasOk, cancelText = '取消') {
 /** 二次确认弹窗 -> Promise<Boolean>；items 为完整路径/名称列表，渲染为可滚动等宽列表
  *  cancelText 可写成「返回，不执行」之类，避免用户把「取消」误读成取消打印/取消预览。 */
 export function confirmDialog({
-  title = '确认操作', message = '', detail = '', items = [], danger = false,
-  confirmText = '确定', cancelText = '取消',
+  title = tr('确认操作'), message = '', detail = '', items = [], danger = false,
+  confirmText = tr('确定'), cancelText = tr('取消'),
 } = {}) {
   const list = Array.isArray(items) ? items : [];
   const itemsHtml = list.length
@@ -155,7 +157,7 @@ export function confirmDialog({
   const detailHtml = detail ? '<p class="modal-detail">' + esc(detail) + '</p>' : '';
   const body = '<p class="modal-message">' + esc(message) + '</p>' + detailHtml + itemsHtml;
   const { entry, modal, promise } = createShell({
-    title, body, foot: footButtons(confirmText || '确定', danger, true, cancelText || '取消'), defaultValue: false,
+    title, body, foot: footButtons(confirmText || tr('确定'), danger, true, cancelText || tr('取消')), defaultValue: false,
   });
   modal.querySelector('[data-role="cancel"]').addEventListener('click', () => closeEntry(entry, false));
   modal.querySelector('[data-role="ok"]').addEventListener('click', () => closeEntry(entry, true));
@@ -175,7 +177,7 @@ export function customDialog({ title = '', body = '', foot = '', width, onMount 
 }
 
 /** 单行输入弹窗 -> Promise<String|null>；Enter 确认、Esc 取消、自动聚焦并选中 */
-export function promptDialog({ title = '输入', label = '', value = '', placeholder = '', confirmText = '确定' } = {}) {
+export function promptDialog({ title = tr('输入'), label = '', value = '', placeholder = '', confirmText = tr('确定') } = {}) {
   const body =
     '<label class="field">' +
       (label ? '<span class="field-label">' + esc(label) + '</span>' : '') +
@@ -183,7 +185,7 @@ export function promptDialog({ title = '输入', label = '', value = '', placeho
         '" placeholder="' + esc(placeholder || '') + '" autocomplete="off" spellcheck="false">' +
     '</label>';
   const { entry, modal, promise } = createShell({
-    title, body, foot: footButtons(confirmText || '确定', false, true), defaultValue: null,
+    title, body, foot: footButtons(confirmText || tr('确定'), false, true), defaultValue: null,
   });
   const input = modal.querySelector('[data-role="input"]');
   const submit = () => closeEntry(entry, input.value);
@@ -201,7 +203,7 @@ export function promptDialog({ title = '输入', label = '', value = '', placeho
  * 单选：点击某项即 resolve(该项 value)；取消 resolve(undefined)。value 可为任意类型（含 null）。
  * 多选：勾选后确认 resolve(value[])；"无/清除" resolve([])；取消 resolve(undefined)。
  */
-export function selectDialog({ title = '请选择', message = '', options = [], mode = 'single', confirmText = '确定' } = {}) {
+export function selectDialog({ title = tr('请选择'), message = '', options = [], mode = 'single', confirmText = tr('确定') } = {}) {
   const isMulti = mode === 'multi';
   const opts = Array.isArray(options) ? options : [];
   const defaultValue = undefined;
@@ -215,13 +217,13 @@ export function selectDialog({ title = '请选择', message = '', options = [], 
   const clearRow = isMulti
     ? '<button type="button" class="select-opt select-clear" data-role="clear">' +
         '<span class="opt-check" data-role="box"></span>' +
-        '<span class="opt-label">无 / 清除全部</span></button>'
+        tr('<span class="opt-label">无 / 清除全部</span></button>')
     : '';
-  const rows = opts.map(rowHtml).join('') || '<div class="empty">暂无可选项</div>';
+  const rows = opts.map(rowHtml).join('') || tr('<div class="empty">暂无可选项</div>');
   const msg = message ? '<p class="modal-message">' + esc(message) + '</p>' : '';
   const body = msg + '<div class="select-list' + (isMulti ? ' is-multi' : '') + '">' + clearRow + rows + '</div>';
   const { entry, modal, promise } = createShell({
-    title, body, foot: footButtons(confirmText || '确定', false, isMulti), defaultValue,
+    title, body, foot: footButtons(confirmText || tr('确定'), false, isMulti), defaultValue,
   });
 
   modal.querySelector('[data-role="cancel"]').addEventListener('click', () => closeEntry(entry, defaultValue));
@@ -278,8 +280,8 @@ export function selectDialog({ title = '请选择', message = '', options = [], 
  * 用于「把模型加入某个分类」这类需要在长列表里挑条目的场景。
  */
 export function pickerDialog({
-  title = '选择条目', message = '', options = [], selected = [],
-  placeholder = '输入关键词筛选…', confirmText = '确定', emptyText = '没有可选项',
+  title = tr('选择条目'), message = '', options = [], selected = [],
+  placeholder = tr('输入关键词筛选…'), confirmText = tr('确定'), emptyText = tr('没有可选项'),
 } = {}) {
   const opts = Array.isArray(options) ? options : [];
   const pre = new Set((Array.isArray(selected) ? selected : []).map(String));
@@ -300,14 +302,14 @@ export function pickerDialog({
       '</div>' +
       '<div class="picker-list" data-role="list">' + (rows || '<div class="picker-empty">' + esc(emptyText) + '</div>') + '</div>' +
       '<div class="picker-bar">' +
-        '<span class="picker-count" data-role="count">已选 0 项</span>' +
+        tr('<span class="picker-count" data-role="count">已选 0 项</span>') +
         '<span class="picker-bar-spacer"></span>' +
-        '<button type="button" class="text-btn" data-role="all">全选</button>' +
-        '<button type="button" class="text-btn" data-role="none">清空</button>' +
+        tr('<button type="button" class="text-btn" data-role="all">全选</button>') +
+        tr('<button type="button" class="text-btn" data-role="none">清空</button>') +
       '</div>' +
     '</div>';
   const { entry, modal, promise } = createShell({
-    title, body, foot: footButtons(confirmText || '确定', false, true), defaultValue: undefined,
+    title, body, foot: footButtons(confirmText || tr('确定'), false, true), defaultValue: undefined,
   });
 
   const listEl = modal.querySelector('[data-role="list"]');
@@ -318,7 +320,7 @@ export function pickerDialog({
 
   const count = () => {
     const n = boxes.filter((b) => b.checked).length;
-    if (countEl) countEl.textContent = '已选 ' + n + ' 项';
+    if (countEl) countEl.textContent = tr('已选 ') + n + tr(' 项');
   };
   // 只对当前可见（未被搜索隐藏）的行生效
   const visibleBoxes = () => rowsEls
@@ -358,8 +360,8 @@ export function pickerDialog({
  * 对应 Steam「添加收藏库」那种一步到位的排版：输入名字、点个颜色、回车即可。
  */
 export function nameColorDialog({
-  title = '新建', label = '名称', value = '', placeholder = '',
-  colors = [], color = '', confirmText = '创建', colorLabel = '标识色',
+  title = tr('新建'), label = tr('名称'), value = '', placeholder = '',
+  colors = [], color = '', confirmText = tr('创建'), colorLabel = tr('标识色'),
 } = {}) {
   const palette = Array.isArray(colors) && colors.length ? colors : ['#4f46e5'];
   const body =
@@ -376,7 +378,7 @@ export function nameColorDialog({
       '</div>' +
     '</div>';
   const { entry, modal, promise } = createShell({
-    title, body, foot: footButtons(confirmText || '创建', false, true), defaultValue: null,
+    title, body, foot: footButtons(confirmText || tr('创建'), false, true), defaultValue: null,
   });
   const input = modal.querySelector('[data-role="input"]');
   const dots = Array.from(modal.querySelectorAll('.color-dot'));

@@ -31,6 +31,17 @@ const DEFAULT_CATEGORIES = [
   { name: '备件维修', color: '#f59e0b', icon: 'i-tool' },
 ];
 
+/**
+ * 英文界面首次安装使用的分类（docs/21）。
+ * 关键词不是中文的直译：用英文社区常见的搜索词，直接拿来匹配英文模型标题。
+ */
+const DEFAULT_CATEGORIES_EN = [
+  { name: 'Functional Parts', color: '#4f46e5', icon: 'i-box' },
+  { name: 'Figures & Decor', color: '#ec4899', icon: 'i-sparkle' },
+  { name: 'Test & Calibration', color: '#0ea5e9', icon: 'i-sliders' },
+  { name: 'Spare Parts & Repair', color: '#f59e0b', icon: 'i-tool' },
+];
+
 const DEFAULT_TAG_COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#ef4444', '#64748b'];
 const CATEGORY_COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#ef4444', '#14b8a6'];
 
@@ -93,11 +104,13 @@ const DEFAULT_SETTINGS = {
     sidebarCollapsed: false, showStats: true,
     // 界面美化与动效的两个总回退开关（docs/11）。legacy + off = 改造前界面。
     iconSet: 'lucide',       // 'lucide' | 'legacy'
+    language: 'zh-CN',       // 'zh-CN' | 'en-US'；首次安装由系统语言决定
     motionLevel: 'full',     // 'full' | 'reduced' | 'off'
     // 是否让系统的「减少动态效果」压制应用内档位。默认 false：应用设置优先，
     // 系统偏好只作为建议（游戏、多数桌面软件都不跟随）。需要无障碍降级的用户可打开。
     motionFollowSystem: false,
-    makerWorldCn: true,      // 打开 MakerWorld 链接时自动换成 .com.cn（两站模型库独立，ID 不通用）
+    makerWorldRegion: 'auto', // 'auto' | 'cn' | 'global'；auto 跟随界面语言
+    makerWorldCn: true,      // 旧字段：保留给老设置迁移/回滚，新逻辑读 makerWorldRegion
     makerWorldCnMigrated: true, // 老版本默认 false，升级时一次性切到 true；之后用户手动关掉不再翻回来
     monitorBar: true,        // 主界面常驻打印监控条（可在设置 → 打印监控里关掉）
   },
@@ -157,7 +170,7 @@ const MAX_FILE_SIZE = 500 * 1024 * 1024;   // 500MB 以上跳过解析
 const MAX_MODEL_BYTES = 24 * 1024 * 1024; // 3dmodel.model 精细统计上限
 
 module.exports = {
-  PRINT_STATUS, PRINT_STATUS_ORDER, SMART_VIEWS, DEFAULT_CATEGORIES,
+  PRINT_STATUS, PRINT_STATUS_ORDER, SMART_VIEWS, DEFAULT_CATEGORIES, DEFAULT_CATEGORIES_EN,
   DEFAULT_TAG_COLORS, CATEGORY_COLORS, IGNORE_DIRS, THUMB_PRIORITY,
   SLICER_CANDIDATES, DEFAULT_SETTINGS, DEFAULT_LIBRARY,
   MAX_FILE_SIZE, MAX_MODEL_BYTES,

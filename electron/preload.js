@@ -32,7 +32,7 @@ const METHODS = [
   'receiptsList', 'receiptsWithModels', 'receiptsClear', 'receiptsDelete', 'receiptsLinkModel',
   'receiptsAutoLink',
   'bambuCloudStatus', 'bambuCloudLogin', 'bambuCloudLoginCode', 'bambuCloudLogout', 'bambuCloudSync',
-  'reveal', 'copyPath', 'openExternal',
+  'reveal', 'copyPath', 'openExternal', 'openSource',
   'classifyRun', 'classifySkipUnmatched', 'classifyUndo', 'classifyPreset',
   'settings', 'settingsUpdate',
   'pickFolder', 'pickExe', 'pickJson', 'saveJson',

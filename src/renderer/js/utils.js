@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from './i18n.js';
+
 /** 渲染层纯函数：转义、图标、格式化、DOM helper。constants.js 为 CommonJS，渲染层不可 import。 */
 
 export function escapeHtml(s) {
@@ -29,7 +31,7 @@ export function fmtBytes(n) {
 }
 
 export function fmtDate(ts) {
-  if (!ts) return '从未';
+  if (!ts) return tr('从未');
   const d = new Date(ts);
   if (isNaN(d.getTime())) return '—';
   const p = (x) => String(x).padStart(2, '0');
@@ -38,17 +40,17 @@ export function fmtDate(ts) {
 }
 
 export function fmtRelative(ts) {
-  if (!ts) return '从未';
+  if (!ts) return tr('从未');
   const diff = Date.now() - ts;
   if (diff < 0) return fmtDate(ts);
   const min = Math.floor(diff / 60000);
-  if (min < 1) return '刚刚';
-  if (min < 60) return min + ' 分钟前';
+  if (min < 1) return tr('刚刚');
+  if (min < 60) return min + tr(' 分钟前');
   const hr = Math.floor(min / 60);
-  if (hr < 24) return hr + ' 小时前';
+  if (hr < 24) return hr + tr(' 小时前');
   const day = Math.floor(hr / 24);
-  if (day === 1) return '昨天';
-  if (day < 7) return day + ' 天前';
+  if (day === 1) return tr('昨天');
+  if (day < 7) return day + tr(' 天前');
   return fmtDate(ts);
 }
 

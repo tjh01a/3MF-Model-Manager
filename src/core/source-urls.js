@@ -47,9 +47,12 @@ async function backfillSourceUrls(store) {
         const r = await parse3mf(m.path, { withThumbnail: false, withMeta: true });
         const meta = (r && r.meta) || {};
         let url = meta.sourceUrl || null;
-        // 描述里没有链接时，用 DesignProfileId 反查国服作品页（仅 CN 项目）
-        if (!url) url = await resolveMakerWorldSource(meta);
-        if (url) hits.push({ id: m.id, url });
+        // 描述里没有链接时，用 DesignModelId 反查作品页（两站各自有独立 ID）。
+        const urls = sourceUrlsFromRaw(url);
+        if (!urls.cn) urls.cn = await resolveMakerWorldSource(meta, { region: 'cn' });
+        if (!urls.global) urls.global = await resolveMakerWorldSource(meta, { region: 'global' });
+        if (!url) url = urls.cn || urls.global;
+        if (url) hits.push({ id: m.id, url, urls });
       } catch (_) { /* 单个文件坏了就跳过，不影响整批 */ }
     }
   };
@@ -67,6 +70,7 @@ async function backfillSourceUrls(store) {
         rec.sourceUrlAuto = true;   // 打标记：以后这条可以按作品页规则重算
         updated++;
       }
+      if (rec) fillSourceUrls(rec, h.urls);
     }
   }, 'source-url');
 
@@ -98,8 +102,45 @@ function cnMakerWorldUrl(rawUrl) {
   } catch (_) { return null; }
 }
 
-// DesignModelId -> 作品页 URL / null；映射稳定，进程内缓存，避免重复请求。
+// DesignModelId -> 作品页 URL / null；两站 ID 不同，缓存键必须带站点。
 const modelUrlCache = new Map();
+
+const REGION_CONF = {
+  cn: {
+    api: 'https://api.bambulab.cn/v1/design-service/model/',
+    page: (id) => 'https://makerworld.com.cn/zh/models/' + id,
+  },
+  global: {
+    api: 'https://api.bambulab.com/v1/design-service/model/',
+    page: (id) => 'https://makerworld.com/en/models/' + id,
+  },
+};
+
+/** 把记录里可能存在的 sourceUrls 补齐；不覆盖任何已有链接。 */
+function fillSourceUrls(rec, urls) {
+  if (!rec || typeof rec !== 'object') return false;
+  const cur = (rec.sourceUrls && typeof rec.sourceUrls === 'object') ? rec.sourceUrls : {};
+  let changed = false;
+  for (const key of ['cn', 'global']) {
+    const v = urls && urls[key];
+    if (!v || cur[key]) continue;
+    cur[key] = v;
+    changed = true;
+  }
+  if (changed) rec.sourceUrls = cur;
+  return changed;
+}
+
+/** 从一条已知的 sourceUrl 推断它属于哪个站。 */
+function sourceUrlsFromRaw(raw) {
+  const out = {};
+  try {
+    const host = new URL(String(raw || '')).hostname;
+    if (/(^|\.)makerworld\.com\.cn$/i.test(host)) out.cn = String(raw);
+    else if (/(^|\.)makerworld\.com$/i.test(host)) out.global = String(raw);
+  } catch (_) { /* 非链接忽略 */ }
+  return out;
+}
 
 /**
  * 用 3MF 里的 DesignModelId 反查 MakerWorld 国服作品页。
@@ -115,18 +156,21 @@ const modelUrlCache = new Map();
  */
 async function resolveMakerWorldSource(meta, opts = {}) {
   const modelId = String((meta && meta.designModelId) || '').trim();
-  const region = String((meta && meta.designRegion) || '').trim().toUpperCase();
   if (!modelId) return null;
-  if (region && region !== 'CN' && !/^CN/i.test(modelId)) return null;
+  const site = opts.region === 'global' ? 'global' : 'cn';
+  const designRegion = String((meta && meta.designRegion) || '').trim().toUpperCase();
+  // 中国站只收 CN 项目；国际站同时收 CN / US 项目（实测同一个 DesignModelId 两站都能查到）。
+  if (site === 'cn' && designRegion && designRegion !== 'CN' && !/^CN/i.test(modelId)) return null;
 
-  if (modelUrlCache.has(modelId)) return modelUrlCache.get(modelId);
-  if (opts.cache === false) modelUrlCache.delete(modelId);
+  const cacheKey = site + ':' + modelId;
+  if (modelUrlCache.has(cacheKey)) return modelUrlCache.get(cacheKey);
+  if (opts.cache === false) modelUrlCache.delete(cacheKey);
 
   const fetchImpl = opts.fetchImpl || globalThis.fetch;
   if (typeof fetchImpl !== 'function') return null;
   const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 4500;
-  const endpoint = 'https://api.bambulab.cn/v1/design-service/model/'
-    + encodeURIComponent(modelId);
+  const conf = REGION_CONF[site];
+  const endpoint = conf.api + encodeURIComponent(modelId);
 
   let timer = null;
   try {
@@ -140,8 +184,8 @@ async function resolveMakerWorldSource(meta, opts = {}) {
     const j = await r.json();
     const designId = Number(j && j.id);
     if (!Number.isFinite(designId) || designId <= 0) return null;
-    const url = 'https://makerworld.com.cn/zh/models/' + designId;
-    modelUrlCache.set(modelId, url);
+    const url = conf.page(designId);
+    modelUrlCache.set(cacheKey, url);
     return url;
   } catch (_) {
     return null;
@@ -150,4 +194,35 @@ async function resolveMakerWorldSource(meta, opts = {}) {
   }
 }
 
-module.exports = { backfillSourceUrls, cnMakerWorldUrl, resolveMakerWorldSource };
+/**
+ * 打开来源链接时按站点解析。已存过双站链接就直接返回；否则用 3MF 里的 DesignModelId
+ * 现场反查（一次查到后写回库，下次不再走网络）。
+ * @returns {Promise<{url: string|null}>}
+ */
+async function resolveRecordSource(store, rec, region, opts = {}) {
+  if (!rec) return { url: null };
+  const site = region === 'global' ? 'global' : 'cn';
+  const urls = (rec.sourceUrls && typeof rec.sourceUrls === 'object') ? rec.sourceUrls : {};
+  if (urls[site]) return { url: urls[site] };
+
+  let url = await resolveMakerWorldSource(rec.meta || {}, { region: site, ...opts });
+  if (!url) {
+    const raw = rec.sourceUrl || '';
+    const known = sourceUrlsFromRaw(raw);
+    url = known[site] || null;
+    if (!url && site === 'cn') url = cnMakerWorldUrl(raw);
+  }
+  if (url && store && typeof store.updateLibrary === 'function' && rec.id) {
+    try {
+      await store.updateLibrary((lib) => {
+        const target = lib.models && lib.models[rec.id];
+        if (target) fillSourceUrls(target, { [site]: url });
+      }, 'source-url-region');
+    } catch (_) { /* 写回失败不影响本次打开 */ }
+  }
+  return { url };
+}
+
+module.exports = {
+  backfillSourceUrls, cnMakerWorldUrl, resolveMakerWorldSource, resolveRecordSource,
+};

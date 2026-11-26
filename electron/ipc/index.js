@@ -9,7 +9,7 @@ const path = require('path');
 const cpaths = require('../../src/core/paths');
 const U = require('../../src/core/utils');
 const classify = require('../../src/core/classify');
-const { cnMakerWorldUrl } = require('../../src/core/source-urls');
+const { cnMakerWorldUrl, resolveRecordSource } = require('../../src/core/source-urls');
 const camera = require('../../src/core/camera');
 
 /**
@@ -103,6 +103,7 @@ function registerIpc(services, { getWindow = () => null } = {}) {
       const w = getWindow();
       if (!w) return;
       if (action === 'min') w.minimize();
+      else if (action === 'reload') w.reload();
       else if (action === 'max') w.isMaximized() ? w.unmaximize() : w.maximize();
       else if (action === 'close') w.close();
     },
@@ -115,6 +116,36 @@ function registerIpc(services, { getWindow = () => null } = {}) {
         if (!s.ui || s.ui.makerWorldCn !== false) target = cnMakerWorldUrl(u) || u;
       } catch (_) { /* 读设置失败就按原链接打开 */ }
       await shell.openExternal(target);
+    },
+
+    /**
+     * 按当前站点设置打开某条模型的来源页。
+     * 两站模型 ID 不通用：优先用 DesignModelId 查目标站；查不到就回退另一站，
+     * 并通过 fallback 告诉渲染层弹一句提示，而不是把用户丢到 404 页面。
+     */
+    openSource: async (id) => {
+      const st = store();
+      const rec = (st.getLibrary() || {}).models || {};
+      const model = rec[String(id)];
+      if (!model) throw new Error('模型不存在或已被移除');
+      const s = st.getSettings() || {};
+      const ui = s.ui || {};
+      const region = ui.makerWorldRegion === 'cn' || ui.makerWorldRegion === 'global'
+        ? ui.makerWorldRegion
+        : (/^zh/i.test(String(ui.language || 'zh-CN')) ? 'cn' : 'global');
+
+      let r = await resolveRecordSource(st, model, region);
+      let fallback = null;
+      let url = r.url;
+      if (!url) {
+        const other = region === 'cn' ? 'global' : 'cn';
+        r = await resolveRecordSource(st, model, other);
+        if (r.url) { url = r.url; fallback = other; }
+      }
+      if (!url && model.sourceUrl && /^https?:\/\//i.test(model.sourceUrl)) url = model.sourceUrl;
+      if (!url) throw new Error('这条模型没有可用的来源链接');
+      await shell.openExternal(url);
+      return { url, region, fallback };
     },
 
     // ---------------- 查询 ----------------
@@ -185,7 +216,7 @@ function registerIpc(services, { getWindow = () => null } = {}) {
     classifyRun: () => classify.classifyUncategorized(store(), { force: true }),
     classifySkipUnmatched: (ids) => classify.skipUnmatched(store(), ids),
     classifyUndo: () => classify.undoAutoClassified(store()),
-    classifyPreset: () => classify.presetRules((store().getLibrary() || {}).categories || []),
+    classifyPreset: () => classify.presetRules((store().getLibrary() || {}).categories || [], ((store().getSettings() || {}).ui || {}).language),
     categoryDelete: async (id, moveTo = null) => { snap(Object.keys(store().getLibrary().models || {})); return lib().categoryDelete(id, moveTo); },
     tags: () => lib().tags(),
     tagCreate: (p) => lib().tagCreate(p),

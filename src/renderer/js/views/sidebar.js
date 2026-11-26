@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /** 侧栏：智能视图 / 分类 / 标签 / 我的视图。底部统计块已按用户要求移除。 */
 import { state, setState } from '../state.js';
 import { api, emitRefresh, emitToast } from '../api.js';
@@ -11,25 +13,25 @@ import { openFilaments } from './filaments.js';
 
 // constants.js 为 CommonJS，渲染层不可 import，按冻结值内联
 const SMART_VIEWS = [
-  { key: 'all',           label: '全部模型',   icon: 'i-grid',      group: 'library' },
-  { key: 'favorites',     label: '收藏',       icon: 'i-star',      group: 'library' },
-  { key: 'recentOpened',  label: '最近打开',   icon: 'i-clock',     group: 'library' },
+  { key: 'all',           label: tr('全部模型'),   icon: 'i-grid',      group: 'library' },
+  { key: 'favorites',     label: tr('收藏'),       icon: 'i-star',      group: 'library' },
+  { key: 'recentOpened',  label: tr('最近打开'),   icon: 'i-clock',     group: 'library' },
   // 精简侧栏：未打印 / 未分类 / 未打标签 / 最近 7 天 / 已评分 五个入口已移除（2026-11-16）。
   // 底层 query 语义仍在（constants.SMART_VIEWS 与 library.query 未动），只是不再占侧栏位置。
   // docs/14：「已完成打印」本质是打印回执 / 成本账本，从 smart 组迁入 cost 组并改名。
-  { key: 'printed',       label: '打印回执 · 成本账本', icon: 'i-check', group: 'cost' },
-  { key: 'duplicates',    label: '重复文件',   icon: 'i-copy',      group: 'quality' },
-  { key: 'missing',       label: '失效文件',   icon: 'i-alert',     group: 'quality' },
+  { key: 'printed',       label: tr('打印回执 · 成本账本'), icon: 'i-check', group: 'cost' },
+  { key: 'duplicates',    label: tr('重复文件'),   icon: 'i-copy',      group: 'quality' },
+  { key: 'missing',       label: tr('失效文件'),   icon: 'i-alert',     group: 'quality' },
 ];
 /** 非 smart 的模块入口：点击直接触发动作，不改 state.query */
 const ACTION_VIEWS = [
-  { key: 'filaments', label: '耗材库', icon: 'i-box', group: 'cost', act: 'open-filaments',
-    title: '管理耗材、单价、颜色与图片（成本账本的基础）' },
+  { key: 'filaments', label: tr('耗材库'), icon: 'i-box', group: 'cost', act: 'open-filaments',
+    title: tr('管理耗材、单价、颜色与图片（成本账本的基础）') },
 ];
 const GROUPS = [
-  { key: 'library', label: '模型库' },
-  { key: 'quality', label: '质量检查' },
-  { key: 'cost',    label: '耗材与成本' },
+  { key: 'library', label: tr('模型库') },
+  { key: 'quality', label: tr('质量检查') },
+  { key: 'cost',    label: tr('耗材与成本') },
 ];
 const CATEGORY_COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#ef4444', '#14b8a6'];
 const DEFAULT_TAG_COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#ef4444', '#64748b'];
@@ -73,14 +75,14 @@ function renderCategories() {
     const on = state.query.categoryId === c.id ? ' active' : '';
     const pop = flash === c.id ? ' just-dropped' : '';
     html += '<button class="nav-item cat-item' + on + pop + '" data-cat="' + escapeHtml(c.id) +
-      '" data-context="category" title="' + escapeHtml(c.name) + '（可把模型拖到这里）">' +
+      '" data-context="category" title="' + escapeHtml(c.name) + tr('（可把模型拖到这里）">') +
       '<span class="dot" style="--dot:' + escapeHtml(c.color || '#4f46e5') + '"></span>' +
       '<span class="nav-label">' + escapeHtml(c.name) + '</span>' +
       '<span class="nav-count">' + (byCat[c.id] || 0) + '</span></button>';
   }
   // Steam 式末行：既能点着新建，也是最大的拖放目标
   html += '<button type="button" class="nav-add" data-act="category-new" data-drop="category" ' +
-    'title="新建分类；也可以把模型直接拖到这一行">' + icon('i-plus') + '<span>新建分类</span></button>';
+    tr('title="新建分类；也可以把模型直接拖到这一行">') + icon('i-plus') + tr('<span>新建分类</span></button>');
   nav.innerHTML = html;
 }
 function renderTags() {
@@ -94,7 +96,7 @@ function renderTags() {
       '" data-context="tag" style="--tag:' + escapeHtml(t.color || '#4f46e5') + '">' +
       escapeHtml(t.name) + '</button>';
   }
-  nav.innerHTML = html || '<div class="nav-empty">暂无标签</div>';
+  nav.innerHTML = html || tr('<div class="nav-empty">暂无标签</div>');
 }
 function renderViews() {
   const nav = qs('#nav-views');
@@ -102,10 +104,10 @@ function renderViews() {
   let html = '';
   for (const v of (state.views || [])) {
     html += '<button class="nav-item" data-view="' + escapeHtml(v.id) +
-      '" data-context="view" title="应用视图：' + escapeHtml(v.name) + '">' +
+      tr('" data-context="view" title="应用视图：') + escapeHtml(v.name) + '">' +
       icon('i-save') + '<span class="nav-label">' + escapeHtml(v.name) + '</span></button>';
   }
-  nav.innerHTML = html || '<div class="nav-empty">未保存视图</div>';
+  nav.innerHTML = html || tr('<div class="nav-empty">未保存视图</div>');
 }
 let lastNavSig = '';
 /** 侧栏每次刷新都会重建 4 段导航 HTML；数据没变就跳过，纯 UI 刷新尤其受益 */
@@ -197,11 +199,11 @@ function onContextMenu(e) {
     const id = cat.dataset.cat;
     const c = (state.categories || []).find((x) => x.id === id) || { name: '' };
     openMenu(e.clientX, e.clientY, [
-      { label: '手动添加模型…', icon: 'i-plus', action: () => pickModelsForCategory(id) },
-      { label: '重命名', icon: 'i-edit', action: () => renameCategory(id, c.name) },
-      { label: '修改颜色', icon: 'i-sliders', action: () => recolorCategory(id) },
+      { label: tr('手动添加模型…'), icon: 'i-plus', action: () => pickModelsForCategory(id) },
+      { label: tr('重命名'), icon: 'i-edit', action: () => renameCategory(id, c.name) },
+      { label: tr('修改颜色'), icon: 'i-sliders', action: () => recolorCategory(id) },
       { divider: true },
-      { label: '删除分类', icon: 'i-trash', danger: true, action: () => deleteCategory(id, c.name) },
+      { label: tr('删除分类'), icon: 'i-trash', danger: true, action: () => deleteCategory(id, c.name) },
     ]);
     return;
   }
@@ -211,10 +213,10 @@ function onContextMenu(e) {
     const id = tag.dataset.tag;
     const g = (state.tags || []).find((x) => x.id === id) || { name: '' };
     openMenu(e.clientX, e.clientY, [
-      { label: '重命名', icon: 'i-edit', action: () => renameTag(id, g.name) },
-      { label: '修改颜色', icon: 'i-sliders', action: () => recolorTag(id) },
+      { label: tr('重命名'), icon: 'i-edit', action: () => renameTag(id, g.name) },
+      { label: tr('修改颜色'), icon: 'i-sliders', action: () => recolorTag(id) },
       { divider: true },
-      { label: '删除标签', icon: 'i-trash', danger: true, action: () => deleteTag(id, g.name) },
+      { label: tr('删除标签'), icon: 'i-trash', danger: true, action: () => deleteTag(id, g.name) },
     ]);
     return;
   }
@@ -224,7 +226,7 @@ function onContextMenu(e) {
     const id = view.dataset.view;
     const v = (state.views || []).find((x) => x.id === id) || { name: '' };
     openMenu(e.clientX, e.clientY, [
-      { label: '删除视图', icon: 'i-trash', danger: true, action: () => deleteView(id, v.name) },
+      { label: tr('删除视图'), icon: 'i-trash', danger: true, action: () => deleteView(id, v.name) },
     ]);
   }
 }
@@ -319,7 +321,7 @@ async function onDrop(e) {
       return;
     }
   } catch (err) {
-    emitToast('error', (err && err.message) || '归类失败');
+    emitToast('error', (err && err.message) || tr('归类失败'));
   }
 }
 
@@ -341,7 +343,7 @@ async function pickColor(title, message) {
     const r = await selectDialog({
       title, message,
       options: CATEGORY_COLORS.map((c) => ({ value: c, label: c, color: c })),
-      mode: 'single', confirmText: '确定',
+      mode: 'single', confirmText: tr('确定'),
     });
     if (r == null) return null;
     if (typeof r === 'string') return r;
@@ -353,55 +355,55 @@ async function addCategory() {
   let r = null;
   try {
     r = await nameColorDialog({
-      title: '新建分类',
-      label: '分类名称',
-      placeholder: '例如：功能件',
+      title: tr('新建分类'),
+      label: tr('分类名称'),
+      placeholder: tr('例如：功能件'),
       colors: CATEGORY_COLORS,
-      confirmText: '创建',
+      confirmText: tr('创建'),
     });
   } catch (_) { return; }
   if (!r || !r.value) return;
   const name = r.value;
   api.categoryCreate({ name, color: r.color })
-    .then(() => { emitToast('success', '已创建分类「' + name + '」'); reloadNav('categories'); })
+    .then(() => { emitToast('success', tr('已创建分类「') + name + '」'); reloadNav('categories'); })
     .catch(() => {});
 }
 async function addTag() {
   let r = null;
   try {
     r = await nameColorDialog({
-      title: '新建标签',
-      label: '标签名称',
-      placeholder: '例如：高精度',
+      title: tr('新建标签'),
+      label: tr('标签名称'),
+      placeholder: tr('例如：高精度'),
       colors: DEFAULT_TAG_COLORS,
-      confirmText: '创建',
+      confirmText: tr('创建'),
     });
   } catch (_) { return; }
   if (!r || !r.value) return;
   const name = r.value;
   api.tagCreate({ name, color: r.color })
-    .then(() => { emitToast('success', '已创建标签「' + name + '」'); reloadNav('tags'); })
+    .then(() => { emitToast('success', tr('已创建标签「') + name + '」'); reloadNav('tags'); })
     .catch(() => {});
 }
 async function saveView() {
   let name;
-  try { name = await promptDialog({ title: '保存视图', label: '视图名称', placeholder: '例如：待打印功能件', confirmText: '保存' }); }
+  try { name = await promptDialog({ title: tr('保存视图'), label: tr('视图名称'), placeholder: tr('例如：待打印功能件'), confirmText: tr('保存') }); }
   catch (_) { return; }
   if (!name || !name.trim()) return;
   api.viewSave({ name: name.trim(), query: { ...state.query } })
-    .then(() => { emitToast('success', '已保存视图'); reloadNav('views'); })
+    .then(() => { emitToast('success', tr('已保存视图')); reloadNav('views'); })
     .catch(() => {});
 }
 
 async function renameCategory(id, oldName) {
   let name;
-  try { name = await promptDialog({ title: '重命名分类', label: '分类名称', value: oldName, confirmText: '保存' }); }
+  try { name = await promptDialog({ title: tr('重命名分类'), label: tr('分类名称'), value: oldName, confirmText: tr('保存') }); }
   catch (_) { return; }
   if (name == null || !name.trim()) return;
   api.categoryUpdate(id, { name: name.trim() }).then(() => reloadNav('categories')).catch(() => {});
 }
 async function recolorCategory(id) {
-  const c = await pickColor('修改颜色', '选择新的标识色');
+  const c = await pickColor(tr('修改颜色'), tr('选择新的标识色'));
   if (!c) return;
   api.categoryUpdate(id, { color: c }).then(() => reloadNav('categories')).catch(() => {});
 }
@@ -409,23 +411,23 @@ async function deleteCategory(id, name) {
   let ok = false;
   try {
     ok = await confirmDialog({
-      title: '删除分类', message: '确定删除分类「' + name + '」吗？',
-      detail: '该分类下的模型将改为「未分类」，模型文件不会删除。',
-      items: [name], danger: true, confirmText: '删除',
+      title: tr('删除分类'), message: tr('确定删除分类「') + name + tr('」吗？'),
+      detail: tr('该分类下的模型将改为「未分类」，模型文件不会删除。'),
+      items: [name], danger: true, confirmText: tr('删除'),
     });
   } catch (_) { return; }
   if (!ok) return;
-  api.categoryDelete(id).then(() => { emitToast('success', '已删除分类'); reloadNav('categories'); }).catch(() => {});
+  api.categoryDelete(id).then(() => { emitToast('success', tr('已删除分类')); reloadNav('categories'); }).catch(() => {});
 }
 async function renameTag(id, oldName) {
   let name;
-  try { name = await promptDialog({ title: '重命名标签', label: '标签名称', value: oldName, confirmText: '保存' }); }
+  try { name = await promptDialog({ title: tr('重命名标签'), label: tr('标签名称'), value: oldName, confirmText: tr('保存') }); }
   catch (_) { return; }
   if (name == null || !name.trim()) return;
   api.tagUpdate(id, { name: name.trim() }).then(() => reloadNav('tags')).catch(() => {});
 }
 async function recolorTag(id) {
-  const c = await pickColor('修改颜色', '选择新的标识色');
+  const c = await pickColor(tr('修改颜色'), tr('选择新的标识色'));
   if (!c) return;
   api.tagUpdate(id, { color: c }).then(() => reloadNav('tags')).catch(() => {});
 }
@@ -433,22 +435,22 @@ async function deleteTag(id, name) {
   let ok = false;
   try {
     ok = await confirmDialog({
-      title: '删除标签', message: '确定删除标签「' + name + '」吗？',
-      detail: '该标签会从所有模型上移除，模型文件不会删除。',
-      items: [name], danger: true, confirmText: '删除',
+      title: tr('删除标签'), message: tr('确定删除标签「') + name + tr('」吗？'),
+      detail: tr('该标签会从所有模型上移除，模型文件不会删除。'),
+      items: [name], danger: true, confirmText: tr('删除'),
     });
   } catch (_) { return; }
   if (!ok) return;
-  api.tagDelete(id).then(() => { emitToast('success', '已删除标签'); reloadNav('tags'); }).catch(() => {});
+  api.tagDelete(id).then(() => { emitToast('success', tr('已删除标签')); reloadNav('tags'); }).catch(() => {});
 }
 async function deleteView(id, name) {
   let ok = false;
   try {
     ok = await confirmDialog({
-      title: '删除视图', message: '确定删除视图「' + name + '」吗？',
-      items: [name], danger: true, confirmText: '删除',
+      title: tr('删除视图'), message: tr('确定删除视图「') + name + tr('」吗？'),
+      items: [name], danger: true, confirmText: tr('删除'),
     });
   } catch (_) { return; }
   if (!ok) return;
-  api.viewDelete(id).then(() => { emitToast('success', '已删除视图'); reloadNav('views'); }).catch(() => {});
+  api.viewDelete(id).then(() => { emitToast('success', tr('已删除视图')); reloadNav('views'); }).catch(() => {});
 }

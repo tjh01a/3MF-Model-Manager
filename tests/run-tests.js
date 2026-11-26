@@ -367,6 +367,16 @@ function group(name) { console.log('\n' + name); }
     eq(store.getSettings().ui.makerWorldCn, true, 'MakerWorld 应默认自动打开中国站');
     ok(store.getLibrary().categories.length >= 4, '默认分类未生成');
   });
+  await t('全新英文安装：界面语言与默认分类都跟随系统', async () => {
+    const enDir = path.join(tmp, 'en-store');
+    fs.mkdirSync(enDir, { recursive: true });
+    const enStore = new Store({ dataDir: enDir, systemLocale: 'en-US' });
+    await enStore.init();
+    eq(enStore.getSettings().ui.language, 'en-US');
+    eq(enStore.getSettings().ui.makerWorldRegion, 'auto');
+    const names = enStore.getLibrary().categories.map((c) => c.name);
+    ok(names.includes('Functional Parts') && names.includes('Test & Calibration'), names.join(', '));
+  });
   await t('updateLibrary 原子写入并落盘', async () => {
     await store.updateLibrary((l) => {
       l.models.x1 = { id: 'x1', title: '测试', path: path.join(tmp, 'x1.3mf'), status: 'ok' };

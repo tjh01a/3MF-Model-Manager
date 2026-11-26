@@ -42,18 +42,20 @@ class Services extends EventEmitter {
   /** 主进程 → 渲染层的统一事件出口 */
   emitToRenderer(channel, payload) { this.emit('event', channel, payload); }
 
-  async init({ autoWatch = true, onStage = null } = {}) {
+  async init({ autoWatch = true, onStage = null, systemLocale = 'zh-CN' } = {}) {
     if (this.initialized) return this;
     const stage = (name, percent) => { if (typeof onStage === 'function') onStage(name, percent); };
     cpaths.ensureDirs();
 
     stage('dirs', 15);
-    this.store = new Store({});
+    this.store = new Store({ systemLocale });
     await this.store.init();
     stage('store', 34);
     this.library = new LibraryService({ store: this.store });
     // 耗材库 / 回执：独立文件，不进 library 备份机制（用户 2026-11-16 确认）
-    this.filaments = new FilamentService();
+    this.filaments = new FilamentService({
+      language: (this.store.getSettings().ui || {}).language,
+    });
     await this.filaments.init();
     this.receipts = new ReceiptService();
     await this.receipts.init();

@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 设备（打印机管理）：把快造 U1 和拓竹放在同一张卡片上。
  *
@@ -37,8 +39,8 @@ function fmtMin(min) {
 }
 
 const KIND_META = {
-  snapmaker: { label: '快造', icon: 'i-cube', cls: 'k-snap' },
-  bambu: { label: '拓竹', icon: 'i-box', cls: 'k-bambu' },
+  snapmaker: { label: tr('快造'), icon: 'i-cube', cls: 'k-snap' },
+  bambu: { label: tr('拓竹'), icon: 'i-box', cls: 'k-bambu' },
 };
 
 const STATE_CLS = {
@@ -48,8 +50,8 @@ const STATE_CLS = {
 
 /** 设备卡片 / 确认弹窗里统一的人话名字 */
 function printerLabel(p) {
-  if (!p) return '未知设备';
-  const name = String(p.name || p.model || '打印机').trim();
+  if (!p) return tr('未知设备');
+  const name = String(p.name || p.model || tr('打印机')).trim();
   const ip = String(p.ip || '').trim();
   const id = String(p.id || '').trim();
   return name + (ip ? '（' + ip + '）' : (id ? '（' + id + '）' : ''));
@@ -81,8 +83,8 @@ function headsHtml(p) {
     const color = mat && mat.color ? mat.color : '';
     const hot = Number(h.target) > 0;
     return '<div class="dev-tool' + (h.active ? ' is-active' : '') + (hot ? ' is-hot' : '') + '"' +
-      ' title="T' + (h.index + 1) + ' 当前 ' + h.cur + '° / 目标 ' + h.target + '°' +
-        (h.active ? '（当前使用）' : '') + '">' +
+      ' title="T' + (h.index + 1) + tr(' 当前 ') + h.cur + tr('° / 目标 ') + h.target + '°' +
+        (h.active ? tr('（当前使用）') : '') + '">' +
       '<i class="dev-tool-dot"' + (color ? ' style="background:' + esc(color) + '"' : '') + '></i>' +
       '<span class="dev-tool-name">T' + (h.index + 1) + '</span>' +
       '<span class="dev-tool-val">' + Math.round(h.cur) + '<i>/' + Math.round(h.target) + '°</i></span>' +
@@ -102,7 +104,7 @@ function tempCell(label, t) {
 }
 
 function materialsHtml(mats) {
-  if (!mats || !mats.length) return '<div class="dev-mats-empty">没有耗材信息</div>';
+  if (!mats || !mats.length) return tr('<div class="dev-mats-empty">没有耗材信息</div>');
   return '<div class="dev-mats">' + mats.map((m) =>
     '<div class="dev-mat' + (m.active ? ' is-active' : '') + '" title="' + esc(m.type + ' ' + (m.vendor || '')) + '">' +
       '<i class="dev-mat-swatch" style="background:' + esc(m.color || '#9AA3AF') + '"></i>' +
@@ -115,19 +117,19 @@ function progressHtml(p) {
   const s = p.state;
   if (!p.job) {
     return '<div class="dev-job dev-job-empty">' +
-      (p.online ? '空闲中，没有正在打印的任务' : (p.error ? esc(p.error) : '还没连上')) + '</div>';
+      (p.online ? tr('空闲中，没有正在打印的任务') : (p.error ? esc(p.error) : tr('还没连上'))) + '</div>';
   }
   const j = p.job;
   const pct = Math.max(0, Math.min(100, j.percent || 0));
-  const layerTxt = j.layers ? '层 ' + j.layer + '/' + j.layers : '';
+  const layerTxt = j.layers ? tr('层 ') + j.layer + '/' + j.layers : '';
   return '<div class="dev-job">' +
     '<div class="dev-job-name" title="' + esc(j.name) + '">' + esc(j.name) + '</div>' +
     '<div class="dev-bar"><i class="' + STATE_CLS[s] + '" style="width:' + pct + '%"></i></div>' +
     '<div class="dev-job-meta">' +
       '<span class="dev-pct">' + Math.round(pct) + '%</span>' +
       (layerTxt ? '<span>' + layerTxt + '</span>' : '') +
-      (j.remainingMin ? '<span>剩余 ' + fmtMin(j.remainingMin) + '</span>' : '') +
-      (j.elapsedMin && s === 'printing' ? '<span>已用 ' + fmtMin(j.elapsedMin) + '</span>' : '') +
+      (j.remainingMin ? tr('<span>剩余 ') + fmtMin(j.remainingMin) + '</span>' : '') +
+      (j.elapsedMin && s === 'printing' ? tr('<span>已用 ') + fmtMin(j.elapsedMin) + '</span>' : '') +
     '</div>' +
   '</div>';
 }
@@ -152,10 +154,10 @@ export function cancelPromptForm() {
 /** 把「多久以前」说成人话：45 秒前 / 3 分钟前 / 2 小时前 */
 function agoText(sec) {
   const n = Math.max(0, Math.round(Number(sec) || 0));
-  if (n < 90) return n + ' 秒前';
-  if (n < 3600) return Math.round(n / 60) + ' 分钟前';
-  if (n < 86400) return Math.round(n / 3600) + ' 小时前';
-  return Math.round(n / 86400) + ' 天前';
+  if (n < 90) return n + tr(' 秒前');
+  if (n < 3600) return Math.round(n / 60) + tr(' 分钟前');
+  if (n < 86400) return Math.round(n / 3600) + tr(' 小时前');
+  return Math.round(n / 86400) + tr(' 天前');
 }
 
 function camBlock(p) {
@@ -166,33 +168,33 @@ function camBlock(p) {
   if (camLoading.get(p.id) && !url && !err) {
     return '<div class="dev-cam is-loading">' +
       icon('i-refresh', 'ico') +
-      '<span>正在连接摄像头…</span>' +
-      '<span class="dev-cam-hint">拓竹首帧通常要几秒，请稍候</span>' +
+      tr('<span>正在连接摄像头…</span>') +
+      tr('<span class="dev-cam-hint">拓竹首帧通常要几秒，请稍候</span>') +
       '</div>';
   }
   if (!url) {
     return '<div class="dev-cam is-empty">' +
       '<div class="dev-cam-empty">' +
-        esc(err || '点「摄像头」查看机内画面') +
-        (err ? '<span class="dev-cam-hint">也可以在「编辑」里填一个摄像头地址（快照或 MJPEG）</span>' : '') +
+        esc(err || tr('点「摄像头」查看机内画面')) +
+        (err ? tr('<span class="dev-cam-hint">也可以在「编辑」里填一个摄像头地址（快照或 MJPEG）</span>') : '') +
       '</div></div>';
   }
   const stale = Number(meta.staleSec) > 120;
   const source = meta.static
-    ? '<span class="dev-cam-src">静态快照</span>'
+    ? tr('<span class="dev-cam-src">静态快照</span>')
     : (meta.source === 'u1-live'
-      ? '<span class="dev-cam-src is-live">实时抓拍</span>'
-      : (meta.source ? '<span class="dev-cam-src">实时画面</span>' : ''));
+      ? tr('<span class="dev-cam-src is-live">实时抓拍</span>')
+      : (meta.source ? tr('<span class="dev-cam-src">实时画面</span>') : ''));
   return '<div class="dev-cam">' +
-    '<img src="' + url + '" alt="机内摄像头画面">' +
+    '<img src="' + url + tr('" alt="机内摄像头画面">') +
     source +
     (stale
-      ? '<span class="dev-cam-badge is-stale" title="打印机上的画面没有再刷新，摄像头服务可能没启动">画面停在 ' + esc(agoText(meta.staleSec)) + '</span>'
+      ? tr('<span class="dev-cam-badge is-stale" title="打印机上的画面没有再刷新，摄像头服务可能没启动">画面停在 ') + esc(agoText(meta.staleSec)) + '</span>'
       : '') +
     (stale && meta.static
-      ? '<div class="dev-cam-note">主动抓拍没成功，这是打印机上的旧快照。可在「编辑」里填一个摄像头地址（快照 / MJPEG）直接取画面。</div>'
+      ? tr('<div class="dev-cam-note">主动抓拍没成功，这是打印机上的旧快照。可在「编辑」里填一个摄像头地址（快照 / MJPEG）直接取画面。</div>')
       : (meta.notice && meta.static
-        ? '<div class="dev-cam-note">' + esc(meta.notice) + '，暂时显示打印机上的快照。</div>'
+        ? '<div class="dev-cam-note">' + esc(meta.notice) + tr('，暂时显示打印机上的快照。</div>')
         : '')) +
   '</div>';
 }
@@ -200,9 +202,9 @@ function camBlock(p) {
 function detectLabel(id) {
   const d = detectState.get(id);
   // 倒计时走完但两张图还没到，就老实显示「处理中…」，别停在「检测中 0s」
-  if (d && d.running) return d.left > 0 ? ('检测中 ' + d.left + 's') : '处理中…';
-  if (d && d.shots && d.shots.length) return '查看图片';
-  return '打印机检测';
+  if (d && d.running) return d.left > 0 ? (tr('检测中 ') + d.left + 's') : tr('处理中…');
+  if (d && d.shots && d.shots.length) return tr('查看图片');
+  return tr('打印机检测');
 }
 
 function cardHtml(p) {
@@ -219,39 +221,39 @@ function cardHtml(p) {
       '<div class="dev-title">' +
         '<div class="dev-name">' + esc(p.name) + '</div>' +
         '<div class="dev-sub">' + esc(p.model || meta.label) + ' · ' +
-          (p.via === 'cloud' ? '云端通道' : (p.ip ? esc(p.ip) : '局域网')) + '</div>' +
+          (p.via === 'cloud' ? tr('云端通道') : (p.ip ? esc(p.ip) : tr('局域网'))) + '</div>' +
       '</div>' +
       '<span class="dev-state ' + scls + '">' + esc(p.stateText || '—') + '</span>' +
     '</header>' +
     progressHtml(p) +
     '<div class="dev-temps">' +
       headsHtml(p) +
-      (headsHtml(p) ? '' : tempCell('喷嘴', p.temps && p.temps.nozzle)) +
-      tempCell('热床', p.temps && p.temps.bed) +
-      (p.temps && p.temps.chamber ? tempCell('腔体', p.temps.chamber) : '') +
-      (p.fan != null ? '<div class="dev-temp"><span class="dev-temp-label">风扇</span><span class="dev-temp-val">' + Math.round(p.fan) + '<i>%</i></span></div>' : '') +
+      (headsHtml(p) ? '' : tempCell(tr('喷嘴'), p.temps && p.temps.nozzle)) +
+      tempCell(tr('热床'), p.temps && p.temps.bed) +
+      (p.temps && p.temps.chamber ? tempCell(tr('腔体'), p.temps.chamber) : '') +
+      (p.fan != null ? tr('<div class="dev-temp"><span class="dev-temp-label">风扇</span><span class="dev-temp-val">') + Math.round(p.fan) + '<i>%</i></span></div>' : '') +
     '</div>' +
     materialsHtml(p.materials) +
     '<div class="dev-actions">' +
       (canPause ? '<button class="btn btn-ghost btn-sm" data-act="dev-cmd" data-cmd="pause" ' +
-        'title="暂停「' + esc(p.name) + '」正在进行的打印任务，打印件和进度都会保留，之后可以继续">暂停打印</button>' : '') +
+        tr('title="暂停「') + esc(p.name) + tr('」正在进行的打印任务，打印件和进度都会保留，之后可以继续">暂停打印</button>') : '') +
       (canResume ? '<button class="btn btn-primary btn-sm" data-act="dev-cmd" data-cmd="resume" ' +
-        'title="让「' + esc(p.name) + '」从暂停位置继续打印">继续打印</button>' : '') +
+        tr('title="让「') + esc(p.name) + tr('」从暂停位置继续打印">继续打印</button>') : '') +
       (canStop ? '<button class="btn btn-ghost btn-sm danger" data-act="dev-cmd" data-cmd="stop" ' +
-        'title="取消「' + esc(p.name) + '」当前的打印任务，打印件会作废且不可恢复。不影响摄像头预览">取消打印</button>' : '') +
+        tr('title="取消「') + esc(p.name) + tr('」当前的打印任务，打印件会作废且不可恢复。不影响摄像头预览">取消打印</button>') : '') +
       '<button class="btn btn-ghost btn-sm" data-act="dev-cam" ' +
-        'title="' + (camTimers.has(p.id) ? '关闭本机摄像头画面（不会影响打印机）' : '在本机查看打印机摄像头画面（不影响打印任务）') + '">' +
-        (camTimers.has(p.id) ? '关闭预览' : '查看摄像头') + '</button>' +
+        'title="' + (camTimers.has(p.id) ? tr('关闭本机摄像头画面（不会影响打印机）') : tr('在本机查看打印机摄像头画面（不影响打印任务）')) + '">' +
+        (camTimers.has(p.id) ? tr('关闭预览') : tr('查看摄像头')) + '</button>' +
       '<button class="btn btn-ghost btn-sm' +
         ((detectState.get(p.id) || {}).running ? ' is-loading' : '') + '" data-act="dev-detect"' +
         ((detectState.get(p.id) || {}).running ? ' disabled' : '') +
-        ' title="抓两张间隔约 3 秒的摄像头画面对比，看拉丝/空打/翘边；不控制打印机">' +
+        tr(' title="抓两张间隔约 3 秒的摄像头画面对比，看拉丝/空打/翘边；不控制打印机">') +
         detectLabel(p.id) + '</button>' +
-      '<button class="btn btn-ghost btn-sm" data-act="dev-chart" title="查看这台打印机的温度曲线">温度曲线</button>' +
-      '<button class="btn btn-ghost btn-sm" data-act="dev-test" title="测试与这台打印机的连接，不改动打印任务">测试连接</button>' +
-      '<button class="btn btn-ghost btn-sm" data-act="dev-edit" title="修改这台打印机的名称、地址与摄像头设置">编辑设备</button>' +
+      tr('<button class="btn btn-ghost btn-sm" data-act="dev-chart" title="查看这台打印机的温度曲线">温度曲线</button>') +
+      tr('<button class="btn btn-ghost btn-sm" data-act="dev-test" title="测试与这台打印机的连接，不改动打印任务">测试连接</button>') +
+      tr('<button class="btn btn-ghost btn-sm" data-act="dev-edit" title="修改这台打印机的名称、地址与摄像头设置">编辑设备</button>') +
       '<button class="btn btn-ghost btn-sm danger" data-act="dev-remove" ' +
-        'title="只从 PrintShelf 里移除这台设备，不会影响打印机本身或正在进行的打印">移除设备</button>' +
+        tr('title="只从 PrintShelf 里移除这台设备，不会影响打印机本身或正在进行的打印">移除设备</button>') +
     '</div>' +
     camBlock(p) +
     (p.error && p.online ? '<p class="dev-err">' + esc(p.error) + '</p>' : '') +
@@ -261,12 +263,12 @@ function cardHtml(p) {
 function emptyHtml() {
   return '<div class="dev-empty">' +
     '<div class="dev-empty-ic">' + icon('i-printer') + '</div>' +
-    '<h3>还没有添加打印机</h3>' +
-    '<p>本工具可以直连局域网里的打印机看状态，不用先打开切片软件。<br>' +
-      '快造 U1 走 Moonraker（7125 端口），拓竹走局域网 MQTT（8883）。</p>' +
-    '<div class="btn-row"><button class="btn btn-primary" data-act="dev-tidy">一键整理设备</button>' +
-    '<button class="btn btn-ghost" data-act="dev-scan">扫描局域网</button>' +
-    '<button class="btn btn-ghost" data-act="dev-add">手动添加</button></div>' +
+    tr('<h3>还没有添加打印机</h3>') +
+    tr('<p>本工具可以直连局域网里的打印机看状态，不用先打开切片软件。<br>') +
+      tr('快造 U1 走 Moonraker（7125 端口），拓竹走局域网 MQTT（8883）。</p>') +
+    tr('<div class="btn-row"><button class="btn btn-primary" data-act="dev-tidy">一键整理设备</button>') +
+    tr('<button class="btn btn-ghost" data-act="dev-scan">扫描局域网</button>') +
+    tr('<button class="btn btn-ghost" data-act="dev-add">手动添加</button></div>') +
     '</div>';
 }
 
@@ -275,22 +277,22 @@ function discoveredHtml() {
   if (!list) return '';
   const newCount = discoveredNew().length;
   if (!list.length) {
-    return '<div class="dev-panel-block"><p class="hint">这个网段没有扫到打印机。确认打印机已开机、和电脑在同一个局域网。</p>' +
-      '<div class="btn-row"><button class="btn btn-ghost btn-sm" data-act="dev-scan">再扫一次</button></div></div>';
+    return tr('<div class="dev-panel-block"><p class="hint">这个网段没有扫到打印机。确认打印机已开机、和电脑在同一个局域网。</p>') +
+      tr('<div class="btn-row"><button class="btn btn-ghost btn-sm" data-act="dev-scan">再扫一次</button></div></div>');
   }
-  return '<div class="dev-panel-block"><h4>扫到 ' + list.length + ' 台</h4>' +
+  return tr('<div class="dev-panel-block"><h4>扫到 ') + list.length + tr(' 台</h4>') +
     list.map((d) => '<div class="dev-found">' +
       '<span class="dev-found-kind">' + esc((KIND_META[d.kind] || {}).label || d.kind) + '</span>' +
       '<span class="dev-found-ip">' + esc(d.ip) + '</span>' +
       '<span class="dev-found-name">' + esc(d.name || '') + '</span>' +
       (d.added
-        ? '<span class="dev-found-tag">已在列表</span>'
-        : '<button class="btn btn-primary btn-sm" data-act="dev-add-found" data-ip="' + esc(d.ip) + '">添加</button>') +
+        ? tr('<span class="dev-found-tag">已在列表</span>')
+        : '<button class="btn btn-primary btn-sm" data-act="dev-add-found" data-ip="' + esc(d.ip) + tr('">添加</button>')) +
     '</div>').join('') +
     '<div class="btn-row">' +
-    (newCount ? '<button class="btn btn-primary btn-sm" data-act="dev-scan-add">添加全部新设备（' + newCount + '）</button>' : '') +
-    '<button class="btn btn-ghost btn-sm" data-act="dev-scan">再扫一次</button>' +
-    '<button class="btn btn-ghost btn-sm" data-act="dev-close-found">收起</button></div></div>';
+    (newCount ? tr('<button class="btn btn-primary btn-sm" data-act="dev-scan-add">添加全部新设备（') + newCount + '）</button>' : '') +
+    tr('<button class="btn btn-ghost btn-sm" data-act="dev-scan">再扫一次</button>') +
+    tr('<button class="btn btn-ghost btn-sm" data-act="dev-close-found">收起</button></div></div>');
 }
 
 function render() {
@@ -303,19 +305,19 @@ function render() {
   body.innerHTML =
     '<div class="dev-toolbar">' +
       '<button class="btn btn-primary btn-sm" data-act="dev-tidy" ' +
-        'title="扫描局域网添加新打印机，并列出可移除的离线设备；执行前会先给你确认清单">' +
-        icon('i-search') + '一键整理设备</button>' +
+        tr('title="扫描局域网添加新打印机，并列出可移除的离线设备；执行前会先给你确认清单">') +
+        icon('i-search') + tr('一键整理设备</button>') +
       '<button class="btn btn-ghost btn-sm danger" data-act="dev-remove-offline" ' +
-        'title="只从本机配置里移除离线设备，不会重置打印机；执行前会列出清单">' +
-        icon('i-trash') + '移除失效设备</button>' +
-      '<button class="btn btn-ghost btn-sm" data-act="dev-scan">' + icon('i-search') + '扫描局域网</button>' +
-      '<button class="btn btn-ghost btn-sm" data-act="dev-add">' + icon('i-plus') + '手动添加</button>' +
-      (hasBambu ? '<button class="btn btn-ghost btn-sm" data-act="dev-bambu-account">' + icon('i-cloud') + '拓竹账号</button>' : '') +
-      '<span class="dev-tip">' + (busy ? '正在扫描，请稍候…' : '状态每 3 秒刷新一次') + '</span>' +
+        tr('title="只从本机配置里移除离线设备，不会重置打印机；执行前会列出清单">') +
+        icon('i-trash') + tr('移除失效设备</button>') +
+      '<button class="btn btn-ghost btn-sm" data-act="dev-scan">' + icon('i-search') + tr('扫描局域网</button>') +
+      '<button class="btn btn-ghost btn-sm" data-act="dev-add">' + icon('i-plus') + tr('手动添加</button>') +
+      (hasBambu ? '<button class="btn btn-ghost btn-sm" data-act="dev-bambu-account">' + icon('i-cloud') + tr('拓竹账号</button>') : '') +
+      '<span class="dev-tip">' + (busy ? tr('正在扫描，请稍候…') : tr('状态每 3 秒刷新一次')) + '</span>' +
     '</div>' +
     (st.error ? '<p class="dev-err">' + esc(st.error) + '</p>' : '') +
     discoveredHtml() +
-    (st.loading && !st.snap.length ? '<p class="hint">正在连接…</p>' : '') +
+    (st.loading && !st.snap.length ? tr('<p class="hint">正在连接…</p>') : '') +
     (cards ? '<div class="dev-grid">' + cards + '</div>' : (st.discovered ? '' : emptyHtml()));
 }
 
@@ -328,7 +330,7 @@ async function refresh() {
     st.snap = snap || [];
     st.error = '';
   } catch (e) {
-    st.error = (e && e.message) || '读取打印机状态失败';
+    st.error = (e && e.message) || tr('读取打印机状态失败');
   }
   render();
   updateBadge();
@@ -339,12 +341,12 @@ async function scan() {
   busy = true;
   render();
   const body = document.getElementById('devices-body');
-  if (body) body.insertAdjacentHTML('afterbegin', '<p class="hint" id="dev-scanning">正在扫描局域网（约 3 秒）…</p>');
+  if (body) body.insertAdjacentHTML('afterbegin', tr('<p class="hint" id="dev-scanning">正在扫描局域网（约 3 秒）…</p>'));
   try {
     st.discovered = await api.printersDiscover({});
   } catch (e) {
     st.discovered = [];
-    emitToast('warn', (e && e.message) || '扫描失败');
+    emitToast('warn', (e && e.message) || tr('扫描失败'));
   } finally {
     busy = false;
     const el = document.getElementById('dev-scanning');
@@ -376,27 +378,27 @@ async function addOne(d) {
 async function addAllFound() {
   const addList = discoveredNew();
   if (!addList.length) {
-    emitToast('info', '没有发现新的打印机');
+    emitToast('info', tr('没有发现新的打印机'));
     return;
   }
   const ok = await confirmDialog({
-    title: '添加扫描到的打印机',
-    message: '把扫到的 ' + addList.length + ' 台新打印机加入本机设备列表？',
-    detail: '只是保存连接信息，不会改动打印机设置。拓竹机器若缺访问码，添加后请在「编辑设备」里补上。',
+    title: tr('添加扫描到的打印机'),
+    message: tr('把扫到的 ') + addList.length + tr(' 台新打印机加入本机设备列表？'),
+    detail: tr('只是保存连接信息，不会改动打印机设置。拓竹机器若缺访问码，添加后请在「编辑设备」里补上。'),
     items: addList.map((d) => printerLabel(d)),
-    confirmText: '添加这些设备',
-    cancelText: '先不添加',
+    confirmText: tr('添加这些设备'),
+    cancelText: tr('先不添加'),
   });
   if (!ok) return;
   let added = 0;
   const failed = [];
   for (const d of addList) {
     try { if (await addOne(d)) added++; }
-    catch (e) { failed.push(printerLabel(d) + '：' + ((e && e.message) || '添加失败')); }
+    catch (e) { failed.push(printerLabel(d) + '：' + ((e && e.message) || tr('添加失败'))); }
   }
   emitToast(added ? 'success' : 'warn', added
-    ? ('已添加 ' + added + ' 台' + (failed.length ? '，' + failed.length + ' 台失败' : ''))
-    : '没有添加成功');
+    ? (tr('已添加 ') + added + tr(' 台') + (failed.length ? '，' + failed.length + tr(' 台失败') : ''))
+    : tr('没有添加成功'));
   await refresh();
 }
 
@@ -411,17 +413,17 @@ async function scanAndAdd() {
 async function removeOffline() {
   const targets = (st.snap || []).filter(isOfflinePrinter);
   if (!targets.length) {
-    emitToast('info', '当前没有需要移除的离线设备');
+    emitToast('info', tr('当前没有需要移除的离线设备'));
     return;
   }
   const ok = await confirmDialog({
-    title: '移除失效设备（只删本机配置）',
-    message: '移除 ' + targets.length + ' 台离线设备？',
-    detail: '只是删除本工具保存的连接信息，不会重置打印机、也不会影响它正在进行的打印。'
-      + '当前离线不一定代表机器坏了（例如 Wi-Fi 掉了），以后可以重新添加回来。',
+    title: tr('移除失效设备（只删本机配置）'),
+    message: tr('移除 ') + targets.length + tr(' 台离线设备？'),
+    detail: tr('只是删除本工具保存的连接信息，不会重置打印机、也不会影响它正在进行的打印。')
+      + tr('当前离线不一定代表机器坏了（例如 Wi-Fi 掉了），以后可以重新添加回来。'),
     items: targets.map(printerLabel),
-    confirmText: '移除这些设备',
-    cancelText: '不移除，返回',
+    confirmText: tr('移除这些设备'),
+    cancelText: tr('不移除，返回'),
     danger: true,
   });
   if (!ok) return;
@@ -432,12 +434,12 @@ async function removeOffline() {
       await api.printerRemove(p.id);
       removed++;
     } catch (e) {
-      failed.push(printerLabel(p) + '：' + ((e && e.message) || '移除失败'));
+      failed.push(printerLabel(p) + '：' + ((e && e.message) || tr('移除失败')));
     }
   }
   emitToast(removed ? 'success' : 'warn', removed
-    ? ('已移除 ' + removed + ' 台' + (failed.length ? '，' + failed.length + ' 台失败' : ''))
-    : '没有移除成功');
+    ? (tr('已移除 ') + removed + tr(' 台') + (failed.length ? '，' + failed.length + tr(' 台失败') : ''))
+    : tr('没有移除成功'));
   await refresh();
 }
 
@@ -450,7 +452,7 @@ async function tidyDevices() {
   busy = true;
   render();
   const body = document.getElementById('devices-body');
-  if (body) body.insertAdjacentHTML('afterbegin', '<p class="hint" id="dev-tidying">正在扫描局域网并整理设备（约 3 秒）…</p>');
+  if (body) body.insertAdjacentHTML('afterbegin', tr('<p class="hint" id="dev-tidying">正在扫描局域网并整理设备（约 3 秒）…</p>'));
   let found = [];
   try {
     found = await api.printersDiscover({}) || [];
@@ -458,7 +460,7 @@ async function tidyDevices() {
   } catch (e) {
     found = [];
     st.discovered = [];
-    emitToast('warn', (e && e.message) || '扫描失败，仍可整理已有离线设备');
+    emitToast('warn', (e && e.message) || tr('扫描失败，仍可整理已有离线设备'));
   } finally {
     busy = false;
     const el = document.getElementById('dev-tidying');
@@ -470,21 +472,21 @@ async function tidyDevices() {
   const addList = discoveredNew();
   const removeList = (st.snap || []).filter((p) => isOfflinePrinter(p) && !foundIps.has(String((p && p.ip) || '').trim()));
   if (!addList.length && !removeList.length) {
-    emitToast('info', '没有需要添加或移除的设备');
+    emitToast('info', tr('没有需要添加或移除的设备'));
     return;
   }
 
   const items = []
-    .concat(addList.map((d) => '添加 · ' + printerLabel(d)))
-    .concat(removeList.map((p) => '移除 · ' + printerLabel(p)));
+    .concat(addList.map((d) => tr('添加 · ') + printerLabel(d)))
+    .concat(removeList.map((p) => tr('移除 · ') + printerLabel(p)));
   const ok = await confirmDialog({
-    title: '一键整理设备',
-    message: '准备添加 ' + addList.length + ' 台、移除 ' + removeList.length + ' 台设备',
-    detail: '移除只删除本工具保存的连接信息，不会重置打印机，也不会影响正在进行的打印；'
-      + '清单里没有出现的设备不会被动到。',
+    title: tr('一键整理设备'),
+    message: tr('准备添加 ') + addList.length + tr(' 台、移除 ') + removeList.length + tr(' 台设备'),
+    detail: tr('移除只删除本工具保存的连接信息，不会重置打印机，也不会影响正在进行的打印；')
+      + tr('清单里没有出现的设备不会被动到。'),
     items,
-    confirmText: '按这个清单整理',
-    cancelText: '先不整理',
+    confirmText: tr('按这个清单整理'),
+    cancelText: tr('先不整理'),
     danger: removeList.length > 0,
   });
   if (!ok) return;
@@ -494,15 +496,15 @@ async function tidyDevices() {
   const failed = [];
   for (const d of addList) {
     try { if (await addOne(d)) added++; }
-    catch (e) { failed.push('添加 ' + printerLabel(d) + '：' + ((e && e.message) || '失败')); }
+    catch (e) { failed.push(tr('添加 ') + printerLabel(d) + '：' + ((e && e.message) || tr('失败'))); }
   }
   for (const p of removeList) {
     try { await api.printerRemove(p.id); removed++; }
-    catch (e) { failed.push('移除 ' + printerLabel(p) + '：' + ((e && e.message) || '失败')); }
+    catch (e) { failed.push(tr('移除 ') + printerLabel(p) + '：' + ((e && e.message) || tr('失败'))); }
   }
   emitToast(failed.length ? 'warn' : 'success',
-    '整理完成：添加 ' + added + ' 台，移除 ' + removed + ' 台' +
-    (failed.length ? '；失败 ' + failed.length + ' 项' : ''));
+    tr('整理完成：添加 ') + added + tr(' 台，移除 ') + removed + tr(' 台') +
+    (failed.length ? tr('；失败 ') + failed.length + tr(' 项') : ''));
   await refresh();
 }
 
@@ -520,8 +522,8 @@ function promptForm({ title, fields, confirmText }) {
           '<input class="input" data-k="' + esc(f.key) + '" value="' + esc(f.value || '') + '"' +
           ' placeholder="' + esc(f.ph || '') + '"></label>').join('') +
         '<div class="ow-foot">' +
-          '<button type="button" class="btn btn-ghost" data-x="1">取消</button>' +
-          '<button type="button" class="btn btn-primary" data-ok="1">' + esc(confirmText || '确定') + '</button>' +
+          tr('<button type="button" class="btn btn-ghost" data-x="1">取消</button>') +
+          '<button type="button" class="btn btn-primary" data-ok="1">' + esc(confirmText || tr('确定')) + '</button>' +
         '</div>' +
       '</div>';
     root.appendChild(back);
@@ -557,23 +559,23 @@ function promptForm({ title, fields, confirmText }) {
 
 async function addManual() {
   const v = await promptForm({
-    title: '添加打印机',
+    title: tr('添加打印机'),
     fields: [
-      { key: 'kind', label: '类型（snapmaker 或 bambu）', value: 'snapmaker', ph: 'snapmaker / bambu' },
-      { key: 'ip', label: 'IP 地址', ph: '192.168.1.100' },
-      { key: 'name', label: '名称（可留空）', ph: '快造 U1' },
-      { key: 'serial', label: '序列号（拓竹必填）', ph: '见打印机屏幕/设置' },
-      { key: 'accessCode', label: '访问码（拓竹必填，屏幕上的 8 位）', ph: '8 位访问码' },
-      { key: 'cameraUrl', label: '摄像头地址（可选，快照或 MJPEG）', ph: '留空则自动探测' },
+      { key: 'kind', label: tr('类型（snapmaker 或 bambu）'), value: 'snapmaker', ph: 'snapmaker / bambu' },
+      { key: 'ip', label: tr('IP 地址'), ph: '192.168.1.100' },
+      { key: 'name', label: tr('名称（可留空）'), ph: tr('快造 U1') },
+      { key: 'serial', label: tr('序列号（拓竹必填）'), ph: tr('见打印机屏幕/设置') },
+      { key: 'accessCode', label: tr('访问码（拓竹必填，屏幕上的 8 位）'), ph: tr('8 位访问码') },
+      { key: 'cameraUrl', label: tr('摄像头地址（可选，快照或 MJPEG）'), ph: tr('留空则自动探测') },
     ],
-    confirmText: '添加',
+    confirmText: tr('添加'),
   });
   if (!v) return;
   try {
     await api.printerAdd(v);
-    emitToast('success', '已添加，正在连接…');
+    emitToast('success', tr('已添加，正在连接…'));
     await refresh();
-  } catch (e) { emitToast('error', (e && e.message) || '添加失败'); }
+  } catch (e) { emitToast('error', (e && e.message) || tr('添加失败')); }
 }
 
 async function addFound(ip) {
@@ -581,74 +583,74 @@ async function addFound(ip) {
   if (!d) return;
   try {
     await addOne(d);
-    emitToast('success', '已添加 ' + (d.name || d.ip));
+    emitToast('success', tr('已添加 ') + (d.name || d.ip));
     await scan();
     await refresh();
-  } catch (e) { emitToast('error', (e && e.message) || '添加失败'); }
+  } catch (e) { emitToast('error', (e && e.message) || tr('添加失败')); }
 }
 
 async function editPrinter(id) {
   const p = st.list.find((x) => x.id === id);
   if (!p) return;
   const v = await promptForm({
-    title: '编辑 ' + p.name,
+    title: tr('编辑 ') + p.name,
     fields: [
-      { key: 'name', label: '名称', value: p.name },
-      { key: 'ip', label: 'IP 地址', value: p.ip },
-      { key: 'serial', label: '序列号（拓竹）', value: p.serial },
-      { key: 'accessCode', label: '访问码（拓竹）', value: p.accessCode },
-      { key: 'cameraUrl', label: '摄像头地址（留空自动走机型）', value: p.cameraUrl || '', ph: 'http://192.168.1.100:8080/?action=stream' },
+      { key: 'name', label: tr('名称'), value: p.name },
+      { key: 'ip', label: tr('IP 地址'), value: p.ip },
+      { key: 'serial', label: tr('序列号（拓竹）'), value: p.serial },
+      { key: 'accessCode', label: tr('访问码（拓竹）'), value: p.accessCode },
+      { key: 'cameraUrl', label: tr('摄像头地址（留空自动走机型）'), value: p.cameraUrl || '', ph: 'http://192.168.1.100:8080/?action=stream' },
     ],
-    confirmText: '保存',
+    confirmText: tr('保存'),
   });
   if (!v) return;
   try {
     await api.printerUpdate(id, v);
-    emitToast('success', '已保存，正在重连…');
+    emitToast('success', tr('已保存，正在重连…'));
     await refresh();
-  } catch (e) { emitToast('error', (e && e.message) || '保存失败'); }
+  } catch (e) { emitToast('error', (e && e.message) || tr('保存失败')); }
 }
 
 async function removePrinter(id) {
   if (!id) {
-    emitToast('warn', '找不到这台设备，请刷新设备列表后再试');
+    emitToast('warn', tr('找不到这台设备，请刷新设备列表后再试'));
     return;
   }
   // 卡片是从 snapshot 渲染的，离线/失效设备可能只在 snapshot 里；
   // 旧版只查 st.list，找不到就静默 return，用户看到的就是「点移除没反应」。
   const p = findPrinter(id);
   const ok = await confirmDialog({
-    title: '移除设备（只删本机配置）',
-    message: '把「' + printerLabel(p || { id }) + '」从 PrintShelf 的设备列表里移除？',
-    detail: '只是删除本工具保存的连接信息，不会重置打印机、也不会影响它正在进行的打印。以后可以重新添加回来。',
-    confirmText: '移除设备',
-    cancelText: '不移除，返回',
+    title: tr('移除设备（只删本机配置）'),
+    message: tr('把「') + printerLabel(p || { id }) + tr('」从 PrintShelf 的设备列表里移除？'),
+    detail: tr('只是删除本工具保存的连接信息，不会重置打印机、也不会影响它正在进行的打印。以后可以重新添加回来。'),
+    confirmText: tr('移除设备'),
+    cancelText: tr('不移除，返回'),
     danger: true,
   });
   if (!ok) return;
   try {
     await api.printerRemove(id);
-    emitToast('success', '已移除 ' + printerLabel(p || { id }));
+    emitToast('success', tr('已移除 ') + printerLabel(p || { id }));
     await refresh();
-  } catch (e) { emitToast('error', (e && e.message) || '移除失败'); }
+  } catch (e) { emitToast('error', (e && e.message) || tr('移除失败')); }
 }
 
 async function doCommand(id, cmd) {
   const p = st.snap.find((x) => x.id === id);
-  const name = (p && p.name) || '这台打印机';
-  const jobName = (p && p.job && p.job.name) || '当前打印任务';
+  const name = (p && p.name) || tr('这台打印机');
+  const jobName = (p && p.job && p.job.name) || tr('当前打印任务');
   const label = {
-    pause: '暂停打印', resume: '继续打印', stop: '取消打印',
+    pause: tr('暂停打印'), resume: tr('继续打印'), stop: tr('取消打印'),
   }[cmd] || cmd;
 
   // 暂停会中断当前打印，必须先说清楚暂停的是什么
   if (cmd === 'pause') {
     const ok = await confirmDialog({
-      title: '暂停打印任务',
-      message: '要暂停「' + name + '」上的打印吗？',
-      detail: '当前任务：' + jobName + '。暂停后喷头停在当前层，打印件和进度都会保留，可以再点「继续打印」从原处接着打。',
-      confirmText: '暂停打印',
-      cancelText: '不暂停，返回',
+      title: tr('暂停打印任务'),
+      message: tr('要暂停「') + name + tr('」上的打印吗？'),
+      detail: tr('当前任务：') + jobName + tr('。暂停后喷头停在当前层，打印件和进度都会保留，可以再点「继续打印」从原处接着打。'),
+      confirmText: tr('暂停打印'),
+      cancelText: tr('不暂停，返回'),
     });
     if (!ok) return;
   }
@@ -656,39 +658,39 @@ async function doCommand(id, cmd) {
   // 取消打印不可恢复，做两道确认：先说清后果，再手动输入确认
   if (cmd === 'stop') {
     const first = await confirmDialog({
-      title: '取消打印任务（不可恢复）',
-      message: '要取消「' + name + '」上的打印吗？',
-      detail: '当前任务：' + jobName + '。取消后这次打印会立即停止，打印件作废、无法接着打。这只是取消打印任务，不会关闭摄像头预览，也不会移除设备。',
-      confirmText: '下一步',
-      cancelText: '不取消，返回',
+      title: tr('取消打印任务（不可恢复）'),
+      message: tr('要取消「') + name + tr('」上的打印吗？'),
+      detail: tr('当前任务：') + jobName + tr('。取消后这次打印会立即停止，打印件作废、无法接着打。这只是取消打印任务，不会关闭摄像头预览，也不会移除设备。'),
+      confirmText: tr('下一步'),
+      cancelText: tr('不取消，返回'),
       danger: true,
     });
     if (!first) return;
     const typed = await promptDialog({
-      title: '再次确认：取消打印',
-      label: '请输入「取消打印」四个字确认（区分大小写）：',
-      placeholder: '取消打印',
-      confirmText: '确认取消打印',
+      title: tr('再次确认：取消打印'),
+      label: tr('请输入「取消打印」四个字确认（区分大小写）：'),
+      placeholder: tr('取消打印'),
+      confirmText: tr('确认取消打印'),
     });
     if (String(typed || '').trim() !== '取消打印') {
-      emitToast('info', '已放弃取消打印，任务继续进行');
+      emitToast('info', tr('已放弃取消打印，任务继续进行'));
       return;
     }
   }
 
   try {
     await api.printerAction(id, cmd);
-    emitToast('success', '已发送「' + label + '」指令到 ' + name);
+    emitToast('success', tr('已发送「') + label + tr('」指令到 ') + name);
     setTimeout(refresh, 700);
-  } catch (e) { emitToast('error', (e && e.message) || (label + '失败')); }
+  } catch (e) { emitToast('error', (e && e.message) || (label + tr('失败'))); }
 }
 
 async function testPrinter(id) {
-  emitToast('info', '正在测试连接…');
+  emitToast('info', tr('正在测试连接…'));
   try {
     const r = await api.printerTest(id);
-    emitToast(r.ok ? 'success' : 'error', r.message || (r.ok ? '连接正常' : '连接失败'));
-  } catch (e) { emitToast('error', (e && e.message) || '测试失败'); }
+    emitToast(r.ok ? 'success' : 'error', r.message || (r.ok ? tr('连接正常') : tr('连接失败')));
+  } catch (e) { emitToast('error', (e && e.message) || tr('测试失败')); }
 }
 
 // ------------------------------------------------------------------ 事件
@@ -785,7 +787,7 @@ function onCamClick(e) {
   if (act === 'dev-cam') { toggleCam(id); return; }
   if (act === 'dev-chart') {
     const p = st.snap.find((x) => x.id === id);
-    openMonitorChart(id, p ? p.name : '打印机');
+    openMonitorChart(id, p ? p.name : tr('打印机'));
     return;
   }
   const d = detectState.get(id);
@@ -859,7 +861,7 @@ function repaintCam(id) {
   if (box) box.outerHTML = camBlock(p);
   const btn = card.querySelector('[data-act="dev-cam"]');
   // 文案必须和 cardHtml 初次渲染一致：查看摄像头 / 关闭预览
-  if (btn) btn.textContent = camTimers.has(id) ? '关闭预览' : '查看摄像头';
+  if (btn) btn.textContent = camTimers.has(id) ? tr('关闭预览') : tr('查看摄像头');
 }
 
 async function toggleCam(id) {
@@ -915,16 +917,16 @@ async function startDetect(id) {
     if (r && r.shots && r.shots.length) {
       job.shots = r.shots;
       job.staleSec = r.staleSec || 0;
-    } else emitToast('warn', '没有取到画面，检查打印机是否开机、访问码是否正确');
+    } else emitToast('warn', tr('没有取到画面，检查打印机是否开机、访问码是否正确'));
   } catch (e) {
-    emitToast('error', (e && e.message) || '检测失败');
+    emitToast('error', (e && e.message) || tr('检测失败'));
   }
   clearInterval(tick);
   job.running = false;
   repaintDetect(id);
   // 检测完直接弹结果：按钮点下去就该看到画面，不该再要求点第二次
   if (job.shots.length) {
-    emitToast('success', '检测完成');
+    emitToast('success', tr('检测完成'));
     showDetect(id);
   }
 }
@@ -933,18 +935,18 @@ function showDetect(id) {
   const d = detectState.get(id);
   if (!d || !d.shots.length) return;
   const imgs = d.shots
-    .map((b) => '<img src="data:image/jpeg;base64,' + b + '" alt="检测画面">')
+    .map((b) => '<img src="data:image/jpeg;base64,' + b + tr('" alt="检测画面">'))
     .join('');
   const stale = Number(d.staleSec) > 120;
   customDialog({
-    title: '打印机检测 · 两张间隔约 3 秒',
+    title: tr('打印机检测 · 两张间隔约 3 秒'),
     body: '<div class="detect-grid">' + imgs + '</div>' +
       (stale
-        ? '<p class="modal-detail dev-stale-warn">这两张来自打印机上的静态快照，画面停在 ' +
-          esc(agoText(d.staleSec)) + '，说明摄像头当前没有在出流（可能没插好或没启动）。</p>'
+        ? tr('<p class="modal-detail dev-stale-warn">这两张来自打印机上的静态快照，画面停在 ') +
+          esc(agoText(d.staleSec)) + tr('，说明摄像头当前没有在出流（可能没插好或没启动）。</p>')
         : '') +
-      '<p class="modal-detail">重点看：有没有拉丝成团（炒面）、喷头空走没出料（空打）、模型是否翘边脱落。</p>',
-    foot: '<button type="button" class="btn btn-ghost" data-det-close>关闭</button>',
+      tr('<p class="modal-detail">重点看：有没有拉丝成团（炒面）、喷头空走没出料（空打）、模型是否翘边脱落。</p>'),
+    foot: tr('<button type="button" class="btn btn-ghost" data-det-close>关闭</button>'),
     width: '760px',
     onMount(modal, close) {
       const btn = modal.querySelector('[data-det-close]');

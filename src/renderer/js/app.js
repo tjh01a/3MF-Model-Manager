@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from './i18n.js';
+
 /** 应用入口：bootstrap、mount 全部模块、刷新调度、快捷键、拖拽、Undo、窗口事件。 */
 import { state, setState, subscribe } from './state.js';
 import { api, emitRefresh, emitToast, whenBackendReady } from './api.js';
@@ -25,7 +27,8 @@ import { isModalOpen, confirmDialog, promptDialog } from './components/modal.js'
 import { openClassifyPrompt } from './components/classify-prompt.js';
 import { mountMenu, closeMenu, isMenuOpen } from './components/menu.js';
 import { mountBulkbar, syncBulkbar } from './components/bulkbar.js';
-import { mountSiteLinks } from './components/site-links.js';
+import { mountSiteLinks, applyMakerWorldLinks } from './components/site-links.js';
+import { getLanguage, setLanguage, applyStaticI18n, makerWorldRegionOf } from './i18n.js';
 import { openModelsWithChoice } from './components/openwith.js';
 import { pickModelsForCategory } from './components/assign.js';
 import { mountMeshOpt } from './components/meshopt.js';
@@ -92,7 +95,7 @@ export function init() {
     bindWindowClicks();
     subscribe(onState);
   } catch (err) {
-    emitToast('error', (err && err.message) || '初始化失败');
+    emitToast('error', (err && err.message) || tr('初始化失败'));
     bootFailed('mount');
     return;
   }
@@ -105,7 +108,7 @@ export function init() {
       maybeStartOnboarding().catch(() => {});
     })
     .catch((err) => {
-      emitToast('error', (err && err.message) || '初始化失败');
+      emitToast('error', (err && err.message) || tr('初始化失败'));
       bootFailed('bootstrap');
     });
 }
@@ -119,15 +122,15 @@ if (typeof document !== 'undefined') {
       // 直接用中文错误收掉启动动画。
       if (r && r.ok === false) {
         const msg = r.message || (r.reason === 'timeout'
-          ? '连接本地服务超时，请确认 PrintShelf 桌面应用已正常启动'
-          : '后端启动失败，请重启 PrintShelf');
+          ? tr('连接本地服务超时，请确认 PrintShelf 桌面应用已正常启动')
+          : tr('后端启动失败，请重启 PrintShelf'));
         emitToast('error', msg);
         bootFailed(r.reason || 'backend', msg);
         return;
       }
       init();
     }, (err) => {
-      emitToast('error', '后端启动失败：' + ((err && err.message) || '未知原因'));
+      emitToast('error', tr('后端启动失败：') + ((err && err.message) || tr('未知原因')));
       bootFailed('backend');
     });
   };
@@ -145,7 +148,7 @@ async function bootstrap() {
   const ready = await whenBackendReady();
   if (ready && ready.ok === false) {
     // 兜底：若 init 被其它入口直接调用，也不要在后端失败时继续 bootstrap
-    const err = new Error(ready.message || '后端未就绪');
+    const err = new Error(ready.message || tr('后端未就绪'));
     err.ready = ready;
     throw err;
   }
@@ -155,12 +158,31 @@ async function bootstrap() {
   } catch (_) {
     data = {};
     emitToast('warn', hasShelf
-      ? '读取本地数据失败，请稍后重试'
-      : '请在 PrintShelf 桌面应用中打开以加载数据');
+      ? tr('读取本地数据失败，请稍后重试')
+      : tr('请在 PrintShelf 桌面应用中打开以加载数据'));
   }
   const s = data || {};
   const ui = (s.settings && s.settings.ui) || {};
   const info = s.info || {};
+  // settings.json 是语言的权威来源；localStorage 只保证模块顶层文案首帧不闪中文。
+  const wanted = ui.language === 'en-US' ? 'en-US' : 'zh-CN';
+  const languageChanged = getLanguage() !== wanted;
+  if (languageChanged) {
+    setLanguage(wanted);
+    // 模块顶层有预设文案（菜单、设置 tab、引导步骤等）。首帧若语言与磁盘设置不一致，
+    // 先写 localStorage 再重载一次，让这些常量在 import 阶段就用正确语言求值。
+    let retried = false;
+    try { retried = sessionStorage.getItem('printshelf-language-retried') === wanted; } catch (_) {}
+    if (!retried) {
+      try { sessionStorage.setItem('printshelf-language-retried', wanted); } catch (_) {}
+      setTimeout(() => { api.win('reload').catch(() => {}); }, 30);
+      return;
+    }
+  }
+  applyStaticI18n();
+  applyMakerWorldLinks(makerWorldRegionOf(s.settings));
+  updateLanguageButton();
+  if (languageChanged) emitRefresh('language');
   const cardSize = clamp(ui.cardSize || 220, 140, 340);
   setState({
     ready: true,
@@ -217,8 +239,8 @@ function applyCardSize(size) {
 function updateDataDir(dir) {
   const el = qs('#status-datadir');
   if (!el) return;
-  el.textContent = dir ? '数据目录：' + dir : '数据目录';
-  el.title = dir || '点击打开数据目录';
+  el.textContent = dir ? tr('数据目录：') + dir : tr('数据目录');
+  el.title = dir || tr('点击打开数据目录');
 }
 
 // ---------- 刷新调度（连续事件合并到一帧 + 单飞） ----------
@@ -294,7 +316,7 @@ function bindWebLinks() {
     try {
       await api.openExternal(btn.getAttribute('data-url') || '');
     } catch (err) {
-      emitToast('error', '打开网页失败：' + ((err && err.message) || '未知错误'));
+      emitToast('error', tr('打开网页失败：') + ((err && err.message) || tr('未知错误')));
     }
   });
 }
@@ -378,7 +400,7 @@ async function showClassifyPrompt(items) {
       done += ids.length;
     } catch (_) { /* 某一组失败不影响其它组 */ }
   }
-  if (done) emitToast('success', '已归类 ' + done + ' 个模型');
+  if (done) emitToast('success', tr('已归类 ') + done + tr(' 个模型'));
   emitRefresh('classify');
 }
 
@@ -487,14 +509,14 @@ function renderStats() {
   const by = s.byPrintStatus || {};
   const prevValues = lastStatValues || {};
   const list = [
-    { value: s.total || 0, label: '模型总数', accent: true },
-    { value: fmtBytes(s.totalSize || 0), label: '占用空间' },
-    { value: by.unprinted || 0, label: '未打印' },
-    { value: by.queued || 0, label: '待打印' },
-    { value: by.printed || 0, label: '已完成' },
-    { value: s.favorites || 0, label: '收藏' },
+    { value: s.total || 0, label: tr('模型总数'), accent: true },
+    { value: fmtBytes(s.totalSize || 0), label: tr('占用空间') },
+    { value: by.unprinted || 0, label: tr('未打印') },
+    { value: by.queued || 0, label: tr('待打印') },
+    { value: by.printed || 0, label: tr('已完成') },
+    { value: s.favorites || 0, label: tr('收藏') },
   ];
-  if (s.duplicates) list.push({ value: s.duplicates, label: '重复文件' });
+  if (s.duplicates) list.push({ value: s.duplicates, label: tr('重复文件') });
   // 失效记录不再出现在主页面（含这个计数）：文件被删掉后列表里直接消失即可。
   // 需要清理 / 重新定位时走侧栏「失效文件」维护视图。
   // 数字变了就轻弹一下：扫描/分类/删除之后，用户能立刻看到「哪一项动了」。
@@ -537,15 +559,15 @@ function updateEmptyState() {
   const title = qs('#empty-title');
   const desc = qs('#empty-desc');
   if (title) {
-    title.textContent = never ? '这里还没有模型'
-      : (catEmpty ? '「' + cat.name + '」里还没有模型' : '没有符合条件的模型');
+    title.textContent = never ? tr('这里还没有模型')
+      : (catEmpty ? '「' + cat.name + tr('」里还没有模型') : tr('没有符合条件的模型'));
   }
   if (desc) {
     desc.textContent = never
-      ? '添加一个本机文件夹，PrintShelf 会自动扫描其中的 .3mf 文件并生成缩略图。'
+      ? tr('添加一个本机文件夹，PrintShelf 会自动扫描其中的 .3mf 文件并生成缩略图。')
       : (catEmpty
-        ? '点下面的按钮，在完整列表里勾选要加入的模型；也可以在「全部模型」里把卡片直接拖到这个分类上。'
-        : '试试清除筛选条件，或更换搜索关键词。');
+        ? tr('点下面的按钮，在完整列表里勾选要加入的模型；也可以在「全部模型」里把卡片直接拖到这个分类上。')
+        : tr('试试清除筛选条件，或更换搜索关键词。'));
   }
   const addBtn = qs('#empty-add');
   const demoBtn = qs('#empty-demo');
@@ -561,7 +583,7 @@ function updateEmptyState() {
       clearBtn.id = 'empty-clear';
       clearBtn.type = 'button';
       clearBtn.className = 'btn btn-primary';
-      clearBtn.textContent = '清除筛选';
+      clearBtn.textContent = tr('清除筛选');
       clearBtn.addEventListener('click', () => {
         // 停在空分类上时只退出分类筛选，保留其它条件不动
         if (state.query.categoryId && state.contentMode === 'normal' && !state.query.keyword) {
@@ -578,19 +600,19 @@ function updateEmptyState() {
   if (clearBtn) {
     clearBtn.hidden = never;
     clearBtn.className = catEmpty ? 'btn btn-ghost' : 'btn btn-primary';
-    clearBtn.textContent = catEmpty ? '看看全部模型' : '清除筛选';
+    clearBtn.textContent = catEmpty ? tr('看看全部模型') : tr('清除筛选');
   }
 }
 function updateStatusBar() {
   const text = qs('#status-text');
   if (text) {
-    const label = state.scanning ? '正在扫描…' : (!hasShelf ? '未连接本地服务' : '就绪');
+    const label = state.scanning ? tr('正在扫描…') : (!hasShelf ? tr('未连接本地服务') : tr('就绪'));
     text.innerHTML = '<span class="status-dot"></span>' + escapeHtml(label);
   }
   const sel = qs('#status-selection');
-  if (sel) sel.textContent = state.selection.size ? '已选 ' + state.selection.size + ' 项' : '';
+  if (sel) sel.textContent = state.selection.size ? tr('已选 ') + state.selection.size + tr(' 项') : '';
   const count = qs('#status-count');
-  if (count) count.textContent = '共 ' + state.total + ' 个模型';
+  if (count) count.textContent = tr('共 ') + state.total + tr(' 个模型');
 }
 function onState(_s, reason) {
   if (reason === 'selection') updateStatusBar();
@@ -601,7 +623,30 @@ function bind(id, evt, fn) {
   const el = qs(id);
   if (el) el.addEventListener(evt, fn);
 }
+/** 顶栏中英切换按钮：中文界面显示「中」，英文界面显示 EN。 */
+function updateLanguageButton() {
+  const btn = document.getElementById('btn-language');
+  if (!btn) return;
+  const en = getLanguage() === 'en-US';
+  const label = btn.querySelector('#lang-label');
+  if (label) label.textContent = en ? 'EN' : '中';
+  btn.setAttribute('title', tr(en ? 'language.switchToZh' : 'language.switchToEn'));
+  btn.setAttribute('aria-label', tr('language.label'));
+}
+
+async function toggleLanguage() {
+  const next = getLanguage() === 'en-US' ? 'zh-CN' : 'en-US';
+  try {
+    await api.settingsUpdate({ ui: { language: next } });
+    setLanguage(next);
+    // 模块顶层有预设文案（菜单、设置 tab、引导步骤等），整页重载才能保证它们也切过去。
+    updateLanguageButton();
+    setTimeout(() => { api.win('reload').catch(() => {}); }, 80);
+  } catch (_) { /* api 层已统一提示 */ }
+}
+
 function bindTitlebar() {
+  bind('#btn-language', 'click', toggleLanguage);
   bind('#btn-quick-add', 'click', quickAdd);
   bind('#empty-add', 'click', quickAdd);
   bind('#empty-demo', 'click', addDemo);
@@ -634,7 +679,7 @@ async function quickAdd() {
     const dir = await api.pickFolder();
     if (!dir) return;
     await api.folderAdd(dir);
-    emitToast('success', '已添加目录：' + dir);
+    emitToast('success', tr('已添加目录：') + dir);
     await reloadFolders();
     emitRefresh('folders');
     await api.scanStart({});
@@ -646,7 +691,7 @@ async function addDemo() {
     const dir = await api.pickFolder();
     if (!dir) return;
     await api.folderAdd(dir);
-    emitToast('success', '已添加示例目录');
+    emitToast('success', tr('已添加示例目录'));
     await reloadFolders();
     emitRefresh('folders');
     await api.scanStart({});
@@ -655,7 +700,7 @@ async function addDemo() {
 async function startScan(force) {
   try {
     state.scanning = true;
-    showScanProgress(0, '正在扫描…');
+    showScanProgress(0, tr('正在扫描…'));
     updateStatusBar();
     await api.scanStart({ force: !!force });
   } catch (_) {
@@ -668,7 +713,7 @@ async function roulette() {
   try {
     const m = await api.roulette();
     if (m && m.id) Promise.resolve(openDetail(m.id)).catch(() => {});
-    else emitToast('info', '没有可挑选的未打印模型');
+    else emitToast('info', tr('没有可挑选的未打印模型'));
   } catch (_) { /* api 层已统一提示 */ }
 }
 function toggleTheme() {
@@ -690,7 +735,7 @@ function bindScanProgress() {
     }
     state.scanning = true;
     const pct = clamp(d.percent || 0, 0, 100);
-    showScanProgress(pct, d.message || '正在扫描…');
+    showScanProgress(pct, d.message || tr('正在扫描…'));
     updateStatusBar();
   });
 }
@@ -762,12 +807,12 @@ function bindDragDrop() {
       }
     }
     if (!dirs.size) {
-      emitToast('warn', '无法识别拖入的路径，请在桌面应用中拖入文件夹或 .3mf 文件');
+      emitToast('warn', tr('无法识别拖入的路径，请在桌面应用中拖入文件夹或 .3mf 文件'));
       return;
     }
     try {
       for (const d of dirs) await api.folderAdd(d);
-      emitToast('success', '已添加 ' + dirs.size + ' 个目录');
+      emitToast('success', tr('已添加 ') + dirs.size + tr(' 个目录'));
       await reloadFolders();
       emitRefresh('folders');
       await api.scanStart({});
@@ -792,12 +837,12 @@ function focusSearch() {
 }
 async function renameActive() {
   const ids = targetIds();
-  if (ids.length !== 1) { emitToast('info', '请选中单个模型后重命名'); return; }
+  if (ids.length !== 1) { emitToast('info', tr('请选中单个模型后重命名')); return; }
   const m = (state.items || []).find((x) => x && x.id === ids[0]);
   const old = m ? (m.title || m.fileName || '') : '';
   let name;
   try {
-    name = await promptDialog({ title: '重命名模型', label: '名称', value: old, confirmText: '保存' });
+    name = await promptDialog({ title: tr('重命名模型'), label: tr('名称'), value: old, confirmText: tr('保存') });
   } catch (_) { return; }
   if (name == null || !name.trim()) return;
   api.rename(ids[0], name.trim()).then(() => emitRefresh('rename')).catch(() => {});
@@ -833,10 +878,10 @@ async function removeTargets() {
   let ok = false;
   try {
     ok = await confirmDialog({
-      title: '移出索引',
-      message: '确定把选中的 ' + ids.length + ' 个模型移出索引吗？磁盘文件不会被删除。',
-      detail: '以下路径将从模型库移除：',
-      items: names, danger: true, confirmText: '移出索引',
+      title: tr('移出索引'),
+      message: tr('确定把选中的 ') + ids.length + tr(' 个模型移出索引吗？磁盘文件不会被删除。'),
+      detail: tr('以下路径将从模型库移除：'),
+      items: names, danger: true, confirmText: tr('移出索引'),
     });
   } catch (_) { return; }
   if (!ok) return;
@@ -851,7 +896,7 @@ function rate(n) {
 async function globalUndo() {
   const stack = state.undoStack;
   if (!Array.isArray(stack) || !stack.length) {
-    emitToast('info', '没有可撤销的操作');
+    emitToast('info', tr('没有可撤销的操作'));
     return;
   }
   const entry = stack.pop();
@@ -889,7 +934,7 @@ async function globalUndo() {
     return;
   }
   if (diag) diag.globalDone = (diag.globalDone || 0) + 1;
-  emitToast('success', '已撤销');
+  emitToast('success', tr('已撤销'));
   emitRefresh('undo');
 }
 function handleEsc(e) {

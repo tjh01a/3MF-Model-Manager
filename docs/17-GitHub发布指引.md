@@ -10,7 +10,7 @@
 - ✅ 源码 / README / 文档里的真实内网 IP、设备型号已全部换成示例值（2026-11-21 复查通过）
 - ✅ `LICENSE`（MIT）和第三方许可声明已就位
 - ✅ 完整测试通过：12 套 / 507 条断言 / 0 失败（**历史基线数字，以当前 `npm run selftest` 实际输出为准**；当前 IPC 契约口径为 **127 方法 / 20 事件**）
-- ✅ 发布包已生成：`dist/3MF模型管理器-1.1.8-portable.zip`（约 116 MB）与 `dist/3MF模型管理器-1.1.8-setup.exe`；绿色版目录为 `dist/3MF模型管理器-1.1.8-win-x64/`。版本号取自 `package.json` 的 `version`，1.0.x 的英文命名产物属历史遗留。
+- ✅ 发布包已生成：`dist/3MF模型管理器-1.2.0-portable.zip`（约 116 MB）与 `dist/3MF模型管理器-1.2.0-setup.exe`；绿色版目录为 `dist/3MF模型管理器-1.2.0-win-x64/`。版本号取自 `package.json` 的 `version`，1.0.x 的英文命名产物属历史遗留。
 
 ### 你需要提前准备的东西
 
@@ -122,10 +122,10 @@ git push origin v1.0.0
 GitHub 的 Release 可以放安装包，别人不用装 Node 也能用：
 
 1. 仓库页面右侧 **Releases** → **Create a new release**
-2. **Choose a tag** 里选当前版本对应的 tag（如 `v1.1.8`；若尚未创建，先在 GitHub 上新建该 tag 并把本地标签推上去。仓库里已有的 `v1.0.0`、`v1.1.1`、`v1.1.6`、`v1.1.7` 是历史标签）
-3. Title 填 `3MF模型管理器 1.1.8`
-4. 把 `dist/3MF模型管理器-1.1.8-portable.zip`（约 116 MB）拖进附件区；也可以同时附上 `dist/3MF模型管理器-1.1.8-setup.exe`
-5. 附件名请改成英文（如 `3MF-Model-Manager-1.1.8-portable.zip`）：curl 上传中文名会被编码成乱码，网页拖拽也可能被转义
+2. **Choose a tag** 里选当前版本对应的 tag（如 `v1.2.0`；若尚未创建，先在 GitHub 上新建该 tag 并把本地标签推上去。仓库里已有的 `v1.0.0`、`v1.1.1`、`v1.1.6`、`v1.1.7`、`v1.1.8` 是历史标签）
+3. Title 填 `3MF模型管理器 1.2.0`
+4. 把 `dist/3MF模型管理器-1.2.0-portable.zip`（约 116 MB）拖进附件区；也可以同时附上 `dist/3MF模型管理器-1.2.0-setup.exe`
+5. 附件名请改成英文（如 `3MF-Model-Manager-1.2.0-portable.zip`）：curl 上传中文名会被编码成乱码，网页拖拽也可能被转义
 5. 写几句说明，点 **Publish release**
 
 关于大小限制，说清楚免得担心：

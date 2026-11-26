@@ -1,5 +1,6 @@
 'use strict';
 /** window.shelf 薄封装：统一错误 Toast、主进程事件转渲染层 window 自定义事件。 */
+import { t } from './i18n.js';
 
 const METHODS = [
   'bootstrap', 'getInfo', 'openDataDir',
@@ -28,7 +29,7 @@ const METHODS = [
   'receiptsList', 'receiptsWithModels', 'receiptsClear', 'receiptsDelete', 'receiptsLinkModel',
   'receiptsAutoLink',
   'bambuCloudStatus', 'bambuCloudLogin', 'bambuCloudLoginCode', 'bambuCloudLogout', 'bambuCloudSync',
-  'reveal', 'copyPath', 'openExternal',
+  'reveal', 'copyPath', 'openExternal', 'openSource',
   'classifyRun', 'classifySkipUnmatched', 'classifyUndo', 'classifyPreset',
   'settings', 'settingsUpdate',
   'pickFolder', 'pickExe', 'pickJson', 'saveJson',
@@ -171,8 +172,10 @@ export function emitRefresh(reason = 'refresh') {
 }
 
 export function emitToast(type, message, opts) {
+  const raw = message == null ? '' : String(message);
   const detail = Object.assign(
-    { type: type || 'info', message: message == null ? '' : message },
+    // 主进程抛来的中文错误在这里统一过一遍词典；已翻译的英文文本会原样通过。
+    { type: type || 'info', message: t(raw) },
     opts || {}
   );
   window.dispatchEvent(new CustomEvent('shelf:toast', { detail }));

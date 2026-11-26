@@ -195,7 +195,9 @@ async function atomicWrite(target, data) {
 }
 
 class FilamentService {
-  constructor() {
+  constructor({ language = 'zh-CN' } = {}) {
+    // 英文版首次使用不塞那三条内置耗材；老用户已有的数据一律不碰。
+    this._language = language;
     this._data = null;
     this._queue = Promise.resolve();
     this.recovery = null;   // 损坏/不可读的可观察状态，便于界面提示与测试断言
@@ -268,11 +270,19 @@ class FilamentService {
    */
   async _seedBuiltinFilaments() {
     const builtin = loadBuiltinFilaments();
-    if (!builtin.items.length) return 0;
-
     const d = this._data || emptyData();
     if (!d.items || typeof d.items !== 'object' || Array.isArray(d.items)) d.items = {};
     this._data = d;
+
+    // 英文版空库：只打上「已处理」标记，绝不写内置耗材。
+    // 之后用户切回中文也不会突然冒出三条没见过的耗材。
+    if (this._language === 'en-US' && !Object.keys(d.items).length && !d.builtinSeeded) {
+      d.builtinSeeded = true;
+      d.schemaVersion = Math.max(Number(d.schemaVersion) || 0, 2);
+      await this._flush();
+      return 0;
+    }
+    if (!builtin.items.length) return 0;
 
     const seen = new Set(Object.values(d.items).map(filamentSignature).filter(Boolean));
     const now = Date.now();

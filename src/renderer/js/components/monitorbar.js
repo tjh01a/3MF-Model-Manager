@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 主界面常驻打印监控条（设置 → 打印监控 可开关）。
  *
@@ -56,24 +58,24 @@ function cardHtml(p) {
   const cls = STATE_CLS[p.state] || 's-idle';
   const bits = [
     j ? '<b>' + Math.round(pct) + '%</b>' : '',
-    t.nozzle ? '<span>喷嘴 ' + esc(deg(t.nozzle)) + '</span>' : '',
-    t.bed ? '<span>热床 ' + esc(deg(t.bed)) + '</span>' : '',
-    j && j.remainingMin ? '<span>剩余 ' + esc(fmtMin(j.remainingMin)) + '</span>' : '',
+    t.nozzle ? tr('<span>喷嘴 ') + esc(deg(t.nozzle)) + '</span>' : '',
+    t.bed ? tr('<span>热床 ') + esc(deg(t.bed)) + '</span>' : '',
+    j && j.remainingMin ? tr('<span>剩余 ') + esc(fmtMin(j.remainingMin)) + '</span>' : '',
   ].filter(Boolean).join('');
   return '<div class="mon-card ' + cls + '" data-id="' + esc(p.id) + '" data-sig="' + esc(sigOf(p)) + '" ' +
-      'title="点开设备面板看完整状态">' +
+      tr('title="点开设备面板看完整状态">') +
     '<div class="mon-head">' +
-      '<span class="mon-name">' + esc(p.name || '打印机') + '</span>' +
+      '<span class="mon-name">' + esc(p.name || tr('打印机')) + '</span>' +
       '<span class="mon-state">' + esc(p.stateText || '—') + '</span>' +
     '</div>' +
     (j
       ? '<div class="mon-bar"><i style="width:' + pct + '%"></i></div>'
       : '<div class="mon-bar is-idle"><i style="width:0"></i></div>') +
-    '<div class="mon-meta">' + (bits || '<span class="muted">' + esc(p.online ? '空闲中' : (p.error || '离线')) + '</span>') + '</div>' +
+    '<div class="mon-meta">' + (bits || '<span class="muted">' + esc(p.online ? tr('空闲中') : (p.error || tr('离线'))) + '</span>') + '</div>' +
     '<div class="mon-tools">' +
       '<button type="button" class="mon-chart" data-mon-act="chart" data-id="' + esc(p.id) + '" ' +
-        'data-name="' + esc(p.name || '打印机') + '" title="看这台机器的温度与进度曲线">' +
-        icon('i-layers') + '曲线</button>' +
+        'data-name="' + esc(p.name || tr('打印机')) + tr('" title="看这台机器的温度与进度曲线">') +
+        icon('i-layers') + tr('曲线</button>') +
     '</div>' +
   '</div>';
 }
@@ -95,7 +97,7 @@ function visibleList() {
   const byId = new Map(snap.map((p) => [p.id, p]));
   const list = configured.map((c) => byId.get(c.id) || {
     id: c.id, name: c.name, kind: c.kind, model: c.model || '',
-    online: false, state: 'offline', stateText: '离线', job: null, temps: {}, error: '',
+    online: false, state: 'offline', stateText: tr('离线'), job: null, temps: {}, error: '',
   });
   return list;
 }
@@ -128,10 +130,10 @@ function paint() {
     changed++;
   }
   const count = bar.querySelector('.mon-count');
-  if (count) count.textContent = list.length + ' 台';
+  if (count) count.textContent = list.length + tr(' 台');
   const printing = list.filter((p) => p.state === 'printing').length;
   const live = bar.querySelector('.mon-live');
-  if (live) live.textContent = printing ? printing + ' 台打印中' : '暂无打印任务';
+  if (live) live.textContent = printing ? printing + tr(' 台打印中') : tr('暂无打印任务');
   diag.cards = list.length;
   if (changed) diag.renders++;
 }
@@ -179,7 +181,7 @@ function onClick(e) {
       // 不传 printerId = 取全部设备里最近一次有记录的打印。
       // 以前写死「第一台」，而第一台常常是空闲/已完成、压根没有采样点，
       // 点「看曲线」永远落在空态上。
-      openMonitorChart('', '最近一次打印');
+      openMonitorChart('', tr('最近一次打印'));
     }
     return;
   }

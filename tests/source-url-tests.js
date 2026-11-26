@@ -5,6 +5,7 @@
  */
 const fs = require('fs');
 const { extractSourceUrl, parse3mf, isModelPage, looksBrokenUrl } = require('../src/core/model3mf');
+const { cnMakerWorldUrl, resolveMakerWorldSource, resolveRecordSource } = require('../src/core/source-urls');
 
 let pass = 0;
 let fail = 0;
@@ -63,7 +64,6 @@ ok('跳过前面无关链接，命中第一个作品页',
   extractSourceUrl(multi) === 'https://makerworld.com/en/models/9', extractSourceUrl(multi));
 
 console.log('\n[4. 国际站 → 中国站候选地址]');
-const { cnMakerWorldUrl, resolveMakerWorldSource } = require('../src/core/source-urls');
 ok('保留路径与 profileId 锚点',
   cnMakerWorldUrl('https://makerworld.com/zh/models/1-a#profileId-2')
     === 'https://makerworld.com.cn/zh/models/1-a#profileId-2',
@@ -126,6 +126,37 @@ const sample = 'C:\\Users\\10104\\Downloads\\ocarina_simbolo_Zelda.3mf';
   ok('非 CN 项目不反查', intl === null);
   const noId = await resolveMakerWorldSource({ designRegion: 'CN' }, { fetchImpl: fakeFetch });
   ok('没有 DesignModelId 不反查', noId === null);
+
+  console.log('\n[5c. 双站点解析与回退]');
+  const regionFetch = async (url) => ({
+    ok: true,
+    json: async () => ({ id: /api\.bambulab\.com\//.test(url) ? 2000014 : 1781480 }),
+  });
+  const cnUrl = await resolveMakerWorldSource({ designModelId: 'CN43896f4bbe0ae7' },
+    { region: 'cn', fetchImpl: regionFetch, cache: false });
+  const globalUrl = await resolveMakerWorldSource({ designModelId: 'CN43896f4bbe0ae7' },
+    { region: 'global', fetchImpl: regionFetch, cache: false });
+  ok('同一 DesignModelId 两站解析出不同数值 ID',
+    cnUrl === 'https://makerworld.com.cn/zh/models/1781480'
+    && globalUrl === 'https://makerworld.com/en/models/2000014',
+    cnUrl + ' / ' + globalUrl);
+  const rec = {
+    id: 'm1', sourceUrl: 'https://makerworld.com.cn/zh/models/1781480',
+    meta: { designModelId: 'CN43896f4bbe0ae7' },
+  };
+  const fakeStore = {
+    getLibrary: () => ({ models: { m1: rec } }),
+    updateLibrary: async (fn) => { fn({ models: { m1: rec } }); },
+  };
+  const rGlobal = await resolveRecordSource(fakeStore, rec, 'global', { fetchImpl: regionFetch });
+  ok('按国际站打开时用国际站 ID', rGlobal.url === globalUrl, String(rGlobal.url));
+  ok('解析结果写回记录的 sourceUrls',
+    !!(rec.sourceUrls && rec.sourceUrls.global === globalUrl), JSON.stringify(rec.sourceUrls));
+  const rCn = await resolveRecordSource(fakeStore, rec, 'cn', { fetchImpl: regionFetch });
+  ok('另一站点单独解析后两条链接并存',
+    rCn.url === cnUrl && rec.sourceUrls.cn === cnUrl && rec.sourceUrls.global === globalUrl);
+  const rCached = await resolveRecordSource(fakeStore, rec, 'global', { fetchImpl: async () => { throw new Error('不应再请求'); } });
+  ok('第二次直接用缓存的双站链接', rCached.url === globalUrl);
 
   console.log('\n[6. 真实样本（本机有文件才跑）]');
   if (!fs.existsSync(sample)) {

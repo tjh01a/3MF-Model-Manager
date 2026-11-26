@@ -28,7 +28,7 @@ const DEFAULT_OPTIONS = {
  */
 const HUMAN_FIELDS = [
   'title', 'categoryId', 'tagIds', 'favorite', 'rating', 'note',
-  'sourceUrl', 'sourceUrlAuto', 'author', 'printStatus',
+  'sourceUrl', 'sourceUrlAuto', 'sourceUrls', 'author', 'printStatus',
   'openCount', 'lastOpenedAt', 'printCount', 'lastPrintedAt',
   'filamentLinks', 'costWeightG', 'costNote', 'autoClassified', 'autoCategoryId',
 ];
@@ -191,7 +191,7 @@ class Scanner extends EventEmitter {
     const autoCfg = classify.configOf(this.store.getSettings());
     const autoCategories = (this.store.getLibrary() || {}).categories || [];
     const autoRules = (autoCfg.enabled && autoCfg.onScan)
-      ? classify.resolveRules(autoCfg.rules, autoCategories)
+      ? classify.resolveRules(autoCfg.rules, autoCategories, (this.store.getSettings().ui || {}).language)
       : [];
     // 规则可能指向一个刚被删掉的分类。批量分类（classify.js）会校验 liveIds，
     // 扫描时的即时分类以前没有，会把不存在的 categoryId 写进新记录。

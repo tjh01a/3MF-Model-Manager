@@ -368,6 +368,19 @@ paths.setDataDir(tmp);
     m.stop();
   }
 
+  section('英文版首次启动不内置耗材');
+  {
+    const enDir = path.join(tmp, 'en-filaments');
+    fs.mkdirSync(enDir, { recursive: true });
+    paths.setDataDir(enDir);
+    const en = new FilamentService({ language: 'en-US' });
+    await en.init();
+    ok('英文版耗材库为空', en.list().items.length === 0, String(en.list().items.length));
+    const raw = JSON.parse(fs.readFileSync(en._file(), 'utf8'));
+    ok('已打上 builtinSeeded，切回中文也不会突然塞三条', raw.builtinSeeded === true);
+    paths.setDataDir(tmp);
+  }
+
   console.log('\n────────────────────────────');
   console.log('  通过 ' + pass + ' / 失败 ' + fail);
   if (fail) process.exitCode = 1;

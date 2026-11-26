@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 拓竹账号：登录（邮箱+密码，可能要邮箱验证码）→ 同步绑定设备。
  *
@@ -10,7 +12,7 @@ import { api, emitToast, emitRefresh } from '../api.js';
 
 const esc = (v) => escapeHtml(v == null ? '' : String(v));
 const fmtExp = (ts) => {
-  if (!ts) return '未知';
+  if (!ts) return tr('未知');
   const d = new Date(ts);
   const p = (x) => String(x).padStart(2, '0');
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
@@ -50,19 +52,19 @@ export async function openBambuAccount() {
     const loggedIn = status && status.loggedIn;
     modal().innerHTML =
       '<div class="ow-head">' +
-        '<div class="ow-title">拓竹账号（云端通道）</div>' +
-        '<button type="button" class="ow-close" data-ba="close" aria-label="关闭">' + icon('i-x') + '</button>' +
+        tr('<div class="ow-title">拓竹账号（云端通道）</div>') +
+        tr('<button type="button" class="ow-close" data-ba="close" aria-label="关闭">') + icon('i-x') + '</button>' +
       '</div>' +
-      '<div class="ow-sub">云端通道不需要打印机开「局域网模式」；密码只用于换登录凭证，不会保存在本机。</div>' +
+      tr('<div class="ow-sub">云端通道不需要打印机开「局域网模式」；密码只用于换登录凭证，不会保存在本机。</div>') +
       (opts.message ? '<div class="ba-message ' + (opts.kind || '') + '">' + esc(opts.message) + '</div>' : '') +
       (loggedIn
         ? renderLoggedIn(status)
         : renderLogin(opts)) +
       '<div class="ow-foot">' +
         (loggedIn
-          ? '<button type="button" class="btn btn-ghost" data-ba="logout">退出登录</button>'
+          ? tr('<button type="button" class="btn btn-ghost" data-ba="logout">退出登录</button>')
           : '') +
-        '<button type="button" class="btn btn-ghost" data-ba="close">关闭</button>' +
+        tr('<button type="button" class="btn btn-ghost" data-ba="close">关闭</button>') +
       '</div>';
 
     modal().querySelector('[data-ba="close"]').addEventListener('click', closeBambuAccount);
@@ -80,30 +82,30 @@ export async function openBambuAccount() {
 
   function renderLoggedIn(status) {
     return '<div class="ba-status">' +
-      '<div class="ba-row"><span>账号</span><strong>' + esc(status.account || '—') + '</strong></div>' +
-      '<div class="ba-row"><span>凭证到期</span><strong>' + esc(fmtExp(status.expiresAt)) +
-        (status.expired ? '（已过期）' : '') + '</strong></div>' +
-      '<div class="ba-row"><span>云端通道</span><strong>' + (status.expired ? '不可用，请重新登录' : '可用') + '</strong></div>' +
+      tr('<div class="ba-row"><span>账号</span><strong>') + esc(status.account || '—') + '</strong></div>' +
+      tr('<div class="ba-row"><span>凭证到期</span><strong>') + esc(fmtExp(status.expiresAt)) +
+        (status.expired ? tr('（已过期）') : '') + '</strong></div>' +
+      tr('<div class="ba-row"><span>云端通道</span><strong>') + (status.expired ? tr('不可用，请重新登录') : tr('可用')) + '</strong></div>' +
       '</div>' +
-      '<p class="ba-hint">「同步设备」会把拓竹账号里绑定的打印机合并到设备列表，并自动补上访问码。</p>' +
+      tr('<p class="ba-hint">「同步设备」会把拓竹账号里绑定的打印机合并到设备列表，并自动补上访问码。</p>') +
       '<div class="ba-actions"><button type="button" class="btn btn-primary" data-ba="sync">' +
-      icon('i-refresh') + '同步设备</button></div>';
+      icon('i-refresh') + tr('同步设备</button></div>');
   }
 
   function renderLogin(opts) {
     const needCode = !!opts.needCode;
     return '<div class="ba-form">' +
       (needCode
-        ? '<label class="ba-field"><span>邮箱验证码</span>' +
-          '<input id="ba-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6 位数字"></label>'
-        : '<label class="ba-field"><span>邮箱</span>' +
-          '<input id="ba-email" type="email" autocomplete="username" placeholder="你在拓竹用的邮箱"></label>' +
-          '<label class="ba-field"><span>密码</span>' +
-          '<input id="ba-password" type="password" autocomplete="current-password" placeholder="拓竹账号密码"></label>') +
+        ? tr('<label class="ba-field"><span>邮箱验证码</span>') +
+          tr('<input id="ba-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6 位数字"></label>')
+        : tr('<label class="ba-field"><span>邮箱</span>') +
+          tr('<input id="ba-email" type="email" autocomplete="username" placeholder="你在拓竹用的邮箱"></label>') +
+          tr('<label class="ba-field"><span>密码</span>') +
+          tr('<input id="ba-password" type="password" autocomplete="current-password" placeholder="拓竹账号密码"></label>')) +
       '<div class="ba-actions"><button type="button" class="btn btn-primary" data-ba="' +
         (needCode ? 'code' : 'login') + '">' + icon('i-check') +
-        (needCode ? '验证并登录' : '登录') + '</button></div>' +
-      (needCode ? '<p class="ba-hint">验证码已发送到你的拓竹账号邮箱，如没收到请检查垃圾邮件。</p>' : '') +
+        (needCode ? tr('验证并登录') : tr('登录')) + '</button></div>' +
+      (needCode ? tr('<p class="ba-hint">验证码已发送到你的拓竹账号邮箱，如没收到请检查垃圾邮件。</p>') : '') +
       '</div>';
   }
 
@@ -112,7 +114,7 @@ export async function openBambuAccount() {
     const email = modal().querySelector('#ba-email');
     const pwd = modal().querySelector('#ba-password');
     if (!email || !email.value.trim() || !pwd || !pwd.value) {
-      render(lastStatus, { message: '请填写邮箱和密码', kind: 'warn' });
+      render(lastStatus, { message: tr('请填写邮箱和密码'), kind: 'warn' });
       return;
     }
     busy = true;
@@ -121,12 +123,12 @@ export async function openBambuAccount() {
       pwd.value = '';
       if (r && r.needCode) {
         tfaKey = r.tfaKey || '';
-        render({ loggedIn: false }, { needCode: true, message: '需要邮箱验证码，已发送到 ' + email.value.trim(), kind: 'info' });
+        render({ loggedIn: false }, { needCode: true, message: tr('需要邮箱验证码，已发送到 ') + email.value.trim(), kind: 'info' });
         return;
       }
       await afterLogin(r);
     } catch (e) {
-      render(lastStatus, { message: (e && e.message) || '登录失败', kind: 'error' });
+      render(lastStatus, { message: (e && e.message) || tr('登录失败'), kind: 'error' });
     } finally { busy = false; }
   }
 
@@ -139,18 +141,18 @@ export async function openBambuAccount() {
       const r = await api.bambuCloudLoginCode({ tfaKey, code: input.value.trim() });
       await afterLogin(r);
     } catch (e) {
-      render({ loggedIn: false }, { needCode: true, message: (e && e.message) || '验证失败', kind: 'error' });
+      render({ loggedIn: false }, { needCode: true, message: (e && e.message) || tr('验证失败'), kind: 'error' });
     } finally { busy = false; }
   }
 
   async function afterLogin(status) {
-    let msg = '登录成功';
+    let msg = tr('登录成功');
     try {
       const r = await api.bambuCloudSync();
       const n = (r && r.devices || []).length;
-      if (n) msg += '，已同步 ' + n + ' 台拓竹设备';
+      if (n) msg += tr('，已同步 ') + n + tr(' 台拓竹设备');
     } catch (e) {
-      msg += '，但同步设备失败：' + ((e && e.message) || '');
+      msg += tr('，但同步设备失败：') + ((e && e.message) || '');
     }
     emitToast('success', msg);
     emitRefresh('printers');
@@ -162,11 +164,11 @@ export async function openBambuAccount() {
     busy = true;
     try {
       const r = await api.bambuCloudSync();
-      emitToast('success', '已同步 ' + ((r && r.devices) || []).length + ' 台拓竹设备');
+      emitToast('success', tr('已同步 ') + ((r && r.devices) || []).length + tr(' 台拓竹设备'));
       emitRefresh('printers');
       render(lastStatus);
     } catch (e) {
-      render(lastStatus, { message: (e && e.message) || '同步失败', kind: 'error' });
+      render(lastStatus, { message: (e && e.message) || tr('同步失败'), kind: 'error' });
     } finally { busy = false; }
   }
 
@@ -175,10 +177,10 @@ export async function openBambuAccount() {
     busy = true;
     try {
       await api.bambuCloudLogout();
-      emitToast('info', '已退出拓竹账号，云端通道停用');
+      emitToast('info', tr('已退出拓竹账号，云端通道停用'));
       render(await api.bambuCloudStatus());
     } catch (e) {
-      emitToast('error', (e && e.message) || '退出失败');
+      emitToast('error', (e && e.message) || tr('退出失败'));
     } finally { busy = false; }
   }
 

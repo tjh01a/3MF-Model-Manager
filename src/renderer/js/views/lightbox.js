@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 大图灯箱：显示模型缩略图、名称/序号/大小/状态。
  * 键盘仅在 state.lightbox.open 时响应，避免与 app.js 的全局快捷键冲突。
@@ -10,8 +12,8 @@ import { escapeHtml, fmtBytes } from '../utils.js';
 const esc = (v) => escapeHtml(v == null ? '' : String(v));
 // constants.js 为 CommonJS，按冻结值内联打印状态标签
 const PRINT_STATUS = {
-  unprinted: { label: '未打印' }, queued: { label: '待打印' }, printing: { label: '打印中' },
-  printed: { label: '已完成' }, failed: { label: '失败' },
+  unprinted: { label: tr('未打印') }, queued: { label: tr('待打印') }, printing: { label: tr('打印中') },
+  printed: { label: tr('已完成') }, failed: { label: tr('失败') },
 };
 
 let mounted = false;

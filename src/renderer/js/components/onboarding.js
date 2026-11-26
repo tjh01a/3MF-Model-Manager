@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 首次启动向导 + 新手引导（2026-11-19）。
  *
@@ -21,9 +23,9 @@ import { icon, escapeHtml } from '../utils.js';
 const esc = (v) => escapeHtml(v == null ? '' : String(v));
 
 const DEPTHS = [
-  { key: 'fast', label: '快速', depth: 4, hint: '只看 4 层子文件夹，几十秒出结果' },
-  { key: 'standard', label: '标准', depth: 8, hint: '推荐：一般模型库都在 8 层以内' },
-  { key: 'deep', label: '深入', depth: 12, hint: '藏得很深的目录也能扫到，但更慢' },
+  { key: 'fast', label: tr('快速'), depth: 4, hint: tr('只看 4 层子文件夹，几十秒出结果') },
+  { key: 'standard', label: tr('标准'), depth: 8, hint: tr('推荐：一般模型库都在 8 层以内') },
+  { key: 'deep', label: tr('深入'), depth: 12, hint: tr('藏得很深的目录也能扫到，但更慢') },
 ];
 
 let mounted = false;
@@ -127,7 +129,7 @@ function head(kicker, title, sub) {
 function render() {
   if (!overlay) return;
   const card = overlay.querySelector('.ob-card');
-  const skip = step < 3 ? '<button class="ob-skip" data-ob="later">稍后再说</button>' : '';
+  const skip = step < 3 ? tr('<button class="ob-skip" data-ob="later">稍后再说</button>') : '';
   let html = skip;
   if (step === 1) html += stepWelcome();
   else if (step === 2) html += stepDrives();
@@ -139,17 +141,17 @@ function render() {
 }
 
 function stepWelcome() {
-  return head('第 1 步 · 共 3 步', '先把你的 3MF 找出来',
-    'PrintShelf 是一个纯本地模型库：文件不上传、不联网，索引和缩略图都留在你自己的电脑里。') +
+  return head(tr('第 1 步 · 共 3 步'), tr('先把你的 3MF 找出来'),
+    tr('PrintShelf 是一个纯本地模型库：文件不上传、不联网，索引和缩略图都留在你自己的电脑里。')) +
     '<div class="ob-body">' +
       '<div class="ob-points">' +
-        point('i-folder', '选盘或选文件夹', '告诉它模型放在哪个盘、哪个目录，可以多选。') +
-        point('i-search', '自动识别 3MF', '扫描时按体积与修改时间增量更新，重复扫不会重复入库。') +
-        point('i-sparkle', '自动分类 + 成本估算', '按词库把模型分好类，还能按耗材单价估算每个模型花多少钱。') +
+        point('i-folder', tr('选盘或选文件夹'), tr('告诉它模型放在哪个盘、哪个目录，可以多选。')) +
+        point('i-search', tr('自动识别 3MF'), tr('扫描时按体积与修改时间增量更新，重复扫不会重复入库。')) +
+        point('i-sparkle', tr('自动分类 + 成本估算'), tr('按词库把模型分好类，还能按耗材单价估算每个模型花多少钱。')) +
       '</div>' +
     '</div>' +
     '<div class="ob-foot"><span class="spacer"></span>' +
-      '<button class="btn btn-primary" data-ob="next">开始设置</button>' +
+      tr('<button class="btn btn-primary" data-ob="next">开始设置</button>') +
     '</div>';
 }
 
@@ -160,33 +162,33 @@ function point(ico, title, desc) {
 function stepDrives() {
   const list = drives.length
     ? drives.map(driveRow).join('')
-    : '<div class="ob-empty">没有探测到可用盘符。可以点下面的「添加指定文件夹」手动选择。</div>';
+    : tr('<div class="ob-empty">没有探测到可用盘符。可以点下面的「添加指定文件夹」手动选择。</div>');
   const extrasHtml = extras.length
     ? '<div class="ob-extras">' + extras.map((p, i) =>
         '<div class="ob-extra" title="' + esc(p) + '">' + icon('i-folder') +
         '<span>' + esc(p) + '</span>' +
-        '<button class="icon-btn" data-ob="rm-extra" data-i="' + i + '" title="移除">' + icon('i-close') + '</button></div>').join('') + '</div>'
+        '<button class="icon-btn" data-ob="rm-extra" data-i="' + i + tr('" title="移除">') + icon('i-close') + '</button></div>').join('') + '</div>'
     : '';
   const picked = selected.size + extras.length;
-  return head('第 2 步 · 共 3 步', '选择要扫描的盘',
-    '勾选存放模型的盘就行。整盘扫描会遍历子文件夹，只勾需要的盘会快很多。') +
+  return head(tr('第 2 步 · 共 3 步'), tr('选择要扫描的盘'),
+    tr('勾选存放模型的盘就行。整盘扫描会遍历子文件夹，只勾需要的盘会快很多。')) +
     '<div class="ob-body">' +
-      '<div class="ob-label">本机盘符</div>' +
+      tr('<div class="ob-label">本机盘符</div>') +
       '<div class="ob-drives">' + list + '</div>' +
       '<div class="ob-row">' +
-        '<button class="btn btn-ghost btn-sm" data-ob="pick-folder">' + icon('i-plus') + '<span>添加指定文件夹</span></button>' +
+        '<button class="btn btn-ghost btn-sm" data-ob="pick-folder">' + icon('i-plus') + tr('<span>添加指定文件夹</span></button>') +
       '</div>' + extrasHtml +
-      '<div class="ob-label">扫描深度</div>' +
+      tr('<div class="ob-label">扫描深度</div>') +
       '<div class="ob-depth">' + DEPTHS.map((d) =>
         '<button class="ob-chip' + (depthKey === d.key ? ' on' : '') + '" data-ob="depth" data-key="' + d.key + '" title="' + esc(d.hint) + '">' +
         esc(d.label) + '</button>').join('') + '</div>' +
       '<p class="ob-sub" style="margin-top:10px">' + esc((DEPTHS.find((d) => d.key === depthKey) || DEPTHS[1]).hint) + '</p>' +
     '</div>' +
     '<div class="ob-foot">' +
-      '<button class="btn btn-ghost" data-ob="back">上一步</button>' +
+      tr('<button class="btn btn-ghost" data-ob="back">上一步</button>') +
       '<span class="spacer"></span>' +
       '<button class="btn btn-primary" data-ob="scan"' + (picked ? '' : ' disabled') + '>' +
-        (picked ? '开始扫描' : '先选一个位置') + '</button>' +
+        (picked ? tr('开始扫描') : tr('先选一个位置')) + '</button>' +
     '</div>';
 }
 
@@ -194,14 +196,14 @@ function driveRow(d) {
   const on = selected.has(d.path);
   const gb = (n) => (n == null ? '' : (n / 1073741824).toFixed(n / 1073741824 >= 100 ? 0 : 1) + ' GB');
   const meta = d.total != null
-    ? '剩余 ' + gb(d.free) + ' / 共 ' + gb(d.total)
-    : '容量未知（网络盘或权限受限）';
+    ? tr('剩余 ') + gb(d.free) + tr(' / 共 ') + gb(d.total)
+    : tr('容量未知（网络盘或权限受限）');
   return '<label class="ob-drive' + (on ? ' on' : '') + '" data-ob="drive" data-path="' + esc(d.path) + '">' +
     '<input type="checkbox"' + (on ? ' checked' : '') + '>' +
     '<span class="ob-check">' + icon('i-check') + '</span>' +
     '<span class="ob-drive-main">' +
       '<span class="ob-drive-name">' + esc(d.letter) +
-        (d.system ? '<span class="ob-tag">系统盘 · 文件多</span>' : '') + '</span>' +
+        (d.system ? tr('<span class="ob-tag">系统盘 · 文件多</span>') : '') + '</span>' +
       '<span class="ob-drive-meta">' + esc(meta) + '</span>' +
     '</span></label>';
 }
@@ -209,20 +211,20 @@ function driveRow(d) {
 function stepScan() {
   const done = !!lastReport;
   if (!done) {
-    return head('第 3 步 · 共 3 步', '正在扫描模型',
-      '第一次扫描大目录会久一点，之后都是增量更新。可以随时取消。') +
+    return head(tr('第 3 步 · 共 3 步'), tr('正在扫描模型'),
+      tr('第一次扫描大目录会久一点，之后都是增量更新。可以随时取消。')) +
       '<div class="ob-body">' +
         '<div class="ob-progress">' +
           '<div class="ob-bar' + (scanPercent == null ? ' indeterminate' : '') + '">' +
             '<i style="width:' + (scanPercent == null ? 35 : Math.max(3, Math.min(100, scanPercent))) + '%"></i></div>' +
           '<div class="ob-progress-text">' +
-            '<span class="path" id="ob-current">' + esc(scanMessage || '准备中…') + '</span>' +
+            '<span class="path" id="ob-current">' + esc(scanMessage || tr('准备中…')) + '</span>' +
             '<span class="ob-count" id="ob-count">' + esc(scanCountText || '') + '</span>' +
           '</div>' +
         '</div>' +
       '</div>' +
       '<div class="ob-foot"><span class="spacer"></span>' +
-        '<button class="btn btn-ghost" data-ob="cancel">取消扫描</button>' +
+        tr('<button class="btn btn-ghost" data-ob="cancel">取消扫描</button>') +
       '</div>';
   }
   const added = Number(lastReport.added || 0);
@@ -230,21 +232,21 @@ function stepScan() {
   const failed = Number(lastReport.failed || 0);
   const total = Number(lastTotal || 0);
   const none = total === 0;
-  return head('完成 · 共 3 步', none ? '没有找到 3MF 文件' : '扫描完成',
-    none ? '可能选错了盘，或者模型还没下载到这台电脑。你可以重新选一个位置。' : '以后新下载的模型放进来，启动时会自动增量扫描。') +
+  return head(tr('完成 · 共 3 步'), none ? tr('没有找到 3MF 文件') : tr('扫描完成'),
+    none ? tr('可能选错了盘，或者模型还没下载到这台电脑。你可以重新选一个位置。') : tr('以后新下载的模型放进来，启动时会自动增量扫描。')) +
     '<div class="ob-body">' +
       '<div class="ob-result">' +
         '<div class="ob-result-icon' + (none ? '' : ' ok') + '">' + icon(none ? 'i-alert' : 'i-check') + '</div>' +
         '<div>' +
-          '<div class="ob-result-num">' + (none ? '0' : String(total)) + ' 个模型</div>' +
-          '<div class="ob-result-note">本次新增 ' + added + ' · 更新 ' + updated + (failed ? ' · 失败 ' + failed : '') + '</div>' +
+          '<div class="ob-result-num">' + (none ? '0' : String(total)) + tr(' 个模型</div>') +
+          tr('<div class="ob-result-note">本次新增 ') + added + tr(' · 更新 ') + updated + (failed ? tr(' · 失败 ') + failed : '') + '</div>' +
         '</div>' +
       '</div>' +
     '</div>' +
     '<div class="ob-foot">' +
-      '<button class="btn btn-ghost" data-ob="restart">重新选择</button>' +
+      tr('<button class="btn btn-ghost" data-ob="restart">重新选择</button>') +
       '<span class="spacer"></span>' +
-      '<button class="btn btn-primary" data-ob="finish">' + (none ? '进入模型库' : '进入模型库') + '</button>' +
+      '<button class="btn btn-primary" data-ob="finish">' + (none ? tr('进入模型库') : tr('进入模型库')) + '</button>' +
     '</div>';
 }
 
@@ -263,7 +265,7 @@ function onScanProgress(d) {
   }
   const pct = Number(d && d.percent);
   scanPercent = Number.isFinite(pct) ? pct : null;
-  scanMessage = (d && (d.message || d.phase)) || '扫描中…';
+  scanMessage = (d && (d.message || d.phase)) || tr('扫描中…');
   const cur = Number(d && d.current) || 0;
   const tot = Number(d && d.total) || 0;
   scanCountText = tot ? cur + ' / ' + tot : (cur ? String(cur) : '');
@@ -313,7 +315,7 @@ async function beginScan() {
   busy = true;
   lastReport = null;
   scanPercent = null;
-  scanMessage = '准备扫描…';
+  scanMessage = tr('准备扫描…');
   scanCountText = '';
   step = 3;
   render();
@@ -398,7 +400,7 @@ async function onClick(e) {
         extras.push(p);
         render();
       }
-    } catch (err) { emitToast('error', (err && err.message) || '选择文件夹失败'); }
+    } catch (err) { emitToast('error', (err && err.message) || tr('选择文件夹失败')); }
     return;
   }
 
@@ -419,7 +421,7 @@ async function onClick(e) {
     detachScan();
     step = 2;
     render();
-    emitToast('info', '已取消扫描');
+    emitToast('info', tr('已取消扫描'));
     return;
   }
 
@@ -428,7 +430,7 @@ async function onClick(e) {
   if (act === 'later') {
     await persistDone({ skipped: true });
     closeOnboarding();
-    emitToast('info', '随时可以在「设置 → 数据管理」里重新运行初始化向导');
+    emitToast('info', tr('随时可以在「设置 → 数据管理」里重新运行初始化向导'));
     return;
   }
 
@@ -447,7 +449,7 @@ function updateScanButton() {
   if (!btn) return;
   const n = selected.size + extras.length;
   btn.disabled = n === 0;
-  btn.textContent = n ? '开始扫描' : '先选一个位置';
+  btn.textContent = n ? tr('开始扫描') : tr('先选一个位置');
 }
 
 function onKey(e) {
@@ -462,9 +464,9 @@ function onKey(e) {
 // ---------------- 新手引导（三步聚光灯） ----------------
 
 const GUIDE_STEPS = [
-  { sel: '#btn-quick-add', title: '添加目录', text: '以后想加新的模型文件夹，点这里。也可以直接把文件夹拖进窗口。' },
-  { sel: '#nav-library', title: '全部模型与筛选', text: '左侧是模型库。分类、标签、我的视图都在这里切换。' },
-  { sel: '.card[data-id]', title: '点开任意模型', text: '右侧会显示详情：可以分配耗材、填重量、估算成本，也能一键送进切片软件。' },
+  { sel: '#btn-quick-add', title: tr('添加目录'), text: tr('以后想加新的模型文件夹，点这里。也可以直接把文件夹拖进窗口。') },
+  { sel: '#nav-library', title: tr('全部模型与筛选'), text: tr('左侧是模型库。分类、标签、我的视图都在这里切换。') },
+  { sel: '.card[data-id]', title: tr('点开任意模型'), text: tr('右侧会显示详情：可以分配耗材、填重量、估算成本，也能一键送进切片软件。') },
 ];
 
 export function startGuide() {
@@ -475,8 +477,8 @@ export function startGuide() {
     guideLayer.className = 'gd-layer';
     guideLayer.innerHTML = '<div class="gd-ring"></div><div class="gd-bubble"><h5></h5><p></p>' +
       '<div class="gd-foot"><span class="gd-step"></span><span class="spacer"></span>' +
-      '<button class="btn btn-ghost btn-sm" data-gd="skip">跳过</button>' +
-      '<button class="btn btn-primary btn-sm" data-gd="next">下一步</button></div></div>';
+      tr('<button class="btn btn-ghost btn-sm" data-gd="skip">跳过</button>') +
+      tr('<button class="btn btn-primary btn-sm" data-gd="next">下一步</button></div></div>');
     document.body.appendChild(guideLayer);
     guideLayer.addEventListener('click', (e) => {
       const b = e.target && e.target.closest ? e.target.closest('[data-gd]') : null;
@@ -502,7 +504,7 @@ function renderGuide() {
   bubble.querySelector('h5').textContent = st.title;
   bubble.querySelector('p').textContent = st.text;
   bubble.querySelector('.gd-step').textContent = (guideIdx + 1) + ' / ' + GUIDE_STEPS.length;
-  bubble.querySelector('[data-gd="next"]').textContent = guideIdx === GUIDE_STEPS.length - 1 ? '知道了' : '下一步';
+  bubble.querySelector('[data-gd="next"]').textContent = guideIdx === GUIDE_STEPS.length - 1 ? tr('知道了') : tr('下一步');
   if (!target) {
     // 目标不存在（例如空库没有卡片）：收缩成无聚光灯的提示，仍可继续
     ring.style.cssText = 'display:none';
@@ -545,7 +547,7 @@ function closeGuide(skipped) {
     try { api.settingsUpdate({ onboard: { guideDone: true } }); } catch (_) {}
   } else {
     try { api.settingsUpdate({ onboard: { guideDone: true } }); } catch (_) {}
-    emitToast('success', '小提示：随时可以点右上角 ? 或设置里的说明再看一遍');
+    emitToast('success', tr('小提示：随时可以点右上角 ? 或设置里的说明再看一遍'));
   }
 }
 

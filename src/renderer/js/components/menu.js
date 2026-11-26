@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 右键 / 更多菜单：在 #context-menu 内渲染 [{label,icon,action,danger,divider}]，
  * 自动视口边界翻转，点击项先关闭再执行 action（可为 async）。
@@ -49,10 +51,10 @@ function onMenuClick(e) {
   try {
     const r = item.action();
     if (r && typeof r.catch === 'function') {
-      r.catch((err) => emitToast('error', (err && err.message) || '操作失败'));
+      r.catch((err) => emitToast('error', (err && err.message) || tr('操作失败')));
     }
   } catch (err) {
-    emitToast('error', (err && err.message) || '操作失败');
+    emitToast('error', (err && err.message) || tr('操作失败'));
   }
 }
 
@@ -78,7 +80,7 @@ export function openMenu(x, y, items) {
     return '<button type="button" class="menu-item' + (it.danger ? ' danger' : '') + '" data-i="' + i + '">' +
       icon(iconName(it.icon)) + '<span class="menu-label">' + esc(it.label || '') + '</span></button>';
   }).join('');
-  el.innerHTML = html || '<div class="menu-empty">无可用操作</div>';
+  el.innerHTML = html || tr('<div class="menu-empty">无可用操作</div>');
   el.hidden = false;
   open = true;
 

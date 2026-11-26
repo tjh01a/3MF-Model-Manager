@@ -107,10 +107,12 @@ function mergeEntityArray(localArr, incomingArr) {
 }
 
 class Store extends EventEmitter {
-  constructor({ dataDir } = {}) {
+  constructor({ dataDir, systemLocale } = {}) {
     super();
     // 传 dataDir 时自行解析私有路径，不污染 paths 模块的全局状态；不传则完全走 paths 模块。
     this._dataDir = dataDir ? path.resolve(String(dataDir)) : null;
+    // 首次安装没有 settings.json 时，用它决定默认界面语言；老库始终按中文迁移。
+    this._systemLocale = String(systemLocale || 'zh-CN');
     this._library = null;
     this._settings = null;
     this._initialized = false;
@@ -254,7 +256,10 @@ class Store extends EventEmitter {
   _freshLibrary() {
     const lib = deepClone(C.DEFAULT_LIBRARY);
     lib.updatedAt = U.now();
-    lib.categories = C.DEFAULT_CATEGORIES.map((c, i) => ({
+    // 全新英文安装直接建英文分类；老库无论界面语言如何都保留用户自己的分类。
+    const defaults = (this._settings && this._settings.ui && this._settings.ui.language === 'en-US')
+      ? C.DEFAULT_CATEGORIES_EN : C.DEFAULT_CATEGORIES;
+    lib.categories = defaults.map((c, i) => ({
       id: U.uid('cat'),
       name: c.name,
       color: c.color,
@@ -296,6 +301,19 @@ class Store extends EventEmitter {
     const rawUi = rawSettings && rawSettings.ui;
     if (rawUi && rawUi.makerWorldCn === false && rawUi.makerWorldCnMigrated !== true) {
       this._settings.ui.makerWorldCn = true;
+    }
+    // 语言：老库/损坏库默认中文；全新安装按系统语言决定（非中文 → 英文）。
+    if (!sread.exists || sread.corrupt) {
+      this._settings.ui.language = /^zh/i.test(this._systemLocale) ? 'zh-CN' : 'en-US';
+    } else if (!rawUi || !rawUi.language) {
+      this._settings.ui.language = 'zh-CN';
+    } else if (rawUi.language !== 'zh-CN' && rawUi.language !== 'en-US') {
+      this._settings.ui.language = 'zh-CN';
+    }
+    if (!rawUi || !rawUi.makerWorldRegion) {
+      this._settings.ui.makerWorldRegion = 'auto';
+    } else if (!['auto', 'cn', 'global'].includes(rawUi.makerWorldRegion)) {
+      this._settings.ui.makerWorldRegion = 'auto';
     }
     if (!sread.exists || sread.corrupt
       || JSON.stringify(rawSettings) !== JSON.stringify(this._settings)) {

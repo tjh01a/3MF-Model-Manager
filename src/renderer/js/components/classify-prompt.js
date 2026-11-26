@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 「没匹配上分类」的表单式弹窗。
  *
@@ -33,7 +35,7 @@ export function openClassifyPrompt({ items = [], categories = [] } = {}) {
       '<div class="cp-main">' +
         '<div class="cp-name" title="' + esc(m.title) + '">' + esc(m.title) + '</div>' +
         '<select class="select cp-select" data-cp-row="' + i + '">' +
-          '<option value="">跳过（保持未分类）</option>' +
+          tr('<option value="">跳过（保持未分类）</option>') +
           options +
         '</select>' +
       '</div>' +
@@ -41,16 +43,16 @@ export function openClassifyPrompt({ items = [], categories = [] } = {}) {
   }).join('');
 
   const body =
-    '<p class="modal-message">下面这些模型没匹配上词库。给它们选个分类，或者直接跳过。</p>' +
+    tr('<p class="modal-message">下面这些模型没匹配上词库。给它们选个分类，或者直接跳过。</p>') +
     '<div class="cp-list">' + rows + '</div>' +
-    '<p class="cp-hint">想让这类名字以后自动认出来？去「设置 → 自动分类」加几个关键词就行。</p>';
+    tr('<p class="cp-hint">想让这类名字以后自动认出来？去「设置 → 自动分类」加几个关键词就行。</p>');
 
   const foot =
-    '<button type="button" class="btn btn-ghost" data-cp-skip>全部跳过</button>' +
-    '<button type="button" class="btn btn-primary" data-cp-apply>应用</button>';
+    tr('<button type="button" class="btn btn-ghost" data-cp-skip>全部跳过</button>') +
+    tr('<button type="button" class="btn btn-primary" data-cp-apply>应用</button>');
 
   return customDialog({
-    title: list.length + ' 个模型没匹配上分类',
+    title: list.length + tr(' 个模型没匹配上分类'),
     body,
     foot,
     width: '540px',

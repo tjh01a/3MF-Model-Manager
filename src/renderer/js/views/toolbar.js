@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /** 工具栏：搜索(防抖)、排序、筛选 chips、视图切换、尺寸滑块、全选、标题与结果数。 */
 import { state, setState } from '../state.js';
 import { api, emitRefresh } from '../api.js';
@@ -6,19 +8,19 @@ import { escapeHtml, icon, debounce, clamp, qs, qsa } from '../utils.js';
 import { receiptsCount } from './receipts.js';
 
 const SMART_LABELS = {
-  all: '全部模型', favorites: '收藏', recentOpened: '最近打开',
-  unprinted: '未打印', uncategorized: '未分类', untagged: '未打标签',
-  recent: '最近 7 天', printed: '已完成打印', rated: '已评分',
-  duplicates: '重复文件', missing: '失效文件',
+  all: tr('全部模型'), favorites: tr('收藏'), recentOpened: tr('最近打开'),
+  unprinted: tr('未打印'), uncategorized: tr('未分类'), untagged: tr('未打标签'),
+  recent: tr('最近 7 天'), printed: tr('已完成打印'), rated: tr('已评分'),
+  duplicates: tr('重复文件'), missing: tr('失效文件'),
 };
 const STATUS_LABELS = {
-  unprinted: '未打印', queued: '待打印', printing: '打印中', printed: '已完成', failed: '失败',
+  unprinted: tr('未打印'), queued: tr('待打印'), printing: tr('打印中'), printed: tr('已完成'), failed: tr('失败'),
 };
 
 let mounted = false;
 
 function viewName() {
-  return SMART_LABELS[state.query.smart] || '全部模型';
+  return SMART_LABELS[state.query.smart] || tr('全部模型');
 }
 function hasFilters() {
   const q = state.query;
@@ -33,25 +35,25 @@ function filterChipsHtml() {
     '<button class="chip" data-filter="' + escapeHtml(key) + '">' +
     escapeHtml(label) + icon('i-close', 'ico chip-x') + '</button>'
   );
-  if (q.keyword) add('keyword', '搜索：' + q.keyword);
+  if (q.keyword) add('keyword', tr('搜索：') + q.keyword);
   if (q.categoryId) {
     const c = (state.categories || []).find((x) => x.id === q.categoryId);
-    add('categoryId', '分类：' + (c ? c.name : q.categoryId));
+    add('categoryId', tr('分类：') + (c ? c.name : q.categoryId));
   }
   if (q.tagIds && q.tagIds.length) {
     for (const id of q.tagIds) {
       const t = (state.tags || []).find((x) => x.id === id);
-      add('tag:' + id, '标签：' + (t ? t.name : id));
+      add('tag:' + id, tr('标签：') + (t ? t.name : id));
     }
   }
   if (q.printStatuses && q.printStatuses.length) {
-    for (const s of q.printStatuses) add('status:' + s, '状态：' + (STATUS_LABELS[s] || s));
+    for (const s of q.printStatuses) add('status:' + s, tr('状态：') + (STATUS_LABELS[s] || s));
   }
-  if (q.favoritesOnly) add('favoritesOnly', '仅收藏');
-  if (q.ratingMin > 0) add('ratingMin', '评分 ≥ ' + q.ratingMin);
-  if (q.folderId) add('folderId', '指定目录');
+  if (q.favoritesOnly) add('favoritesOnly', tr('仅收藏'));
+  if (q.ratingMin > 0) add('ratingMin', tr('评分 ≥ ') + q.ratingMin);
+  if (q.folderId) add('folderId', tr('指定目录'));
   if (q.statuses && q.statuses.length) {
-    for (const s of q.statuses) add('fileStatus:' + s, '文件：' + s);
+    for (const s of q.statuses) add('fileStatus:' + s, tr('文件：') + s);
   }
   return chips.join('');
 }
@@ -65,7 +67,7 @@ export function syncToolbar() {
     // 回执页在显示模型。这里按当前视图换成对应单位。
     const isReceipts = state.contentMode === 'receipts';
     const n = isReceipts ? receiptsCount() : state.total;
-    sub.textContent = '共 ' + n + (isReceipts ? ' 条回执' : ' 个模型') + (hasFilters() ? ' · 已筛选' : '');
+    sub.textContent = tr('共 ') + n + (isReceipts ? tr(' 条回执') : tr(' 个模型')) + (hasFilters() ? tr(' · 已筛选') : '');
   }
 
   const chips = qs('#filter-chips');
@@ -77,7 +79,7 @@ export function syncToolbar() {
   if (sort && sort.value !== state.query.sortBy) sort.value = state.query.sortBy;
   const dirBtn = qs('#btn-sort-dir');
   if (dirBtn) {
-    dirBtn.title = state.query.sortDir === 'asc' ? '当前升序，点击降序' : '当前降序，点击升序';
+    dirBtn.title = state.query.sortDir === 'asc' ? tr('当前升序，点击降序') : tr('当前降序，点击升序');
     dirBtn.classList.toggle('is-asc', state.query.sortDir === 'asc');
   }
   qsa('#view-switch [data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === state.view));

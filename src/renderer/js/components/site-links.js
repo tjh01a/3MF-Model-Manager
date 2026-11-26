@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 统计条右侧「常用模型网站」：内置两个固定站 + 用户自己添加的（创想云之类）。
  *
@@ -36,7 +38,7 @@ function hostOf(url) {
   try { return new URL(url).hostname.replace(/^www\./i, ''); } catch (_) { return ''; }
 }
 
-function labelOf(site) { return site.name || hostOf(site.url) || '网站'; }
+function labelOf(site) { return site.name || hostOf(site.url) || tr('网站'); }
 
 function linkHtml(site, i) {
   return '<button type="button" class="btn btn-sm web-link stats-site" data-custom-site="' + i + '"' +
@@ -61,38 +63,38 @@ async function persist() {
     await api.settingsUpdate({ ui: { customSites: sites.slice() } });
     return true;
   } catch (e) {
-    emitToast('error', '保存网站失败：' + ((e && e.message) || '未知错误'));
+    emitToast('error', tr('保存网站失败：') + ((e && e.message) || tr('未知错误')));
     return false;
   }
 }
 
 function listHtml() {
-  if (!sites.length) return '<p class="hint">还没有添加自定义网站。</p>';
+  if (!sites.length) return tr('<p class="hint">还没有添加自定义网站。</p>');
   return '<div class="site-list">' + sites.map((s, i) =>
     '<div class="site-row">' +
       '<span class="site-row-name">' + escapeHtml(labelOf(s)) + '</span>' +
       '<span class="site-row-url" title="' + escapeHtml(s.url) + '">' + escapeHtml(hostOf(s.url)) + '</span>' +
-      '<button type="button" class="btn btn-sm btn-ghost danger" data-del="' + i + '">删除</button>' +
+      '<button type="button" class="btn btn-sm btn-ghost danger" data-del="' + i + tr('">删除</button>') +
     '</div>').join('') + '</div>';
 }
 
 function openManage() {
   const body = '' +
     '<div class="site-form">' +
-      '<label class="field"><span class="field-label">网站名称</span>' +
-        '<input type="text" class="input" data-role="name" maxlength="16" placeholder="例如：创想云" autocomplete="off"></label>' +
-      '<label class="field"><span class="field-label">网址</span>' +
-        '<input type="text" class="input" data-role="url" maxlength="500" placeholder="例如：https://www.crealitycloud.cn" autocomplete="off" spellcheck="false"></label>' +
+      tr('<label class="field"><span class="field-label">网站名称</span>') +
+        tr('<input type="text" class="input" data-role="name" maxlength="16" placeholder="例如：创想云" autocomplete="off"></label>') +
+      tr('<label class="field"><span class="field-label">网址</span>') +
+        tr('<input type="text" class="input" data-role="url" maxlength="500" placeholder="例如：https://www.crealitycloud.cn" autocomplete="off" spellcheck="false"></label>') +
     '</div>' +
-    '<p class="hint">网址不写 https:// 会自动补上。最多添加 ' + MAX_ITEMS + ' 个，工具栏只显示前 ' + MAX_VISIBLE + ' 个。</p>' +
+    tr('<p class="hint">网址不写 https:// 会自动补上。最多添加 ') + MAX_ITEMS + tr(' 个，工具栏只显示前 ') + MAX_VISIBLE + tr(' 个。</p>') +
     '<div class="site-list-wrap" data-role="list">' + listHtml() + '</div>';
 
   customDialog({
-    title: '常用模型网站',
+    title: tr('常用模型网站'),
     width: '520px',
     body,
-    foot: '<button type="button" class="btn btn-ghost" data-role="cancel">关闭</button>' +
-          '<button type="button" class="btn btn-primary" data-role="ok">添加</button>',
+    foot: tr('<button type="button" class="btn btn-ghost" data-role="cancel">关闭</button>') +
+          tr('<button type="button" class="btn btn-primary" data-role="ok">添加</button>'),
     onMount: (modal, close) => {
       const nameIn = modal.querySelector('[data-role="name"]');
       const urlIn = modal.querySelector('[data-role="url"]');
@@ -104,9 +106,9 @@ function openManage() {
 
       modal.querySelector('[data-role="ok"]').addEventListener('click', async () => {
         const url = normUrl(urlIn.value);
-        if (!url) { emitToast('error', '网址不对，请填写完整地址（例如 https://www.crealitycloud.cn）'); urlIn.focus(); return; }
-        if (sites.some((s) => s.url === url)) { emitToast('warn', '这个网站已经添加过了'); return; }
-        if (sites.length >= MAX_ITEMS) { emitToast('warn', '最多添加 ' + MAX_ITEMS + ' 个网站，先删掉不用的'); return; }
+        if (!url) { emitToast('error', tr('网址不对，请填写完整地址（例如 https://www.crealitycloud.cn）')); urlIn.focus(); return; }
+        if (sites.some((s) => s.url === url)) { emitToast('warn', tr('这个网站已经添加过了')); return; }
+        if (sites.length >= MAX_ITEMS) { emitToast('warn', tr('最多添加 ') + MAX_ITEMS + tr(' 个网站，先删掉不用的')); return; }
         sites.push({ name: String(nameIn.value || '').trim().slice(0, 16), url });
         if (!(await persist())) { sites.pop(); return; }
         render();
@@ -114,7 +116,7 @@ function openManage() {
         nameIn.value = '';
         urlIn.value = '';
         nameIn.focus();
-        emitToast('success', '已添加：' + labelOf(sites[sites.length - 1]));
+        emitToast('success', tr('已添加：') + labelOf(sites[sites.length - 1]));
       });
 
       // 列表内删除（在弹窗里改完立刻生效，不必关掉再进）
@@ -127,7 +129,7 @@ function openManage() {
         if (!(await persist())) { sites = backup; return; }
         render();
         refreshList();
-        emitToast('success', '已删除');
+        emitToast('success', tr('已删除'));
       });
 
       setTimeout(() => { try { nameIn.focus(); } catch (_) {} }, 30);
@@ -135,15 +137,34 @@ function openManage() {
   });
 }
 
+/**
+ * 内置 MakerWorld 按钮跟随界面语言/站点设置切换。
+ * 英文界面默认指向国际站；用户在设置里手动选中国站时再切回来。
+ */
+export function applyMakerWorldLinks(region) {
+  const root = qs('#stats-links');
+  if (!root) return;
+  const global = region === 'global';
+  const url = global ? 'https://makerworld.com/en' : 'https://makerworld.com.cn/zh';
+  for (const btn of root.querySelectorAll('button[data-url]')) {
+    if (!/makerworld\.com/i.test(btn.getAttribute('data-url') || '')) continue;
+    btn.setAttribute('data-url', url);
+    btn.setAttribute('title', global
+      ? tr('在浏览器打开 MakerWorld 国际站') : tr('在浏览器打开拓竹模型库 MakerWorld（makerworld.com.cn）'));
+    const name = btn.querySelector('span');
+    if (name && /makerworld/i.test(name.textContent || '')) name.textContent = 'MakerWorld';
+  }
+}
+
 /** 挂载：插一个「＋」按钮，读设置渲染已保存的站点 */
-export async function mountSiteLinks() {
+export async function mountSiteLinks(region) {
   const root = qs('#stats-links');
   if (!root || mounted) return;
   mounted = true;
 
   root.insertAdjacentHTML('beforeend',
     '<button type="button" class="btn btn-sm btn-ghost stats-site-add" data-site-manage' +
-    ' title="添加 / 管理常用模型网站（例如创想云）">' +
+    tr(' title="添加 / 管理常用模型网站（例如创想云）">') +
     '<svg class="ico"><use href="#i-plus"/></svg></button>');
 
   root.addEventListener('click', (e) => {
@@ -159,5 +180,6 @@ export async function mountSiteLinks() {
     sites = raw.map((x) => ({ name: String((x && x.name) || '').slice(0, 16), url: normUrl(x && x.url) }))
       .filter((x) => !!x.url).slice(0, MAX_ITEMS);
   } catch (_) { sites = []; }
+  applyMakerWorldLinks(region);
   render();
 }

@@ -30,6 +30,27 @@ ok('「唱片/绘画」别名能解析', rules.some((r) => r.categoryId === 'c_d
 ok('分类不存在时不硬造规则', C.presetRules([{ id: 'x', name: '别的分类' }]).length === 0);
 ok('关键词都已清洗（无空值）', rules.every((r) => r.keywords.length > 0 && r.keywords.every((k) => k.length >= 2)));
 
+section('1b. 英文界面词库（docs/21）');
+const enCategories = [
+  { id: 'en_fn', name: 'Functional Parts' },
+  { id: 'en_deco', name: 'Figures & Decor' },
+  { id: 'en_test', name: 'Test & Calibration' },
+  { id: 'en_part', name: 'Spare Parts & Repair' },
+];
+const enRules = C.presetRules(enCategories, 'en-US');
+ok('英文分类生成 4 条规则', enRules.length === 4, 'got ' + enRules.length);
+ok('英文关键词命中 benchy → 测试校准',
+  C.matchCategory({ title: 'Benchy calibration print' }, enRules) === 'en_test');
+ok('英文关键词命中 holder → 功能件',
+  C.matchCategory({ title: 'Desk holder for cables' }, enRules) === 'en_fn');
+ok('英文关键词命中 miniature → 摆件',
+  C.matchCategory({ title: 'Dragon miniature figure' }, enRules) === 'en_deco');
+ok('显式英文语言时词库用英文关键词（中文分类名作为兼容别名）',
+  C.presetRules(categories, 'en-US').some((r) => r.keywords.includes('holder'))
+  && !C.presetRules(categories, 'en-US').some((r) => r.keywords.includes('高达')));
+ok('不传语言时仍保持中文词库',
+  C.presetRules(categories).some((r) => r.keywords.includes('高达')));
+
 // ---------- 2. 匹配 ----------
 section('2. 匹配命中');
 const hit = (title, extra) => C.matchCategory(Object.assign({ title }, extra || {}), rules);

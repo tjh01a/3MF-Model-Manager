@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 图片导入编辑器（耗材图片用）：裁切 + 缩放。
  *
@@ -18,11 +20,11 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const round = (v) => Math.max(1, Math.round(v));
 
 const RATIOS = [
-  { key: '0', label: '自由', value: 0 },
+  { key: '0', label: tr('自由'), value: 0 },
   { key: '1', label: '1:1', value: 1 },
   { key: '4:3', label: '4:3', value: 4 / 3 },
   { key: '16:9', label: '16:9', value: 16 / 9 },
-  { key: 'orig', label: '原图', value: -1 },
+  { key: 'orig', label: tr('原图'), value: -1 },
 ];
 
 function bodyHtml() {
@@ -38,24 +40,24 @@ function bodyHtml() {
       '</div>' +
       '<div class="imged-side">' +
         '<div class="imged-group">' +
-          '<span class="imged-label">裁切比例</span>' +
+          tr('<span class="imged-label">裁切比例</span>') +
           '<div class="imged-ratios" data-role="ratios">' +
             RATIOS.map((r) => '<button type="button" data-ratio="' + r.key + '"' +
               (r.value === 0 ? ' class="is-on"' : '') + '>' + r.label + '</button>').join('') +
           '</div>' +
         '</div>' +
         '<div class="imged-group">' +
-          '<span class="imged-label">输出尺寸</span>' +
+          tr('<span class="imged-label">输出尺寸</span>') +
           '<div class="imged-size">' +
             '<input type="number" data-role="w" min="16" max="' + MAX_OUT + '" step="1">' +
             '<span class="imged-x">×</span>' +
             '<input type="number" data-role="h" min="16" max="' + MAX_OUT + '" step="1">' +
             '<span class="imged-unit">px</span>' +
           '</div>' +
-          '<label class="imged-lock"><input type="checkbox" data-role="lock" checked> 锁定比例</label>' +
+          tr('<label class="imged-lock"><input type="checkbox" data-role="lock" checked> 锁定比例</label>') +
         '</div>' +
         '<p class="imged-info" data-role="info"></p>' +
-        '<p class="imged-tip">在图上拖动框选裁切范围；拖角或边可调整大小，框内拖动可平移。</p>' +
+        tr('<p class="imged-tip">在图上拖动框选裁切范围；拖角或边可调整大小，框内拖动可平移。</p>') +
       '</div>' +
     '</div>';
 }
@@ -65,14 +67,14 @@ function bodyHtml() {
  */
 export function openImageEditor({ dataUrl, fileName = '', name = '' } = {}) {
   return customDialog({
-    title: name ? '调整耗材图片 · ' + name : '调整耗材图片',
+    title: name ? tr('调整耗材图片 · ') + name : tr('调整耗材图片'),
     width: '760px',
     body: bodyHtml(),
     foot:
-      '<button type="button" class="btn btn-ghost" data-role="cancel">取消</button>' +
+      tr('<button type="button" class="btn btn-ghost" data-role="cancel">取消</button>') +
       '<span class="spacer"></span>' +
-      '<button type="button" class="btn btn-ghost" data-role="reset">重置</button>' +
-      '<button type="button" class="btn btn-primary" data-role="ok">应用</button>',
+      tr('<button type="button" class="btn btn-ghost" data-role="reset">重置</button>') +
+      tr('<button type="button" class="btn btn-primary" data-role="ok">应用</button>'),
     onMount: (modal, close) => {
       const stage = modal.querySelector('[data-role="stage"]');
       const canvas = modal.querySelector('[data-role="canvas"]');
@@ -135,8 +137,8 @@ export function openImageEditor({ dataUrl, fileName = '', name = '' } = {}) {
         wIn.value = outW;
         hIn.value = outH;
         hIn.disabled = lockIn.checked;
-        info.textContent = '原图 ' + natW + ' × ' + natH + ' px · 选区 ' +
-          cropW + ' × ' + cropH + ' px · 输出 ' + outW + ' × ' + outH + ' px';
+        info.textContent = tr('原图 ') + natW + ' × ' + natH + tr(' px · 选区 ') +
+          cropW + ' × ' + cropH + tr(' px · 输出 ') + outW + ' × ' + outH + ' px';
       }
 
       /** 按给定比例把选区收成尽量大的矩形，中心贴住原选区中心 */
@@ -269,7 +271,7 @@ export function openImageEditor({ dataUrl, fileName = '', name = '' } = {}) {
         outH = clamp(round(Number(hIn.value) || 16), 16, MAX_OUT);
         wIn.value = outW;
         hIn.value = outH;
-        info.textContent = '原图 ' + natW + ' × ' + natH + ' px · 输出 ' + outW + ' × ' + outH + ' px';
+        info.textContent = tr('原图 ') + natW + ' × ' + natH + tr(' px · 输出 ') + outW + ' × ' + outH + ' px';
       });
       lockIn.addEventListener('change', () => { manual = false; paint(); });
 
@@ -311,7 +313,7 @@ export function openImageEditor({ dataUrl, fileName = '', name = '' } = {}) {
             fileName,
           });
         } catch (err) {
-          close({ error: (err && err.message) || '图片处理失败' });
+          close({ error: (err && err.message) || tr('图片处理失败') });
         }
       });
 
@@ -319,13 +321,13 @@ export function openImageEditor({ dataUrl, fileName = '', name = '' } = {}) {
       img.onload = () => {
         natW = img.naturalWidth || img.width;
         natH = img.naturalHeight || img.height;
-        if (!natW || !natH) { close({ error: '这张图片读不出来，换一张试试' }); return; }
+        if (!natW || !natH) { close({ error: tr('这张图片读不出来，换一张试试') }); return; }
         layout();
         sel = { x: 0, y: 0, w: dw, h: dh };
         manual = false;
         paint();
       };
-      img.onerror = () => close({ error: '这张图片读不出来，换一张试试' });
+      img.onerror = () => close({ error: tr('这张图片读不出来，换一张试试') });
       img.src = dataUrl;
     },
   });

@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 温度 / 进度曲线弹窗。
  *
@@ -52,7 +54,7 @@ function chartSvg(m) {
     return '<circle cx="' + c.x + '" cy="' + c.y + '" r="' + r + '" fill="' + s.color + '"/>';
   }).join('');
   return '<svg class="mc-svg" viewBox="0 0 ' + m.width + ' ' + m.height + '" role="img" ' +
-    'aria-label="喷嘴温度、热床温度与打印进度随时间变化的曲线">' +
+    tr('aria-label="喷嘴温度、热床温度与打印进度随时间变化的曲线">') +
     '<rect x="' + m.plot.x + '" y="' + m.plot.y + '" width="' + m.plot.w + '" height="' + m.plot.h +
       '" fill="none" stroke="' + gridColor + '"/>' +
     grid + ticks + paths + dots +
@@ -70,11 +72,11 @@ function legendHtml(model) {
 function statsHtml(data) {
   const s = (data.model && data.model.stats) || {};
   const cells = [
-    ['采样点', (s.count || 0) + ' 个'],
-    ['已记录', (s.durationMin || 0) + ' 分钟'],
-    ['喷嘴峰值', (s.nozzleMax || 0) + ' ℃'],
-    ['热床峰值', (s.bedMax || 0) + ' ℃'],
-    ['最后进度', Math.round(s.percent || 0) + '%'],
+    [tr('采样点'), (s.count || 0) + tr(' 个')],
+    [tr('已记录'), (s.durationMin || 0) + tr(' 分钟')],
+    [tr('喷嘴峰值'), (s.nozzleMax || 0) + ' ℃'],
+    [tr('热床峰值'), (s.bedMax || 0) + ' ℃'],
+    [tr('最后进度'), Math.round(s.percent || 0) + '%'],
   ];
   return '<div class="mc-stats">' + cells.map((c) =>
     '<div class="mc-stat"><span>' + esc(c[1]) + '</span><small>' + esc(c[0]) + '</small></div>').join('') + '</div>';
@@ -82,29 +84,29 @@ function statsHtml(data) {
 
 function bodyHtml(data) {
   if (!data || !data.session || !data.model || data.model.empty) {
-    return '<div class="mc-empty"><p>这台打印机还没有采样数据。</p>' +
-      '<p class="hint">开始打印后，PrintShelf 会按设置里的间隔自动记录喷嘴 / 热床温度与进度，' +
-      '不用一直开着设备面板。可以在「设置 → 打印监控」里调整间隔或清空历史。</p></div>';
+    return tr('<div class="mc-empty"><p>这台打印机还没有采样数据。</p>') +
+      tr('<p class="hint">开始打印后，PrintShelf 会按设置里的间隔自动记录喷嘴 / 热床温度与进度，') +
+      tr('不用一直开着设备面板。可以在「设置 → 打印监控」里调整间隔或清空历史。</p></div>');
   }
   const list = data.sessions || [];
   const options = list.map((s) =>
     '<option value="' + esc(s.id) + '"' + (s.id === data.session.id ? ' selected' : '') + '>' +
       // 下拉可能混合多台机器的任务，必须带设备名，否则两台 A1 的曲线分不清
-      esc(fullDate(s.startedAt) + ' · ' + (s.printerName || '打印机') + ' · ' +
-        s.jobName + ' · ' + s.points + ' 点') + '</option>').join('');
+      esc(fullDate(s.startedAt) + ' · ' + (s.printerName || tr('打印机')) + ' · ' +
+        s.jobName + ' · ' + s.points + tr(' 点')) + '</option>').join('');
   return '<div class="mc-top">' +
-      '<label class="mc-pick">打印任务 <select class="select" id="mc-session">' + options + '</select></label>' +
-      '<span class="mc-state">' + (data.session.endedAt ? '已结束' : '进行中') + '</span>' +
+      tr('<label class="mc-pick">打印任务 <select class="select" id="mc-session">') + options + '</select></label>' +
+      '<span class="mc-state">' + (data.session.endedAt ? tr('已结束') : tr('进行中')) + '</span>' +
     '</div>' +
     '<div class="mc-chart">' + chartSvg(data.model) + '</div>' +
     legendHtml(data.model) +
     statsHtml(data) +
     '<p class="hint mc-hint">' +
       (data.model.stats.count < 3
-        ? '<strong>才刚开始记录（' + data.model.stats.count + ' 个点），打印进行中会按设置里的间隔持续补上。</strong> '
+        ? tr('<strong>才刚开始记录（') + data.model.stats.count + tr(' 个点），打印进行中会按设置里的间隔持续补上。</strong> ')
         : '') +
-      '左轴是温度（℃），右轴是进度（%）。虚线是喷嘴目标温度，' +
-      '实线突然下探往往意味着开仓、断料或掉温；进度长时间不动而温度仍在高位，值得去看一眼。</p>';
+      tr('左轴是温度（℃），右轴是进度（%）。虚线是喷嘴目标温度，') +
+      tr('实线突然下探往往意味着开仓、断料或掉温；进度长时间不动而温度仍在高位，值得去看一眼。</p>');
 }
 
 /**
@@ -126,9 +128,9 @@ export async function openMonitorChart(printerId, printerName) {
   diag.points = (data && data.model && data.model.stats && data.model.stats.count) || 0;
 
   customDialog({
-    title: '温度与进度曲线' + (printerName ? ' · ' + printerName : ''),
+    title: tr('温度与进度曲线') + (printerName ? ' · ' + printerName : ''),
     body: '<div id="mc-body">' + bodyHtml(data) + '</div>',
-    foot: '<button type="button" class="btn btn-ghost" data-mc-close>关闭</button>',
+    foot: tr('<button type="button" class="btn btn-ghost" data-mc-close>关闭</button>'),
     width: '860px',
     onMount(modal, close) {
       const btn = modal.querySelector('[data-mc-close]');

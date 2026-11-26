@@ -1,4 +1,6 @@
 'use strict';
+import { t as tr } from '../i18n.js';
+
 /**
  * 耗材库（docs/13）：卡片网格 + 右侧详情栏，与模型库 / 设备页视觉与操作一致。
  *
@@ -80,7 +82,7 @@ function cardHtml(f) {
   const isDefault = f.id === st.defaultId;
   return '<button type="button" class="fil-card' + sel + (isDefault ? ' is-default' : '') + '" data-id="' + esc(f.id) + '" title="' + esc(f.name) + '">' +
     '<span class="fil-card-media"><img class="fil-card-img" src="' + thumbSrc(f) + '" alt="">' +
-      (isDefault ? '<span class="fil-default-tag">默认</span>' : '') + '</span>' +
+      (isDefault ? tr('<span class="fil-default-tag">默认</span>') : '') + '</span>' +
     '<span class="fil-card-body">' +
       '<span class="fil-card-name">' + esc(f.name) + '</span>' +
       '<span class="fil-card-meta">' +
@@ -95,7 +97,7 @@ function cardHtml(f) {
 function detailHtml(f) {
   if (!f) {
     return '<div class="fil-detail-empty">' + icon('i-box') +
-      '<strong>还没有选中耗材</strong><span>点左侧卡片查看和编辑参数</span></div>';
+      tr('<strong>还没有选中耗材</strong><span>点左侧卡片查看和编辑参数</span></div>');
   }
   const typeOpts = st.types.map((t) =>
     '<option value="' + esc(t) + '"' + (f.type === t ? ' selected' : '') + '>' + esc(t) + '</option>').join('');
@@ -103,27 +105,27 @@ function detailHtml(f) {
     '<div class="fil-detail-head">' +
       '<div class="fil-detail-hero"><img src="' + thumbSrc(f) + '" alt=""></div>' +
       '<div class="fil-detail-actions">' +
-        '<button type="button" class="btn btn-sm btn-primary" data-act="save">' + icon('i-check') + '保存</button>' +
+        '<button type="button" class="btn btn-sm btn-primary" data-act="save">' + icon('i-check') + tr('保存</button>') +
         '<button type="button" class="btn btn-sm btn-ghost' + (f.id === st.defaultId ? ' is-default' : '') + '" data-act="set-default" title="' +
-          (f.id === st.defaultId ? '已设为默认耗材，模型没分配耗材时按它的单价估算' : '设为默认：模型没分配耗材时按它的单价估算成本') + '">' +
-          icon('i-star') + (f.id === st.defaultId ? '已是默认' : '设为默认') + '</button>' +
-        '<button type="button" class="btn btn-sm btn-ghost" data-act="upload">' + icon('i-image') + '换图片</button>' +
-        '<button type="button" class="icon-btn" data-act="delete" title="删除耗材">' + icon('i-trash') + '</button>' +
+          (f.id === st.defaultId ? tr('已设为默认耗材，模型没分配耗材时按它的单价估算') : tr('设为默认：模型没分配耗材时按它的单价估算成本')) + '">' +
+          icon('i-star') + (f.id === st.defaultId ? tr('已是默认') : tr('设为默认')) + '</button>' +
+        '<button type="button" class="btn btn-sm btn-ghost" data-act="upload">' + icon('i-image') + tr('换图片</button>') +
+        tr('<button type="button" class="icon-btn" data-act="delete" title="删除耗材">') + icon('i-trash') + '</button>' +
       '</div>' +
     '</div>' +
     '<div class="fil-detail-fields">' +
-      '<label class="fil-field"><span>名称</span><input type="text" data-field="name" value="' + esc(f.name) + '" maxlength="120"></label>' +
-      '<label class="fil-field"><span>品牌</span><input type="text" data-field="brand" value="' + esc(f.brand || '') + '" list="fil-brand-list" maxlength="80"></label>' +
+      tr('<label class="fil-field"><span>名称</span><input type="text" data-field="name" value="') + esc(f.name) + '" maxlength="120"></label>' +
+      tr('<label class="fil-field"><span>品牌</span><input type="text" data-field="brand" value="') + esc(f.brand || '') + '" list="fil-brand-list" maxlength="80"></label>' +
       '<datalist id="fil-brand-list">' + st.brands.map((b) => '<option value="' + esc(b) + '"></option>').join('') + '</datalist>' +
-      '<label class="fil-field"><span>耗材类型</span><select data-field="type">' + typeOpts + '</select></label>' +
+      tr('<label class="fil-field"><span>耗材类型</span><select data-field="type">') + typeOpts + '</select></label>' +
       '<div class="fil-field-row">' +
-        '<label class="fil-field"><span>颜色</span><span class="fil-color-wrap">' +
+        tr('<label class="fil-field"><span>颜色</span><span class="fil-color-wrap">') +
           '<input type="color" data-field="color" value="' + esc(safeColor(f.color)) + '">' +
           '<input type="text" data-field="colorText" value="' + esc(safeColor(f.color)) + '" maxlength="7" class="fil-hex"></span></label>' +
-        '<label class="fil-field"><span>单价（元 / kg）</span><input type="number" data-field="pricePerKg" min="0" step="0.01" value="' + esc(f.pricePerKg || 0) + '"></label>' +
+        tr('<label class="fil-field"><span>单价（元 / kg）</span><input type="number" data-field="pricePerKg" min="0" step="0.01" value="') + esc(f.pricePerKg || 0) + '"></label>' +
       '</div>' +
-      '<label class="fil-field"><span>备注</span><textarea data-field="note" rows="3" maxlength="2000">' + esc(f.note || '') + '</textarea></label>' +
-      '<label class="fil-field"><span>耗材参数</span><textarea data-field="params" rows="3" maxlength="2000" placeholder="例如：打印温度 220°C / 热床 60°C / 收缩率 0.4% 等">' + esc(f.params || '') + '</textarea></label>' +
+      tr('<label class="fil-field"><span>备注</span><textarea data-field="note" rows="3" maxlength="2000">') + esc(f.note || '') + '</textarea></label>' +
+      tr('<label class="fil-field"><span>耗材参数</span><textarea data-field="params" rows="3" maxlength="2000" placeholder="例如：打印温度 220°C / 热床 60°C / 收缩率 0.4% 等">') + esc(f.params || '') + '</textarea></label>' +
     '</div>';
 }
 
@@ -135,22 +137,22 @@ function render() {
   body.innerHTML = '' +
     '<div class="fil-toolbar">' +
       '<div class="fil-toolbar-left">' +
-        '<button type="button" class="btn btn-sm btn-primary" data-act="new">' + icon('i-plus') + '新建耗材</button>' +
-        '<select class="fil-filter" data-act-filter="type" aria-label="按类型筛选">' +
-          '<option value="">全部类型</option>' +
+        '<button type="button" class="btn btn-sm btn-primary" data-act="new">' + icon('i-plus') + tr('新建耗材</button>') +
+        tr('<select class="fil-filter" data-act-filter="type" aria-label="按类型筛选">') +
+          tr('<option value="">全部类型</option>') +
           st.types.map((t) => '<option value="' + esc(t) + '"' + (st.filterType === t ? ' selected' : '') + '>' + esc(t) + '</option>').join('') +
         '</select>' +
       '</div>' +
       '<div class="fil-toolbar-right">' +
-        '<input type="search" class="fil-search" data-act-input="keyword" placeholder="搜索名称 / 品牌 / 类型" value="' + esc(st.keyword) + '">' +
-        '<button type="button" class="icon-btn" data-act="open-dir" title="打开耗材图片目录">' + icon('i-folder') + '</button>' +
+        tr('<input type="search" class="fil-search" data-act-input="keyword" placeholder="搜索名称 / 品牌 / 类型" value="') + esc(st.keyword) + '">' +
+        tr('<button type="button" class="icon-btn" data-act="open-dir" title="打开耗材图片目录">') + icon('i-folder') + '</button>' +
       '</div>' +
     '</div>' +
     '<div class="fil-main">' +
       '<div class="fil-grid-wrap">' +
         '<div class="fil-grid">' + (list.length ? list.map(cardHtml).join('') :
-          '<div class="fil-empty">还没有耗材，点「新建耗材」添加一个</div>') + '</div>' +
-        '<div class="fil-count">共 ' + list.length + ' 种耗材</div>' +
+          tr('<div class="fil-empty">还没有耗材，点「新建耗材」添加一个</div>')) + '</div>' +
+        tr('<div class="fil-count">共 ') + list.length + tr(' 种耗材</div>') +
       '</div>' +
       '<aside class="fil-detail" id="fil-detail">' + detailHtml(sel) + '</aside>' +
     '</div>';
@@ -164,7 +166,7 @@ async function refresh() {
     st.items = (r && r.items) || [];
     st.brands = (r && r.brands) || [];
     st.defaultId = (r && r.defaultId) || null;
-    st.types = (r && r.types) || ['PLA', 'PETG', 'ABS', 'TPU', '其他'];
+    st.types = (r && r.types) || ['PLA', 'PETG', 'ABS', 'TPU', tr('其他')];
     if (st.selectedId && !st.items.find((f) => f.id === st.selectedId)) st.selectedId = null;
     if (!st.selectedId && st.items.length) st.selectedId = st.items[0].id;
     if (open) render();
@@ -192,18 +194,18 @@ function readForm() {
 async function save() {
   if (!st.selectedId) return;
   const p = readForm();
-  if (!p || !String(p.name || '').trim()) { emitToast('error', '名称不能为空'); return; }
+  if (!p || !String(p.name || '').trim()) { emitToast('error', tr('名称不能为空')); return; }
   // 后端会把非法颜色静默归一化成默认值，用户以为保存成功、再看却变了色。
   // 保存前在这里拦住，必须严格是 #RRGGBB。
   const color = String(p.color || '').trim();
   if (!HEX.test(color)) {
-    emitToast('error', '颜色格式不对，请填写 #RRGGBB（例如 #FF0000）');
+    emitToast('error', tr('颜色格式不对，请填写 #RRGGBB（例如 #FF0000）'));
     return;
   }
   p.color = color;
   try {
     await api.filamentUpdate(st.selectedId, p);
-    emitToast('success', '耗材已保存');
+    emitToast('success', tr('耗材已保存'));
     emitRefresh('filaments');
     await refresh();
   } catch (_) { /* 已 toast */ }
@@ -213,7 +215,7 @@ async function createWithName(name) {
   try {
     const f = await api.filamentCreate({ name });
     st.selectedId = f.id;
-    emitToast('success', '已添加耗材「' + name + '」，记得填单价');
+    emitToast('success', tr('已添加耗材「') + name + tr('」，记得填单价'));
     await refresh();
   } catch (_) { /* 已 toast */ }
 }
@@ -224,7 +226,7 @@ async function setDefault(f) {
   try {
     const r = await api.filamentSetDefault(cancel ? null : f.id);
     st.defaultId = r && r.defaultId;
-    emitToast('success', cancel ? '已取消默认耗材' : '已设为默认：未分配耗材的模型按它的单价估算');
+    emitToast('success', cancel ? tr('已取消默认耗材') : tr('已设为默认：未分配耗材的模型按它的单价估算'));
     emitRefresh('filaments');   // 卡片价格要按新默认耗材重算
     await refresh();
   } catch (_) { /* 已 toast */ }
@@ -246,7 +248,7 @@ async function onClick(e) {
   switch (act.act) {
     case 'new': {
       let name;
-      try { name = await promptDialog({ title: '新建耗材', label: '耗材名称', placeholder: '例如：拓竹 PLA Basic 白色', confirmText: '创建' }); }
+      try { name = await promptDialog({ title: tr('新建耗材'), label: tr('耗材名称'), placeholder: tr('例如：拓竹 PLA Basic 白色'), confirmText: tr('创建') }); }
       catch (_) { return; }
       if (name && name.trim()) await createWithName(name.trim());
       break;
@@ -274,7 +276,7 @@ async function onClick(e) {
       if (edited.error) { emitToast('error', edited.error); return; }
       try {
         const r = await api.filamentSetImageData(st.selectedId, edited.dataUrl);
-        emitToast('success', '图片已更新（' + edited.width + ' × ' + edited.height + '）');
+        emitToast('success', tr('图片已更新（') + edited.width + ' × ' + edited.height + '）');
         const f = st.items.find((x) => x.id === st.selectedId);
         if (f) f.image = r.image;
         render();
@@ -287,16 +289,16 @@ async function onClick(e) {
       let yes = false;
       try {
         yes = await confirmDialog({
-          title: '删除耗材', message: '确定删除耗材「' + f.name + '」吗？',
-          detail: '已有模型引用的话，它们的成本会显示为「未分配耗材」；历史回执不受影响。',
-          items: [f.name], danger: true, confirmText: '删除',
+          title: tr('删除耗材'), message: tr('确定删除耗材「') + f.name + tr('」吗？'),
+          detail: tr('已有模型引用的话，它们的成本会显示为「未分配耗材」；历史回执不受影响。'),
+          items: [f.name], danger: true, confirmText: tr('删除'),
         });
       } catch (_) { return; }
       if (!yes) return;
       try {
         await api.filamentRemove(f.id);
         st.selectedId = null;
-        emitToast('success', '已删除');
+        emitToast('success', tr('已删除'));
         await refresh();
       } catch (_) { /* 已 toast */ }
       break;
@@ -324,9 +326,9 @@ function onInput(e) {
     if (grid) {
       const list = filtered();
       grid.innerHTML = list.length ? list.map(cardHtml).join('') :
-        '<div class="fil-empty">没有匹配的耗材</div>';
+        tr('<div class="fil-empty">没有匹配的耗材</div>');
       const cnt = document.querySelector('.fil-count');
-      if (cnt) cnt.textContent = '共 ' + list.length + ' 种耗材';
+      if (cnt) cnt.textContent = tr('共 ') + list.length + tr(' 种耗材');
     }
     return;
   }

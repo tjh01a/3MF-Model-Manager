@@ -873,6 +873,7 @@ if (!gotLock) {
 
     await services.init({
       autoWatch: false,
+      systemLocale: app.getLocale(),
       onStage: (name, percent) => bootStage(name, percent),
     });
     ipcMethods = registerIpc(services, { getWindow: () => mainWindow });
