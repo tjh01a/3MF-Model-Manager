@@ -141,8 +141,11 @@ const RENDERER_ROOT = path.resolve(__dirname, '..', 'src', 'renderer');
 const APP_ICON = path.join(__dirname, '..', 'resources', 'app.ico');
 const APP_ORIGIN = 'app://local';
 
-// 让任务栏 / Alt-Tab 使用应用自己的图标（与桌面快捷方式一致）
-if (process.platform === 'win32' && app.setAppUserModelId) {
+// 让任务栏 / Alt-Tab 使用应用自己的图标（与桌面快捷方式一致）。
+// 只在打包版固定 AppUserModelID：开发模式的 exe 是 electron.exe 的副本，
+// 写死一个和快捷方式不匹配的 ID 会让 Windows 把窗口归到旧的 Electron 分组，
+// 任务栏继续沿用之前缓存的原子图标。开发模式交给系统按 exe 路径分组更稳。
+if (process.platform === 'win32' && app.isPackaged && app.setAppUserModelId) {
   try { app.setAppUserModelId('com.printshelf.desktop'); } catch (_) { /* 忽略 */ }
 }
 

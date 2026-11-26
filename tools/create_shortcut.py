@@ -8,16 +8,40 @@ from __future__ import annotations
 
 import ctypes
 import os
+import shutil
 import struct
+import subprocess
 import sys
 import winreg
 from ctypes import POINTER, WINFUNCTYPE, byref, c_int, c_long, c_ulong, c_void_p, c_wchar_p, wintypes
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ELECTRON = os.path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe')
-ICON = os.path.join(ROOT, 'resources', 'app.ico')
+ELECTRON_BASE = os.path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe')
+DEV_EXE = os.path.join(ROOT, 'node_modules', 'electron', 'dist', 'PrintShelf-dev.exe')
+APP_ICON = os.path.join(ROOT, 'resources', 'app.ico')
 LNK_NAME = 'PrintShelf.lnk'
 DESC = 'PrintShelf · 本地 3MF 模型库'
+
+
+def ensure_dev_exe() -> None:
+    """快捷方式必须指向带紫色图标的副本，不能指向 Electron 原子图标的 electron.exe。"""
+    if os.path.isfile(DEV_EXE):
+        return
+    node = shutil.which('node')
+    if not node:
+        return
+    try:
+        subprocess.run(
+            [node, os.path.join(ROOT, 'tools', 'dev-exe.js')],
+            cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    except Exception:
+        pass
+
+
+ensure_dev_exe()
+# Windows 任务栏读的是进程 exe 的 PE 图标，所以快捷方式目标也必须是嵌了图标的 exe。
+ELECTRON = DEV_EXE if os.path.isfile(DEV_EXE) else ELECTRON_BASE
+ICON = ELECTRON
 
 
 def desktop_dir() -> str:
@@ -157,7 +181,7 @@ def create_via_binary(lnk: str) -> dict:
 
 
 def main():
-    for p in (ELECTRON, ICON):
+    for p in (ELECTRON, APP_ICON):
         if not os.path.isfile(p):
             print('缺少文件：', p)
             print('请先运行 npm install 与 python tools/make_icon.py')

@@ -6,7 +6,7 @@
  * 导致 Electron 以纯 Node 模式启动、窗口永远不出现。这里显式清除它。
  * 同时保证 `npm start` / `npm run smoke` 与双击 start.bat 行为一致。
  */
-const { spawn, spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -26,51 +26,11 @@ if (!electronExe || !fs.existsSync(electronExe)) {
   process.exit(1);
 }
 
-/**
- * Windows 任务栏图标来自「进程 exe 的 PE 图标」，不是 BrowserWindow 的 icon。
- * 直接跑 node_modules/electron/dist/electron.exe 时，任务栏永远显示 Electron 原子图标。
- * 这里在同一目录复制一个 PrintShelf-dev.exe（旁边就是 Electron 运行时资源），
- * 用 rcedit 把软件图标写进去，再启动它；打包版仍走自己的安装包 exe。
- */
-function windowsDevExe(exe) {
-  if (process.platform !== 'win32') return exe;
-  const icon = path.join(__dirname, 'resources', 'app.ico');
-  if (!fs.existsSync(icon)) return exe;
-  const out = path.join(path.dirname(exe), 'PrintShelf-dev.exe');
-  try {
-    const iconTime = fs.statSync(icon).mtimeMs;
-    const exeTime = fs.statSync(exe).mtimeMs;
-    const need = !fs.existsSync(out)
-      || fs.statSync(out).mtimeMs < iconTime
-      || fs.statSync(out).mtimeMs < exeTime;
-    if (!need) return out;
-
-    // 旧 dev 进程可能正占用这个 exe；能删就重建，删不掉就沿用已有的。
-    if (fs.existsSync(out)) {
-      try { fs.unlinkSync(out); } catch (_) { return out; }
-    }
-    fs.copyFileSync(exe, out);
-    const rc = path.join(__dirname, 'node_modules', 'rcedit', 'bin',
-      process.arch === 'x64' ? 'rcedit-x64.exe' : 'rcedit.exe');
-    if (!fs.existsSync(rc)) {
-      try { fs.unlinkSync(out); } catch (_) { /* 忽略 */ }
-      return exe;
-    }
-    const r = spawnSync(rc, [
-      out,
-      '--set-icon', icon,
-      '--set-version-string', 'ProductName', '3MF模型管理器',
-      '--set-version-string', 'FileDescription', '3MF模型管理器',
-    ], { windowsHide: true, stdio: 'ignore' });
-    if (r.status === 0) return out;
-    try { fs.unlinkSync(out); } catch (_) { /* 忽略 */ }
-    return exe;
-  } catch (_) {
-    return fs.existsSync(out) ? out : exe;
-  }
-}
-
-const runExe = windowsDevExe(electronExe);
+// Windows 任务栏在 AUMID 未与快捷方式绑定时，会回退到进程 exe 的 PE 图标，
+// 而不是快捷方式的 IconLocation。统一交给 tools/dev-exe.js 生成带图标的副本，
+// 这样无论系统怎么分组，兜底看到的都是 PrintShelf 的紫色图标。
+const { ensureDevExe } = require('./tools/dev-exe');
+const runExe = ensureDevExe(electronExe);
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
 
