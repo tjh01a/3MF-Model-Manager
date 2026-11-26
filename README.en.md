@@ -1,10 +1,10 @@
 > Language / 语言：[简体中文](README.md) | English
 
-# PrintShelf · 3MF Model Manager / 3MF 模型管理器
+# PrintShelf · 3MF 3D-Printing Model Manager / 3MF 3D 打印模型管理器
 
-**English**: A local 3MF model library for Windows. Scan, organize, preview and deduplicate your `.3mf` files, then send a model straight to your slicer. Core features work offline and never upload your files.
+**English**: A local 3D-printing model library for Windows. Scan, organize, preview and deduplicate 3MF files; merge duplicates and same-thumbnail variants; repair or quarantine damaged files; track print jobs, receipts and costs; manage filament stock; search by image or natural language; and send models straight to your slicer. Core features work offline and never upload your files.
 
-**中文简介**：一个装在 Windows 上的本地 3MF 模型库。扫描、分类、预览、去重，选中后一键送切片软件；核心功能离线可用，文件不上传。
+**中文简介**：一个装在 Windows 上的本地 3D 打印模型库。扫描、分类、预览、去重，重复文件与同款变体一键合并；还能修复/隔离损坏的 3MF、看打印监控与回执成本、管耗材库存、用自然语言和以图搜图找模型，选中后一键送切片软件。核心功能离线可用，文件不上传。
 
 A **local 3MF model library** for Windows. Scan the `.3mf` files already on your computer, browse them like a photo gallery, organize them, preview them, and send a model straight to your slicer when you are ready to print.
 
