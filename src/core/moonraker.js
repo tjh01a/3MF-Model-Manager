@@ -37,8 +37,7 @@ function request(host, port, method, path, body, timeout = DEFAULT_TIMEOUT, opts
       timeout,
       headers: payload
         ? { 'Content-Type': 'application/json', 'Content-Length': payload.length }
-        : {},
-    }, (res) => {
+        : {},    }, (res) => {
       let d = '';
       const chunks = [];
       if (!(opts && opts.binary)) res.setEncoding('utf8');
@@ -156,6 +155,34 @@ class Moonraker {
   pause() { return this.post('/printer/print/pause'); }
   resume() { return this.post('/printer/print/resume'); }
   cancel() { return this.post('/printer/print/cancel'); }
+
+  /** 执行 G-code。温度设定、风扇、归零都走这里。 */
+  script(gcode) {
+    return request(this.host, this.port, 'POST', '/printer/gcode/script', { script: String(gcode || '') });
+  }
+
+  setTemperature(nozzle, bed) {
+    const cmds = [];
+    if (Number.isFinite(Number(nozzle))) cmds.push('M104 S' + Math.max(0, Math.round(Number(nozzle))));
+    if (Number.isFinite(Number(bed))) cmds.push('M140 S' + Math.max(0, Math.round(Number(bed))));
+    return this.script(cmds.join('\n'));
+  }
+
+  /** 上传到 gcodes 根目录；print=true 时 Moonraker 会直接开始。 */
+  upload(filePath, fileName, print = false) {
+    const { uploadMultipart } = require('./adapters/http');
+    return uploadMultipart({
+      host: this.host, port: this.port, path: '/server/files/upload',
+      filePath, fileName, fileField: 'file',
+      fields: { root: 'gcodes', path: '', print: print ? 'true' : 'false' },
+      timeout: 300000,
+    });
+  }
+
+  start(fileName) {
+    const q = encodeURIComponent(String(fileName || ''));
+    return this.post('/printer/print/start?filename=' + q);
+  }
 }
 
 module.exports = Moonraker;

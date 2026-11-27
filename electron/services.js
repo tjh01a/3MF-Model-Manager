@@ -607,6 +607,8 @@ class Services extends EventEmitter {
   printerRemove(id) { return this.printers.remove(id); }
   printerTest(id) { return this.printers.test(id); }
   printerAction(id, cmd) { return this.printers.action(id, cmd); }
+  printerSetTemp(id, temps) { return this.printers.setTemp(id, temps || {}); }
+  printerSendJob(id, filePath, opts) { return this.printers.sendJob(id, filePath, opts || {}); }
   printersDiscover(opts) { return this.printers.discover(opts || {}); }
 
   // ---- 打印监控（曲线 / 通知）----

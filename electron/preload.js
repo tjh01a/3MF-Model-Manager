@@ -24,7 +24,7 @@ const METHODS = [
   'u1PresetHealth', 'u1PresetSnapshot', 'u1PresetRestore', 'u1OpenPresetBackups',
   'fileAssocReport', 'fileAssocOpenSettings', 'fileAssocRepair',
   'printersList', 'printersSnapshot', 'printerAdd', 'printerUpdate', 'printerRemove',
-  'printerTest', 'printerAction', 'printersDiscover', 'cameraFrame', 'cameraDetect',
+  'printerTest', 'printerAction', 'printerSetTemp', 'printerSendJob', 'printerPickFile', 'printersDiscover', 'cameraFrame', 'cameraDetect',
   'monitorHistory', 'monitorChart', 'monitorLatest', 'monitorStatus', 'monitorClear', 'notifyTest',
   'filamentsList', 'filamentCreate', 'filamentUpdate', 'filamentRemove', 'filamentSetDefault',
   'filamentPickImage', 'filamentSetImage', 'filamentReadImage', 'filamentSetImageData', 'filamentsOpenDir',

@@ -1,7 +1,7 @@
 {
   "name": "3mf-manager",
   "productName": "3MF模型管理器",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "本地 3MF 模型库 —— 扫描、分类、预览、去重、一键送切片软件，数据 100% 留在本机",
   "main": "electron/main.js",
   "author": "PrintShelf",
@@ -15,7 +15,7 @@
     "capture": "node launch.js --capture=data/ui-capture.png",
     "test": "node tests/run-tests.js",
     "smoke": "node tests/e2e-smoke.js",
-    "selftest": "node tools/syntax-check.js && node tests/run-tests.js && node tests/e2e-smoke.js && node tests/meshopt-tests.js && node tests/u1-tests.js && node tests/printer-tests.js && node tests/camera-tests.js && node tests/robustness-tests.js && node tests/bambucloud-tests.js && node tests/classify-tests.js && node tests/source-url-tests.js && node tests/monitor-tests.js && node tests/filaments-tests.js && node tests/weights-tests.js && node tests/core-hardening-tests.js && node tests/quarantine-tests.js && node tests/merge-tests.js && node tests/duplicates-tests.js && node tests/shapeprint-tests.js && node tests/thumbprint-tests.js && node tests/stock-tests.js && node tests/nlquery-tests.js && node tests/imghash-tests.js && node tests/report-tests.js && node tests/receipts-ledger-tests.js && node tools/check-ipc-contract.js",
+    "selftest": "node tools/syntax-check.js && node tests/run-tests.js && node tests/e2e-smoke.js && node tests/meshopt-tests.js && node tests/u1-tests.js && node tests/printer-tests.js && node tests/device-adapter-tests.js && node tests/discovery-tests.js && node tests/camera-tests.js && node tests/robustness-tests.js && node tests/bambucloud-tests.js && node tests/classify-tests.js && node tests/source-url-tests.js && node tests/monitor-tests.js && node tests/filaments-tests.js && node tests/weights-tests.js && node tests/core-hardening-tests.js && node tests/quarantine-tests.js && node tests/merge-tests.js && node tests/duplicates-tests.js && node tests/shapeprint-tests.js && node tests/thumbprint-tests.js && node tests/stock-tests.js && node tests/nlquery-tests.js && node tests/imghash-tests.js && node tests/report-tests.js && node tests/receipts-ledger-tests.js && node tools/check-ipc-contract.js",
     "build": "node tools/build-all.js --force",
     "setup": "node tools/build-setup.js",
     "setup:rebuild": "node tools/build-setup.js --rebuild",
@@ -30,7 +30,9 @@
   },
   "dependencies": {
     "adm-zip": "^0.5.16",
-    "chokidar": "^3.6.0"
+    "basic-ftp": "^5.3.1",
+    "chokidar": "^3.6.0",
+    "multicast-dns": "^7.2.5"
   },
   "devDependencies": {
     "electron": "^33.2.0",

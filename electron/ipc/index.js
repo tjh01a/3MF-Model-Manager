@@ -66,7 +66,7 @@ async function takeCamShot(p) {
   }
   // 快造 U1：优先主动抓拍一张真实时画面（G-code 触发摄像头服务）。
   // 抓不到再退回打印机上的 monitor.jpg，并由 staleSec/static 如实标注。
-  const opts = { host: p.ip, port: p.cameraPort, cameraUrl: p.cameraUrl };
+  const opts = { host: p.ip, port: p.cameraPort || p.port, cameraUrl: p.cameraUrl };
   const live = await camera.snapmakerLiveFrame(opts);
   if (live.ok) {
     return { buf: live.frames[0], staleSec: live.staleSec || 0, source: 'u1-live', static: false };
@@ -291,6 +291,18 @@ function registerIpc(services, { getWindow = () => null } = {}) {
     printerRemove: (id) => services.printerRemove(id),
     printerTest: (id) => services.printerTest(id),
     printerAction: (id, cmd) => services.printerAction(id, cmd),
+    printerSetTemp: (id, temps) => services.printerSetTemp(id, temps),
+    printerSendJob: (id, filePath, opts) => services.printerSendJob(id, filePath, opts),
+    printerPickFile: async () => {
+      const opts = {
+        title: '选择要发送到打印机的切片文件',
+        filters: [{ name: '切片文件', extensions: ['gcode', 'gco', '3mf'] }],
+        properties: ['openFile'],
+      };
+      const w = win();
+      const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts);
+      return (r && !r.canceled && r.filePaths && r.filePaths[0]) ? r.filePaths[0] : null;
+    },
 
     /**
      * 机内摄像头单帧。
@@ -301,6 +313,14 @@ function registerIpc(services, { getWindow = () => null } = {}) {
     cameraFrame: async (id) => {
       const p = services.printers.get(id);
       if (!p) throw new Error('设备不存在');
+      // 新适配器从协议里发现了摄像头地址（OctoPrint / Moonraker / 闪铸）
+      const st = services.printers.snapshot().find((s) => s.id === id);
+      const camUrl = p.cameraUrl || (st && st.camera && (st.camera.snapshotUrl || st.camera.streamUrl)) || '';
+      if (camUrl) {
+        const r = await camera.httpFrame(camUrl);
+        if (!r.ok) throw new Error(r.error || '取摄像头画面失败');
+        return { ok: true, base64: r.frames[0].toString('base64'), staleSec: 0, source: 'url', static: false, notice: '' };
+      }
       const shot = await takeCamShot(p);
       return {
         ok: true,

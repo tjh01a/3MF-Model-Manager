@@ -17,6 +17,7 @@ import { mountDetail, openDetail, closeDetail, refreshDetail } from './views/det
 import { mountSettings, openSettings, closeSettings, isSettingsOpen } from './views/settings.js';
 import { mountDevices, openDevices, closeDevices, isDevicesOpen, refreshDeviceBadge, isPromptFormOpen, cancelPromptForm } from './views/devices.js';
 import { mountFilaments, openFilaments, closeFilaments, isFilamentsOpen } from './views/filaments.js';
+import { mountDeviceHub, closeDeviceHub, isDeviceHubOpen, deviceHubDiag, openDeviceHub } from './views/device-hub.js';
 import { mountMonitorBar } from './components/monitorbar.js';
 import { mountOnboarding, maybeStartOnboarding, isOnboardingOpen } from './components/onboarding.js';
 import { mountLightbox, openLightbox, closeLightbox, isLightboxOpen } from './views/lightbox.js';
@@ -73,6 +74,9 @@ export function init() {
     mountDetail();
     mountSettings();
     mountDevices();
+    mountDeviceHub();
+    window.__printshelfDeviceHub = () => deviceHubDiag();
+    window.__printshelfOpenDevices = () => openDeviceHub();
     mountFilaments();
     mountMonitorBar();     // 主界面常驻打印监控条（设置里可关）
     mountLightbox();
@@ -630,8 +634,14 @@ function updateStatusBar() {
       : tr('共 ') + state.total + tr(' 个模型');
   }
 }
+function leaveDeviceHub() {
+  closeDeviceHub();
+  renderSidebar();
+}
+
 function onState(_s, reason) {
   if (reason === 'selection') updateStatusBar();
+  if (reason === 'query' && isDeviceHubOpen()) { closeDeviceHub(); renderSidebar(); }
 }
 
 // ---------- 标题栏 / 空状态按钮 ----------
@@ -675,7 +685,7 @@ function bindTitlebar() {
   bind('#btn-roulette', 'click', roulette);
   bind('#btn-theme', 'click', toggleTheme);
   bind('#btn-settings', 'click', () => openSettings());
-  bind('#btn-devices', 'click', () => { if (isDevicesOpen()) closeDevices(); else openDevices(); });
+  bind('#btn-devices', 'click', () => { if (isDeviceHubOpen()) leaveDeviceHub(); if (isDevicesOpen()) closeDevices(); else openDevices(); });
   bind('#btn-filaments', 'click', () => { if (isFilamentsOpen()) closeFilaments(); else openFilaments(); });
   bind('#btn-win-min', 'click', () => api.win('min').catch(() => {}));
   bind('#btn-win-max', 'click', () => api.win('max').catch(() => {}));
@@ -978,6 +988,7 @@ function handleEsc(e) {
   if (isMenuOpen()) { e.preventDefault(); e.stopImmediatePropagation(); closeMenu(); return; }
   if (isBambuAccountOpen()) { e.preventDefault(); e.stopImmediatePropagation(); closeBambuAccount(); return; }
   if (isDevicesOpen()) { e.preventDefault(); e.stopImmediatePropagation(); closeDevices(); return; }
+  if (isDeviceHubOpen()) { e.preventDefault(); e.stopImmediatePropagation(); leaveDeviceHub(); return; }
   if (isFilamentsOpen()) { e.preventDefault(); e.stopImmediatePropagation(); closeFilaments(); return; }
   if (isSettingsOpen()) { e.preventDefault(); e.stopImmediatePropagation(); closeSettings(); return; }
   if (isEditMode()) { e.preventDefault(); e.stopImmediatePropagation(); exitEditMode(); return; }
@@ -995,7 +1006,7 @@ function handleEsc(e) {
  */
 function isOverlayOpen() {
   return isModalOpen() || isPromptFormOpen() || isSettingsOpen() || isDevicesOpen() ||
-    isFilamentsOpen() || isLightboxOpen() || isOnboardingOpen() || isMenuOpen() ||
+    isDeviceHubOpen() || isFilamentsOpen() || isLightboxOpen() || isOnboardingOpen() || isMenuOpen() ||
     isBambuAccountOpen();
 }
 function onKey(e) {

@@ -23,6 +23,9 @@ const tls = require('tls');
 
 const BambuMqtt = require('./bambu-mqtt');
 const Moonraker = require('./moonraker');
+const catalog = require('./device-catalog');
+const { createAdapter } = require('./adapters');
+const { discoverPrinters } = require('./discovery');
 
 const POLL_MS_DEFAULT = 3000;
 const BAMBU_BACKOFF_MS = 3000;      // 断线重连起点，失败逐次翻倍，最多 30 秒
@@ -79,6 +82,8 @@ class PrinterService extends EventEmitter {
     this.store = store;
     this.cloud = cloud || null;   // BambuCloud 实例：云端通道的 token 来源
     this._bambu = new Map();   // id -> { client, state, connectedAt, lastError }
+    this._adapters = new Map(); // id -> PrinterAdapter（非拓竹/快造）
+    this._adapterFail = new Map();
     this._cache = new Map();   // id -> normalized status
     this._timer = null;
     this._ticking = false;
@@ -102,18 +107,22 @@ class PrinterService extends EventEmitter {
     await this.store.updateSettings({ printers: list });
   }
 
-  async add({ kind, name, ip, serial = '', accessCode = '', model = '', cameraUrl = '', mode = 'auto' } = {}) {
-    if (!kind || !['bambu', 'snapmaker'].includes(kind)) throw new Error('未知的打印机类型：' + kind);
+  async add({ kind, name, ip, serial = '', accessCode = '', model = '', cameraUrl = '', mode = 'auto', port = 0, adapter = '' } = {}) {
+    const k = catalog.normalizeKind(kind);
+    if (!catalog.BRANDS[k]) throw new Error('未知的打印机类型：' + kind);
     const netMode = PRINTER_MODES.includes(mode) ? mode : 'auto';
     const host = String(ip || '').trim();
     if (!host) throw new Error('请填写打印机 IP');
     const list = this.list();
     if (list.some((p) => p.ip === host)) throw new Error('这台打印机已经添加过了：' + host);
+    const brand = catalog.BRANDS[k];
     const item = {
       id: 'pr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      kind,
-      name: String(name || (kind === 'bambu' ? '拓竹打印机' : '快造 U1')).trim(),
+      kind: k,
+      adapter: String(adapter || brand.adapter || '').trim(),
+      name: String(name || brand.label).trim(),
       ip: host,
+      port: Number(port) || brand.defaultPort || 0,
       serial: String(serial || '').trim(),
       accessCode: String(accessCode || '').trim(),
       // 可选的摄像头地址（快照或 MJPEG）。留空则用机型自带的取帧方式。
@@ -133,9 +142,10 @@ class PrinterService extends EventEmitter {
     const list = this.list();
     const cur = list.find((p) => p.id === id);
     if (!cur) throw new Error('找不到这台打印机');
-    for (const k of ['name', 'ip', 'serial', 'accessCode', 'model', 'cameraUrl']) {
+    for (const k of ['name', 'ip', 'serial', 'accessCode', 'model', 'cameraUrl', 'adapter']) {
       if (k in patch && patch[k] != null) cur[k] = String(patch[k]).trim();
     }
+    if ('port' in patch && patch.port != null) cur.port = Number(patch.port) || 0;
     if ('enabled' in patch) cur.enabled = !!patch.enabled;
     if ('mode' in patch) {
       const m = String(patch.mode || '').trim();
@@ -168,13 +178,20 @@ class PrinterService extends EventEmitter {
   }
 
   _offline(p, via = 'lan') {
+    const brand = catalog.brandOf(p.kind);
+    const beta = catalog.isBeta(p.kind);
     return {
       id: p.id, kind: p.kind, name: p.name, model: p.model || '', ip: p.ip,
+      brand: p.kind, brandLabel: brand ? brand.label : '未知设备',
+      adapter: p.adapter || (brand ? brand.adapter : p.kind),
+      beta, betaNote: beta ? catalog.BETA_NOTE : '',
+      capabilities: catalog.capabilitiesOf(p.kind),
       via,
       online: false, state: 'offline', stateText: '离线',
       job: null,
       temps: { nozzle: { cur: 0, target: 0 }, bed: { cur: 0, target: 0 }, chamber: null },
-      materials: [], fan: null, speed: null, updatedAt: 0, error: '',
+      materials: [], fan: null, speed: null, camera: null,
+      updatedAt: 0, error: '',
     };
   }
 
@@ -184,6 +201,10 @@ class PrinterService extends EventEmitter {
       try { ent.client && ent.client.close(); } catch (_) { /* 忽略 */ }
     }
     this._bambu.clear();
+    for (const a of this._adapters.values()) {
+      try { a.disconnect && a.disconnect(); } catch (_) { /* 忽略 */ }
+    }
+    this._adapters.clear();
     this._cache.clear();
     this.tick().catch(() => {});
   }
@@ -200,15 +221,20 @@ class PrinterService extends EventEmitter {
   stop() {
     if (this._timer) { clearInterval(this._timer); this._timer = null; }
     for (const id of Array.from(this._bambu.keys())) this._dropConnection(id);
+    for (const id of Array.from(this._adapters.keys())) this._dropConnection(id);
   }
 
-  /** 跑一轮：快造走 HTTP 轮询，拓竹保持长连接（断了就重连） */
+  /** 跑一轮：快造/拓竹保留已验证通道；其余品牌走统一适配器 */
   async tick() {
     if (this._ticking) return;
     this._ticking = true;
     try {
       const list = this.list().filter((p) => p.enabled !== false);
-      await Promise.all(list.map((p) => (p.kind === 'bambu' ? this._ensureBambu(p) : this._pollMoonraker(p))));
+      await Promise.all(list.map((p) => {
+        if (p.kind === 'bambu') return this._ensureBambu(p);
+        if (p.kind === 'snapmaker') return this._pollMoonraker(p);
+        return this._pollAdapter(p);
+      }));
     } finally {
       this._ticking = false;
     }
@@ -217,7 +243,7 @@ class PrinterService extends EventEmitter {
   // ------------------------------------------------------------------ 快造
 
   async _pollMoonraker(p) {
-    const mk = new Moonraker({ host: p.ip });
+    const mk = new Moonraker({ host: p.ip, port: p.port || 7125 });
     try {
       const st = await mk.status();
       const fails = (this._moonFail.get(p.id) || 0);
@@ -232,6 +258,47 @@ class PrinterService extends EventEmitter {
       if (n >= 2) {
         const off = this._offline(p);
         off.error = e.message;
+        this._cache.set(p.id, off);
+        this.emit('update', off);
+      }
+    }
+  }
+
+  _ensureAdapter(p) {
+    let a = this._adapters.get(p.id);
+    if (a) return a;
+    a = createAdapter({
+      id: p.id, kind: p.kind, adapter: p.adapter, ip: p.ip, port: p.port,
+      name: p.name, model: p.model, serial: p.serial, accessCode: p.accessCode,
+      apiKey: p.accessCode, cameraUrl: p.cameraUrl,
+    });
+    this._adapters.set(p.id, a);
+    return a;
+  }
+
+  /** 非拓竹/快造品牌：一个设备一个适配器，适配器自己维护连接。 */
+  async _pollAdapter(p) {
+    let a;
+    try { a = this._ensureAdapter(p); } catch (e) {
+      const off = this._offline(p);
+      off.error = e.message;
+      this._cache.set(p.id, off);
+      this.emit('update', off);
+      return;
+    }
+    try {
+      const st = await a.getStatus();
+      this._adapterFail.delete(p.id);
+      st.name = p.name || st.name;
+      st.ip = p.ip;
+      this._cache.set(p.id, st);
+      this.emit('update', st);
+    } catch (e) {
+      const n = (this._adapterFail.get(p.id) || 0) + 1;
+      this._adapterFail.set(p.id, n);
+      if (n >= 2) {
+        const off = this._offline(p);
+        off.error = (e && e.message) || '连接失败';
         this._cache.set(p.id, off);
         this.emit('update', off);
       }
@@ -311,6 +378,9 @@ class PrinterService extends EventEmitter {
 
     return {
       id: p.id, kind: 'snapmaker', name: p.name,
+      brand: 'snapmaker', brandLabel: catalog.BRANDS.snapmaker.label,
+      adapter: 'moonraker', beta: false, betaNote: '',
+      capabilities: catalog.capabilitiesOf('snapmaker'),
       model: p.model || 'Snapmaker U1', ip: p.ip,
       online: true, state, stateText: this._stateText(state),
       job: (ps.filename && this._jobVisible(state)) ? {
@@ -534,6 +604,9 @@ class PrinterService extends EventEmitter {
     const jobName = pr.subtask_name || pr.gcode_file;
     return {
       id: p.id, kind: 'bambu', name: p.name,
+      brand: 'bambu', brandLabel: catalog.BRANDS.bambu.label,
+      adapter: 'bambu', beta: false, betaNote: '',
+      capabilities: catalog.capabilitiesOf('bambu'),
       model: p.model || pr.machine_name || 'Bambu Lab', ip: p.ip,
       online: true, state, stateText: this._stateText(state),
       job: (jobName && this._jobVisible(state)) ? {
@@ -549,6 +622,7 @@ class PrinterService extends EventEmitter {
       materials,
       fan: Array.isArray(pr.cooling_fan_speed) ? num(pr.cooling_fan_speed[0]) : null,
       speed: pr.spd_lvl != null ? num(pr.spd_lvl) : null,
+      camera: { kind: 'frame' },
       updatedAt: Date.now(), error: '',
     };
   }
@@ -564,8 +638,8 @@ class PrinterService extends EventEmitter {
 
   _stateText(state) {
     return ({
-      idle: '空闲', printing: '打印中', paused: '已暂停', preparing: '准备中',
-      finished: '已完成', error: '出错', offline: '离线',
+      idle: '空闲', printing: '打印中', paused: '已暂停', preparing: '准备中', busy: '忙碌',
+      finished: '已完成', error: '出错', offline: '离线', connecting: '连接中',
     })[state] || state;
   }
 
@@ -573,6 +647,10 @@ class PrinterService extends EventEmitter {
     const ent = this._bambu.get(id);
     if (ent && ent.client) { try { ent.client.close(); } catch (_) { /* 忽略 */ } }
     this._bambu.delete(id);
+    const a = this._adapters.get(id);
+    if (a) { try { a.disconnect && a.disconnect(); } catch (_) { /* 忽略 */ } }
+    this._adapters.delete(id);
+    this._adapterFail.delete(id);
   }
 
   // ------------------------------------------------------------------ 控制
@@ -585,11 +663,20 @@ class PrinterService extends EventEmitter {
     if (!map[cmd]) throw new Error('不支持的操作：' + cmd);
 
     if (p.kind === 'snapmaker') {
-      const mk = new Moonraker({ host: p.ip });
+      const mk = new Moonraker({ host: p.ip, port: p.port || 7125 });
       if (cmd === 'pause') await mk.pause();
       else if (cmd === 'resume') await mk.resume();
       else await mk.cancel();
       setTimeout(() => { this._pollMoonraker(p).catch(() => {}); }, 800);
+      return { ok: true };
+    }
+
+    if (p.kind !== 'bambu') {
+      const a = this._ensureAdapter(p);
+      if (cmd === 'pause') await a.pause();
+      else if (cmd === 'resume') await a.resume();
+      else await a.stop();
+      setTimeout(() => { this._pollAdapter(p).catch(() => {}); }, 900);
       return { ok: true };
     }
 
@@ -599,15 +686,72 @@ class PrinterService extends EventEmitter {
     return { ok: true };
   }
 
+  /** 设置喷嘴/热床目标温度。 */
+  async setTemp(id, { nozzle, bed } = {}) {
+    const p = this.get(id);
+    if (!p) throw new Error('找不到这台打印机');
+    if (p.kind === 'snapmaker') {
+      const mk = new Moonraker({ host: p.ip, port: p.port || 7125 });
+      await mk.setTemperature(nozzle, bed);
+      setTimeout(() => { this._pollMoonraker(p).catch(() => {}); }, 900);
+      return { ok: true };
+    }
+    if (p.kind === 'bambu') {
+      const ent = this._bambu.get(p.id);
+      if (!ent || !ent.client || !ent.client.connected) throw new Error('还没有连上这台打印机');
+      if (Number.isFinite(Number(nozzle))) ent.client.publish({ print: { sequence_id: String(Date.now()), command: 'gcode_line', param: 'M104 S' + Math.round(Number(nozzle)) } });
+      if (Number.isFinite(Number(bed))) ent.client.publish({ print: { sequence_id: String(Date.now() + 1), command: 'gcode_line', param: 'M140 S' + Math.round(Number(bed)) } });
+      return { ok: true };
+    }
+    const a = this._ensureAdapter(p);
+    await a.setTemperature(nozzle, bed);
+    setTimeout(() => { this._pollAdapter(p).catch(() => {}); }, 900);
+    return { ok: true };
+  }
+
+  /** 上传文件并可选立即开始打印。 */
+  async sendJob(id, filePath, opts = {}) {
+    const p = this.get(id);
+    if (!p) throw new Error('找不到这台打印机');
+    if (!filePath || !fs.existsSync(filePath)) throw new Error('找不到要发送的文件：' + (filePath || ''));
+    if (p.kind === 'snapmaker') {
+      const mk = new Moonraker({ host: p.ip, port: p.port || 7125 });
+      const r = await mk.upload(filePath, path.basename(filePath), opts.start !== false);
+      setTimeout(() => { this._pollMoonraker(p).catch(() => {}); }, 1200);
+      return r || { ok: true, started: opts.start !== false };
+    }
+    if (p.kind === 'bambu') {
+      const a = createAdapter({
+        id: p.id, kind: 'bambu', ip: p.ip, serial: p.serial, accessCode: p.accessCode, model: p.model,
+      });
+      try { await a.connect(); return await a.sendJob(filePath, opts); }
+      finally { try { await a.disconnect(); } catch (_) { /* 忽略 */ } }
+    }
+    const a = this._ensureAdapter(p);
+    const r = await a.sendJob(filePath, opts);
+    setTimeout(() => { this._pollAdapter(p).catch(() => {}); }, 1200);
+    return r;
+  }
+
   /** 单台测试连接，返回可读结论 */
   async test(id) {
     const p = this.get(id);
     if (!p) throw new Error('找不到这台打印机');
     if (p.kind === 'snapmaker') {
-      const mk = new Moonraker({ host: p.ip });
+      const mk = new Moonraker({ host: p.ip, port: p.port || 7125 });
       const info = await mk.info();
       const st = info && info.result || {};
       return { ok: true, message: '连接成功 · ' + (st.hostname || p.ip) + ' · 固件 ' + (st.software_version || '—') };
+    }
+    if (p.kind !== 'bambu') {
+      const a = this._ensureAdapter(p);
+      try {
+        await a.connect();
+        const st = await a.getStatus();
+        return { ok: true, message: '连接成功 · ' + (st.model || st.name || p.ip) + ' · ' + (st.adapter || '') };
+      } catch (e) {
+        return { ok: false, message: (e && e.message) || '连接失败' };
+      }
     }
     return await new Promise((resolve) => {
       const client = new BambuMqtt({ host: p.ip, serial: p.serial, accessCode: p.accessCode, timeout: 5000 });
@@ -775,48 +919,36 @@ class PrinterService extends EventEmitter {
   }
 
   /**
-   * 扫本网段找打印机。只探测两个特征端口：
-   *   7125 → Moonraker（快造 U1 等 Klipper 机器）
-   *   8883 → 拓竹局域网 MQTT
-   * 254 个地址、并发 48、单个 420ms，整轮 2~4 秒。
+   * 多策略发现：mDNS + SSDP + HTTP 指纹 + 端口/子网扫描，结果去重。
+   * opts.timeout 是单端口超时（ms），不是整轮超时。
    */
-  async discover({ timeout = 420, concurrency = 48 } = {}) {
-    const subnet = this._subnet();
-    if (!subnet) throw new Error('没有找到局域网地址，请检查网络连接');
-    const hosts = [];
-    for (let i = 1; i <= 254; i++) hosts.push(subnet + '.' + i);
-
-    const found = [];
-    let idx = 0;
-    const worker = async () => {
-      for (;;) {
-        const i = idx++;
-        if (i >= hosts.length) return;
-        const host = hosts[i];
-        const [mk, bb] = await Promise.all([this._probe(host, 7125, timeout), this._probe(host, 8883, timeout)]);
-        if (mk) {
-          let name = 'Klipper 打印机';
-          try {
-            const info = await new Moonraker({ host }).info();
-            name = (info && info.result && info.result.hostname) || name;
-          } catch (_) { /* 用默认名 */ }
-          found.push({ kind: 'snapmaker', ip: host, name: '快造 ' + name, serial: '', accessCode: '', model: 'Snapmaker U1' });
-        }
-        if (bb) {
-          const serial = await this._bambuSerial(host);
-          found.push({
-            kind: 'bambu', ip: host,
-            name: '拓竹 ' + (serial ? serial.slice(-3) : ''),
-            serial, accessCode: serial ? this._bambuAccessCode(serial) : '',
-            model: 'Bambu Lab',
-          });
-        }
-      }
-    };
-    await Promise.all(Array.from({ length: concurrency }, worker));
-
+  async discover(opts = {}) {
+    const list = await discoverPrinters(opts);
     const known = new Set(this.list().map((p) => p.ip));
-    return found.map((f) => Object.assign(f, { added: known.has(f.ip) }));
+    // 协议允许免凭据直连的（Moonraker / Anycubic 原生 / OctoPrint）扫描后直接入库，
+    // 用户在设备卡片上就能看到第一次状态；拓竹/闪铸缺访问码或 Check Code，只呈现不自动加。
+    for (const d of list) {
+      if (!d.autoConnect || known.has(d.host)) continue;
+      try {
+        const item = await this.add({
+          kind: d.kind, adapter: d.adapter, name: d.name, ip: d.host, port: d.port,
+          model: d.model, serial: d.serial, accessCode: d.accessCode, cameraUrl: d.cameraUrl,
+        });
+        known.add(item.ip);
+        d.added = true;
+      } catch (e) {
+        d.addError = (e && e.message) || '自动添加失败';
+      }
+    }
+    const connected = new Set(this.snapshot().filter((s) => s.online).map((s) => s.ip));
+    return list.map((d) => ({
+      ...d,
+      accessCode: d.kind === 'bambu' && d.serial ? (this._bambuAccessCode(d.serial) || d.accessCode || '') : (d.accessCode || ''),
+      added: known.has(d.host),
+      connected: connected.has(d.host),
+      id: 'disc:' + d.host,
+      ip: d.host,
+    }));
   }
 }
 

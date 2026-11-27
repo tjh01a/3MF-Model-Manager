@@ -2,7 +2,7 @@
 <html lang="zh-CN" data-theme="light" data-iconset="lucide" data-motion="full" data-motion-effective="full">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' shelf: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' shelf: data: blob: http: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:;">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <!-- 7 张外部样式表（原 6 张 + motion.css）。启动动画仍内联在 <head>，首帧不依赖它们。 -->
   <title data-i18n="3MF模型管理器 · 本地 3MF 模型库">3MF模型管理器 · 本地 3MF 模型库</title>
@@ -74,6 +74,7 @@
   <link rel="stylesheet" href="styles/views.css">
   <link rel="stylesheet" href="styles/meshopt.css">
   <link rel="stylesheet" href="styles/devices.css">
+  <link rel="stylesheet" href="styles/device-hub.css">
   <link rel="stylesheet" href="styles/filaments.css">
   <link rel="stylesheet" href="styles/onboarding.css">
   <!-- 最后加载：简洁化规则以 html[data-iconset] 为前缀、动效以 html[data-motion-effective]
@@ -344,6 +345,7 @@
     </aside>
 
     <main id="main">
+      <section id="device-hub" class="device-hub" hidden></section>
       <div id="toolbar">
         <div class="tb-title-wrap">
           <h1 id="view-title" data-i18n="全部模型">全部模型</h1>

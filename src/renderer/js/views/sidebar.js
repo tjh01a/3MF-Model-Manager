@@ -10,6 +10,7 @@ import { openMenu } from '../components/menu.js';
 import { setCategory, addTag as addTagTo, createCategoryWith, createTagWith, pickModelsForCategory } from '../components/assign.js';
 import { flyToTarget } from '../components/dropfx.js';
 import { openFilaments } from './filaments.js';
+import { openDeviceHub } from './device-hub.js';
 
 // constants.js 为 CommonJS，渲染层不可 import，按冻结值内联
 const SMART_VIEWS = [
@@ -26,10 +27,13 @@ const SMART_VIEWS = [
 ];
 /** 非 smart 的模块入口：点击直接触发动作，不改 state.query */
 const ACTION_VIEWS = [
+  { key: 'devices', label: tr('设备中心'), icon: 'i-printer', group: 'devices', act: 'open-device-hub',
+    title: tr('局域网发现、连接打印机与打印监控') },
   { key: 'filaments', label: tr('耗材管理'), icon: 'i-box', group: 'cost', act: 'open-filaments',
     title: tr('管理耗材库存（真正拥有的）与耗材库（选购参考）') },
 ];
 const GROUPS = [
+  { key: 'devices', label: tr('设备') },
   { key: 'library', label: tr('模型库') },
   { key: 'quality', label: tr('质量检查') },
   { key: 'cost',    label: tr('耗材与成本') },
@@ -57,7 +61,8 @@ function renderLibrary() {
         icon(v.icon) + '<span class="nav-label">' + escapeHtml(v.label) + '</span>' + badge + '</button>';
     }
     for (const v of actions) {
-      html += '<button class="nav-item" data-act="' + escapeHtml(v.act) + '" title="' + escapeHtml(v.title || v.label) + '">' +
+      const on = v.act === 'open-device-hub' && state.deviceHubOpen ? ' active' : '';
+      html += '<button class="nav-item' + on + '" data-act="' + escapeHtml(v.act) + '" title="' + escapeHtml(v.title || v.label) + '">' +
         icon(v.icon) + '<span class="nav-label">' + escapeHtml(v.label) + '</span></button>';
     }
     html += '</div>';
@@ -121,7 +126,7 @@ export function renderSidebar() {
     (state.tags || []).map((t) => [t.id, t.name, t.color]),
     (state.views || []).map((v) => [v.id, v.name]),
     s.byCategory || {},
-    q.smart, q.categoryId, q.tagIds,
+    q.smart, q.categoryId, q.tagIds, !!state.deviceHubOpen,
   ]);
   const lib = qs('#nav-library');
   // flashCategory 是一次性动效标记：它强制重渲染，但不写进签名，避免下次平白多刷一轮
@@ -139,6 +144,8 @@ function onClick(e) {
   // docs/14：耗材与成本组里的模块入口（非 smart），直接触发动作
   const act = t.closest('[data-act="open-filaments"]');
   if (act) { openFilaments(); return; }
+  const dev = t.closest('[data-act="open-device-hub"]');
+  if (dev) { openDeviceHub(); return; }
   const smart = t.closest('[data-smart]');
   if (smart) {
     const key = smart.dataset.smart;

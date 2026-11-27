@@ -427,7 +427,11 @@ async function testReal() {
   const r = await C.convert(sample, { force: true });
 
   ok('真实转换产出文件', fs.existsSync(r.outPath), r.outPath);
-  ok('产物体积合理', r.report && r.report.outputBytes > 1024 * 1024, String(r.report && r.report.outputBytes));
+  // 不能写死 1MiB：同一份模型重新压缩后可能比源文件略小（本机 1.06MB → 1.01MB）。
+  // 这里真正要防的是「产物被截断/只剩几个文件」，所以按源文件比例判断。
+  ok('产物体积合理',
+    r.report && r.report.outputBytes > before.size * 0.8,
+    r.report ? `${r.report.outputBytes} / source ${before.size}` : '');
   ok('目标机器是 U1', r.report && r.report.printerTo === 'Snapmaker U1 (0.4 nozzle)', String(r.report && r.report.printerTo));
   ok('转换不改源文件（转换期间）',
     r.report && Math.abs(Number(r.report.sourceBytes) - before.size) < 1, String(r.report && r.report.sourceBytes));
