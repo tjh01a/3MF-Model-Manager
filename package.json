@@ -1,7 +1,7 @@
 {
   "name": "3mf-manager",
   "productName": "3MF模型管理器",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "本地 3MF 模型库 —— 扫描、分类、预览、去重、一键送切片软件，数据 100% 留在本机",
   "main": "electron/main.js",
   "author": "PrintShelf",
@@ -14,6 +14,13 @@
     "electron:smoke": "node launch.js --smoke",
     "capture": "node launch.js --capture=data/ui-capture.png",
     "test": "node tests/run-tests.js",
+    "test:ui": "node tests/ui-p0-static-tests.js && node tests/ui-p0-large-library.js",
+    "test:ui:probe": "node launch.js --ui-script=tools/probe-p0-ui.js --capture=data/probe-p0-ui.png --width=1440 --height=900",
+    "test:a11y": "node tools/a11y-e2e.js",
+    "test:import": "node tools/import-e2e.js",
+    "test:onboarding": "node tools/onboarding-e2e.js",
+    "test:onboarding:lang": "node tools/onboarding-language-e2e.js",
+    "test:onboarding:a11y": "node tools/onboarding-a11y.js",
     "smoke": "node tests/e2e-smoke.js",
     "selftest": "node tools/syntax-check.js && node tests/run-tests.js && node tests/e2e-smoke.js && node tests/meshopt-tests.js && node tests/u1-tests.js && node tests/printer-tests.js && node tests/device-adapter-tests.js && node tests/discovery-tests.js && node tests/camera-tests.js && node tests/robustness-tests.js && node tests/bambucloud-tests.js && node tests/classify-tests.js && node tests/source-url-tests.js && node tests/monitor-tests.js && node tests/filaments-tests.js && node tests/weights-tests.js && node tests/core-hardening-tests.js && node tests/quarantine-tests.js && node tests/merge-tests.js && node tests/duplicates-tests.js && node tests/shapeprint-tests.js && node tests/thumbprint-tests.js && node tests/stock-tests.js && node tests/nlquery-tests.js && node tests/imghash-tests.js && node tests/report-tests.js && node tests/receipts-ledger-tests.js && node tools/check-ipc-contract.js",
     "build": "node tools/build-all.js --force",
@@ -35,6 +42,7 @@
     "multicast-dns": "^7.2.5"
   },
   "devDependencies": {
+    "axe-core": "^4.14.1",
     "electron": "^33.2.0",
     "rcedit": "^5.0.1"
   },

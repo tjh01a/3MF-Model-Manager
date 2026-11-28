@@ -46,6 +46,55 @@
 .tb-center { flex: 1 1 auto; min-width: 0; display: flex; justify-content: center; }
 .tb-right { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; }
 
+/* 顶部次要动作收进一个“更多”菜单：可见动作从 8 个降到 4 个，避免图标墙。
+   面板仍放在 titlebar 内，按钮 id 不变，原有绑定无需改。 */
+.app-more-wrap { position: relative; flex: 0 0 auto; }
+.app-more-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: 196px;
+  padding: 6px;
+  background: var(--surface-pop);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  -webkit-app-region: no-drag;
+  animation: fade-in var(--t-fast) var(--ease);
+}
+.app-more-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.app-more-item:hover { color: var(--text); background: var(--bg-soft); }
+.app-more-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.app-more-item .ico { width: 16px; height: 16px; color: var(--text-mute); }
+.app-more-item:hover .ico { color: var(--accent); }
+.app-more-glyph {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 6px;
+}
+
 /* brand */
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand-mark {
@@ -215,8 +264,8 @@ body.sidebar-collapsed #sidebar .tag-chip::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  padding: 10px 20px;
+  gap: 10px;
+  padding: 7px 20px;
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
 }
@@ -254,8 +303,8 @@ body.sidebar-collapsed #sidebar .tag-chip::before {
    6. 详情抽屉（右侧滑入）
    -------------------------------------------------------------------------- */
 #detail {
-  width: 360px;
-  min-width: 320px;   /* 高 DPI 缩放下仍保证详情表单有足够宽度 */
+  width: clamp(340px, 26vw, 380px);
+  min-width: 340px;   /* 高 DPI 缩放下仍保证详情表单有足够宽度 */
   min-height: 0;
   display: flex;
   flex-direction: column;

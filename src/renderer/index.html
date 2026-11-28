@@ -23,8 +23,12 @@
       animation: boot-autohide .01s linear 12s forwards;
     }
     html[data-theme="dark"] #boot-splash { background: #0f1420; color: #e7ecf6; }
+    html[data-theme="dark"] #boot-splash .boot-sub,
+    html[data-theme="dark"] #boot-splash .boot-hint { color: #93a0b5; }
     @media (prefers-color-scheme: dark) {
       html:not([data-theme="light"]) #boot-splash { background: #0f1420; color: #e7ecf6; }
+      html:not([data-theme="light"]) #boot-splash .boot-sub,
+      html:not([data-theme="light"]) #boot-splash .boot-hint { color: #93a0b5; }
     }
     #boot-splash.is-leaving { opacity: 0; transform: scale(1.02); pointer-events: none; }
     @keyframes boot-autohide { to { opacity: 0; visibility: hidden; pointer-events: none; } }
@@ -39,7 +43,7 @@
     .boot-ring svg { width: 30px; height: 30px; fill: none; stroke: #fff; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
     @keyframes boot-breathe { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-4px) scale(1.035); } }
     .boot-title { margin-top: 20px; font-size: 18px; font-weight: 600; letter-spacing: .02em; }
-    .boot-sub { margin-top: 4px; font-size: 11px; color: #94a3b8; }
+    .boot-sub { margin-top: 4px; font-size: 11px; color: #5b6b80; }
     .boot-track { position: relative; width: 220px; height: 5px; margin-top: 24px; border-radius: 999px; background: #e5e9f0; overflow: hidden; }
     html[data-theme="dark"] .boot-track { background: #2b3446; }
     .boot-track > i {
@@ -54,7 +58,7 @@
       transition: width .32s cubic-bezier(.22,.8,.3,1);
     }
     @keyframes boot-slide { from { transform: translateX(-110%); } to { transform: translateX(240%); } }
-    .boot-hint { margin-top: 14px; font-size: 11px; color: #94a3b8; display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 16px; text-align: center; }
+    .boot-hint { margin-top: 14px; font-size: 11px; color: #5b6b80; display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 16px; text-align: center; }
     .boot-pct { margin-left: 4px; color: #4f46e5; font-variant-numeric: tabular-nums; }
     html[data-theme="dark"] .boot-pct { color: #a5a0ff; }
     .boot-dots { display: inline-flex; gap: 3px; }
@@ -311,11 +315,30 @@
       <button id="btn-devices" class="icon-btn dev-btn" data-i18n-title="设备：管理你的打印机" title="设备：管理你的打印机">
         <svg class="ico"><use href="#i-printer"/></svg><span class="dev-badge" hidden></span>
       </button>
-      <button id="btn-filaments" class="icon-btn" data-i18n-title="耗材管理：库存与选购库" title="耗材管理：库存与选购库"><svg class="ico"><use href="#i-box"/></svg></button>
-      <button id="btn-roulette" class="icon-btn" data-i18n-title="打印轮盘：随机挑一个未打印模型" title="打印轮盘：随机挑一个未打印模型"><svg class="ico"><use href="#i-dice"/></svg></button>
-      <button id="btn-language" class="icon-btn lang-btn" data-i18n-title="language.switchToEn" title="language.switchToEn" aria-label="Language"><span id="lang-label">中</span></button>
-      <button id="btn-theme" class="icon-btn" data-i18n-title="切换深浅主题" title="切换深浅主题"><svg class="ico"><use href="#i-moon"/></svg></button>
-      <button id="btn-settings" class="icon-btn" data-i18n-title="设置" title="设置"><svg class="ico"><use href="#i-settings"/></svg></button>
+      <div id="app-more-wrap" class="app-more-wrap">
+        <button id="btn-app-more" class="icon-btn app-more-btn" data-i18n-title="更多" title="更多"
+          data-i18n-aria="更多" aria-label="更多"
+          aria-haspopup="menu" aria-expanded="false" aria-controls="app-more-panel">
+          <svg class="ico"><use href="#i-more"/></svg>
+        </button>
+        <div id="app-more-panel" class="app-more-panel" role="menu" aria-label="更多" hidden>
+          <button id="btn-filaments" class="app-more-item" role="menuitem" data-i18n-title="耗材管理：库存与选购库" title="耗材管理：库存与选购库">
+            <svg class="ico"><use href="#i-box"/></svg><span class="app-more-label">耗材管理</span>
+          </button>
+          <button id="btn-roulette" class="app-more-item" role="menuitem" data-i18n-title="打印轮盘：随机挑一个未打印模型" title="打印轮盘：随机挑一个未打印模型">
+            <svg class="ico"><use href="#i-dice"/></svg><span class="app-more-label">打印轮盘</span>
+          </button>
+          <button id="btn-language" class="app-more-item lang-btn" role="menuitem" data-i18n-title="language.switchToEn" title="language.switchToEn">
+            <span class="app-more-glyph" id="lang-label">中</span><span class="app-more-label">切换语言</span>
+          </button>
+          <button id="btn-theme" class="app-more-item" role="menuitem" data-i18n-title="切换深浅主题" title="切换深浅主题">
+            <svg class="ico"><use href="#i-moon"/></svg><span class="app-more-label">深浅主题</span>
+          </button>
+          <button id="btn-settings" class="app-more-item" role="menuitem" data-i18n-title="设置" title="设置">
+            <svg class="ico"><use href="#i-settings"/></svg><span class="app-more-label">设置</span>
+          </button>
+        </div>
+      </div>
       <span class="tb-sep"></span>
       <button id="btn-win-min" class="win-btn" data-i18n-title="最小化" title="最小化"><svg class="ico"><use href="#i-minus"/></svg></button>
       <button id="btn-win-max" class="win-btn" data-i18n-title="最大化" title="最大化"><svg class="ico"><use href="#i-square"/></svg></button>
@@ -356,7 +379,7 @@
           <button id="btn-clear-filters" class="text-btn" hidden data-i18n="清除筛选">清除筛选</button>
           <label class="select-wrap" data-i18n-title="排序字段" title="排序字段">
             <svg class="ico"><use href="#i-sort"/></svg>
-            <select id="sort-select" class="select">
+            <select id="sort-select" class="select" data-i18n-aria="排序字段" aria-label="排序字段">
               <option value="createdAt" data-i18n="添加时间">添加时间</option>
               <option value="name" data-i18n="名称">名称</option>
               <option value="category" data-i18n="分类">分类</option>
@@ -376,7 +399,7 @@
           </div>
           <label class="size-slider-wrap" data-i18n-title="缩略图大小" title="缩略图大小">
             <svg class="ico"><use href="#i-image"/></svg>
-            <input id="size-slider" type="range" min="140" max="340" step="10" value="220">
+            <input id="size-slider" type="range" min="140" max="340" step="10" value="220" data-i18n-aria="缩略图大小" aria-label="缩略图大小">
           </label>
           <button id="btn-select-all" class="text-btn" data-i18n-title="全选 (Ctrl+A)" title="全选 (Ctrl+A)" data-i18n="全选">全选</button>
         </div>

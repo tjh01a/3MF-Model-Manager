@@ -377,6 +377,54 @@
    表单字段互相挤压。禁止收缩，让内容自然堆叠并滚动。 */
 .detail-body > * { flex: 0 0 auto; }
 
+/* 详情摘要：标题、状态和主操作固定在滚动区顶部。
+   面板只有 340–380px，不像以前先放大图 + 8 个按钮，再让用户猜标题在下面。 */
+.detail-summary {
+  position: sticky;
+  top: -16px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: -16px -18px 0;
+  padding: 14px 18px 12px;
+  background: color-mix(in srgb, var(--bg-elev) 94%, transparent);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.detail-summary .detail-titlebar { gap: 5px; }
+.detail-summary .detail-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+.detail-summary-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-width: 0;
+}
+.detail-summary-actions .btn-primary {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: center;
+}
+.detail-summary-actions .btn-ghost {
+  flex: 0 0 auto;
+  max-width: 112px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.detail-summary-actions .icon-btn { flex: 0 0 30px; }
+
 .detail-preview, .detail-hero {
   display: grid;
   place-items: center;

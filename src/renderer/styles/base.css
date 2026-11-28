@@ -24,7 +24,8 @@
   /* 文字（slate 系） */
   --text: #1e293b;
   --text-dim: #475569;
-  --text-mute: #94a3b8;
+  /* 次要文字对白底至少 4.5:1；旧值 #94a3b8 仅约 2.6:1。 */
+  --text-mute: #5b6b80;
 
   /* 边框与装饰 */
   --border: #e5e9f0;
@@ -108,7 +109,8 @@ html[data-theme="dark"] {
 
   --text: #e7ecf6;
   --text-dim: #a9b4c8;
-  --text-mute: #6f7d95;
+  /* 深色底上次要文字提亮，避免 3:1 左右的小字灰。 */
+  --text-mute: #93a0b5;
 
   --border: #2b3446;
   --border-strong: #3a465c;

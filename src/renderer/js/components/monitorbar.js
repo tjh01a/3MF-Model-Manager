@@ -21,6 +21,9 @@ let snap = [];
 let configured = [];
 let paintQueued = false;
 let noteTimer = null;
+// P0：监控条默认只保留一行摘要，展开后才显示横向卡片。大量设备时不会把
+// 模型网格整体往下推。状态保存在内存，不写设置，避免升级后行为突变。
+let collapsed = true;
 const diag = { pushes: 0, renders: 0, cards: 0, enabled: true, lastNote: null };
 
 function fmtMin(min) {
@@ -102,6 +105,28 @@ function visibleList() {
   return list;
 }
 
+function ensureCollapseButton(bar) {
+  let btn = bar.querySelector('.mon-collapse');
+  if (btn) return btn;
+  btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'mon-collapse';
+  btn.dataset.monAct = 'collapse';
+  btn.setAttribute('aria-label', '展开或收起打印监控');
+  const head = bar.querySelector('.mon-headbar');
+  if (head) head.appendChild(btn);
+  return btn;
+}
+
+function applyCollapsed(bar) {
+  const btn = ensureCollapseButton(bar);
+  bar.classList.toggle('is-collapsed', collapsed);
+  if (!btn) return;
+  btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  btn.textContent = collapsed ? tr('展开') : tr('收起');
+  btn.title = collapsed ? tr('展开打印监控卡片') : tr('收起打印监控卡片');
+}
+
 function paint() {
   paintQueued = false;
   const bar = document.getElementById('monitor-bar');
@@ -114,6 +139,7 @@ function paint() {
     return;
   }
   bar.hidden = false;
+  applyCollapsed(bar);
   const listEl = bar.querySelector('.mon-list');
   if (!listEl) return;
   const list = visibleList();
@@ -177,7 +203,11 @@ function onClick(e) {
     const act = node.dataset.monAct;
     if (act === 'chart') openMonitorChart(node.dataset.id, node.dataset.name);
     else if (act === 'settings') openSettings('monitor');
-    else if (act === 'chart-first') {
+    else if (act === 'collapse') {
+      collapsed = !collapsed;
+      const bar = document.getElementById('monitor-bar');
+      if (bar) applyCollapsed(bar);
+    } else if (act === 'chart-first') {
       // 不传 printerId = 取全部设备里最近一次有记录的打印。
       // 以前写死「第一台」，而第一台常常是空闲/已完成、压根没有采样点，
       // 点「看曲线」永远落在空态上。

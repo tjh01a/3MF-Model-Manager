@@ -5,7 +5,7 @@ import { t as tr } from './i18n.js';
 import { state, setState, subscribe } from './state.js';
 import { api, emitRefresh, emitToast, whenBackendReady } from './api.js';
 import { escapeHtml, clamp, qs, fmtBytes } from './utils.js';
-import { mountGrid, renderGrid } from './views/grid.js';
+import { mountGrid, renderGrid, showSkeleton } from './views/grid.js';
 import { mountSidebar, renderSidebar } from './views/sidebar.js';
 import { applySidebar, toggleSidebar } from './components/sidebar-state.js';
 import { applyViewClass, invalidateGridCache } from './views/grid.js';
@@ -45,6 +45,7 @@ let refreshAgain = false;
 let pendingReason = 'init';
 let pendingHeavy = true;
 let bootDone = false;
+let skeletonTimer = null;
 
 /**
  * 纯 UI 变更（切网格/列表、主题、默认折叠、卡片尺寸…）不需要重新查库。
@@ -95,6 +96,8 @@ export function init() {
     bindGlobalKeys();
     bindDragDrop();
     bindTitlebar();
+    bindStatsFilters();
+    bindContentError();
     bindScanProgress();
     bindWindowClicks();
     subscribe(onState);
@@ -307,6 +310,12 @@ function bindRefresh() {
   // docs/14：耗材改价 / 增删会推 filaments:changed，卡片价格来自派生成本缓存，
   // 必须跟着重算。filaments.js 自己的保存流程也会 emitRefresh，这里覆盖外部调用路径。
   window.addEventListener('filaments:changed', () => emitRefresh('costs'));
+  // 首次向导完成后，可选配置入口直接打开对应面板（onboarding 不反向 import 设置页）。
+  window.addEventListener('shelf:open-setup', (e) => {
+    const tab = e && e.detail && e.detail.tab;
+    if (tab === 'slicers') openSettings('slicers');
+    else if (tab === 'filaments') openFilaments();
+  });
 }
 
 /**
@@ -450,6 +459,12 @@ async function doRefresh(reason) {
   }
 
   let ok = false;
+  // 空库首屏/慢查询：250ms 后还没有卡片才显示骨架，正常快路径不闪一下。
+  // 已有内容的筛选刷新不替换卡片，避免打断滚动和缩略图缓存。
+  if (!(state.items && state.items.length)) {
+    clearTimeout(skeletonTimer);
+    skeletonTimer = setTimeout(() => showSkeleton(6), 250);
+  }
   try {
     // 首屏 bootstrap 刚取过 stats / smartCounts，直接用，省掉两次全库遍历。
     // 之后的操作照常走 IPC，保证数据新鲜。
@@ -473,13 +488,17 @@ async function doRefresh(reason) {
       costs: costs || state.costs,
     }, 'refresh');
     ok = true;
-  } catch (_) { /* api 层已统一 toast */ }
+  } catch (_) { /* api 层已统一 toast，这里再把主区切到可重试的错误态 */ }
 
+  clearTimeout(skeletonTimer);
+  skeletonTimer = null;
   if (ok) {
     if (mode === 'normal') renderGrid();
     else if (mode === 'receipts') { invalidateGridCache(); renderReceipts(); }
     else { invalidateGridCache(); renderSpecialView(mode); }
     if (state.activeId) Promise.resolve(refreshDetail()).catch(() => {});
+  } else {
+    renderContentError();
   }
   renderSidebar();
   syncToolbar();
@@ -497,6 +516,60 @@ async function doRefresh(reason) {
 // ---------- 顶部统计条 ----------
 let lastStatsSig = '';
 let lastStatValues = null;   // 上一轮各项数值，用于「变化才弹一下」
+
+/** 统计项是否正好对应当前筛选，用来给按钮一个轻量选中态。 */
+function statFilterActive(key) {
+  const q = state.query || {};
+  // 统计按钮的选中态只看「非打印状态」的干扰条件；否则点「未打印」时，
+  // printStatuses 自身会让 noFacet 永远为 false，按钮永远不亮。
+  const noFacet = !q.keyword && !q.categoryId && !(q.tagIds && q.tagIds.length)
+    && !q.folderId && !q.favoritesOnly && !q.ratingMin && !(q.statuses && q.statuses.length);
+  const noPrint = noFacet && !(q.printStatuses && q.printStatuses.length);
+  if (key === 'total') return q.smart === 'all' && noPrint;
+  if (key === 'duplicates') return q.smart === 'duplicates';
+  if (key === 'favorites') return noPrint && !!q.favoritesOnly;
+  return noFacet && q.smart === 'all' && (q.printStatuses || []).length === 1
+    && q.printStatuses[0] === key;
+}
+
+/** 点统计 = 切换一个全库筛选；清掉分类/标签/关键词，避免「显示 189，列表 0」。 */
+function applyStatFilter(key) {
+  if (!key || key === 'size') return;
+  const next = {
+    ...state.query,
+    keyword: '',
+    categoryId: null,
+    tagIds: [],
+    folderId: null,
+    ratingMin: 0,
+    printStatuses: [],
+    statuses: [],
+    favoritesOnly: false,
+    smart: 'all',
+  };
+  if (key === 'duplicates') {
+    next.smart = 'duplicates';
+  } else if (key === 'favorites') {
+    next.favoritesOnly = true;
+  } else if (key !== 'total') {
+    next.printStatuses = [key];
+  }
+  setState({ query: next }, 'query');
+  renderStats();
+  renderSidebar();
+  emitRefresh('stat-filter');
+}
+
+function bindStatsFilters() {
+  const cells = qs('#stats-cells');
+  if (!cells) return;
+  cells.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('[data-stat-filter]') : null;
+    if (!btn || !cells.contains(btn)) return;
+    e.preventDefault();
+    applyStatFilter(btn.dataset.statFilter);
+  });
+}
 function renderStats() {
   const bar = qs('#stats-bar');
   const cells = qs('#stats-cells');
@@ -505,7 +578,10 @@ function renderStats() {
   const s = state.stats || {};
   // 统计条每次刷新都重建 7~9 个节点；数据没变就直接跳过（勾选态由 syncBulkbar 负责）
   const sig = JSON.stringify([ui.showStats !== false, s.total, s.totalSize,
-    s.byPrintStatus, s.favorites, s.duplicates, s.missing]);
+    s.byPrintStatus, s.favorites, s.duplicates, s.missing,
+    state.query.smart, state.query.keyword, state.query.categoryId,
+    state.query.tagIds, state.query.folderId, state.query.favoritesOnly,
+    state.query.ratingMin, state.query.printStatuses, state.query.statuses]);
   if (sig === lastStatsSig) { syncBulkbar(); return; }
   lastStatsSig = sig;
   if (ui.showStats === false || !s.total) {
@@ -518,14 +594,14 @@ function renderStats() {
   const by = s.byPrintStatus || {};
   const prevValues = lastStatValues || {};
   const list = [
-    { value: s.total || 0, label: tr('模型总数'), accent: true },
-    { value: fmtBytes(s.totalSize || 0), label: tr('占用空间') },
-    { value: by.unprinted || 0, label: tr('未打印') },
-    { value: by.queued || 0, label: tr('待打印') },
-    { value: by.printed || 0, label: tr('已完成') },
-    { value: s.favorites || 0, label: tr('收藏') },
+    { key: 'total', value: s.total || 0, label: tr('模型总数'), accent: true },
+    { key: 'size', value: fmtBytes(s.totalSize || 0), label: tr('占用空间') },
+    { key: 'unprinted', value: by.unprinted || 0, label: tr('未打印') },
+    { key: 'queued', value: by.queued || 0, label: tr('待打印') },
+    { key: 'printed', value: by.printed || 0, label: tr('已完成') },
+    { key: 'favorites', value: s.favorites || 0, label: tr('收藏') },
   ];
-  if (s.duplicates) list.push({ value: s.duplicates, label: tr('重复文件') });
+  if (s.duplicates) list.push({ key: 'duplicates', value: s.duplicates, label: tr('重复文件') });
   // 失效记录不再出现在主页面（含这个计数）：文件被删掉后列表里直接消失即可。
   // 需要清理 / 重新定位时走侧栏「失效文件」维护视图。
   // 数字变了就轻弹一下：扫描/分类/删除之后，用户能立刻看到「哪一项动了」。
@@ -535,9 +611,18 @@ function renderStats() {
     nextValues[c.label] = c.value;
     const prev = prevValues[c.label];
     const changed = prev !== undefined && String(prev) !== String(c.value);
-    return '<div class="stat' + (c.accent ? ' accent' : '') + (changed ? ' bump' : '') + '">' +
+    const active = c.key !== 'size' && statFilterActive(c.key);
+    const cls = 'stat' + (c.accent ? ' accent' : '') + (changed ? ' bump' : '')
+      + (active ? ' is-active' : '') + (c.key === 'size' ? ' is-static' : '');
+    if (c.key === 'size') {
+      return '<div class="' + cls + '"><span class="stat-value">' + escapeHtml(String(c.value)) +
+        '</span><span class="stat-label">' + escapeHtml(c.label) + '</span></div>';
+    }
+    return '<button type="button" class="' + cls + '" data-stat-filter="' + escapeHtml(c.key) +
+      '" aria-pressed="' + (active ? 'true' : 'false') + '" title="' +
+      escapeHtml(tr('按「') + c.label + tr('」筛选')) + '">' +
       '<span class="stat-value">' + escapeHtml(String(c.value)) + '</span>' +
-      '<span class="stat-label">' + escapeHtml(c.label) + '</span></div>';
+      '<span class="stat-label">' + escapeHtml(c.label) + '</span></button>';
   }).join('');
   lastStatValues = nextValues;
   cells.hidden = false;
@@ -546,6 +631,37 @@ function renderStats() {
 }
 
 // ---------- 空状态 / 状态栏 ----------
+function renderContentError() {
+  const content = qs('#content');
+  if (!content) return;
+  content.className = 'content-error';
+  content.innerHTML =
+    '<div class="content-error-card" role="alert">' +
+      '<span class="content-error-icon"><svg><use href="#i-alert"/></svg></span>' +
+      '<div><h3>' + escapeHtml(tr('模型库加载失败')) + '</h3>' +
+        '<p>' + escapeHtml(tr('请检查数据目录是否可访问，或点击重试。')) + '</p></div>' +
+      '<button type="button" class="btn btn-primary btn-sm" data-content-retry>' + escapeHtml(tr('重试')) + '</button>' +
+    '</div>';
+  const empty = qs('#empty-state');
+  if (empty) empty.hidden = true;
+}
+
+function bindContentError() {
+  const content = qs('#content');
+  if (!content) return;
+  content.addEventListener('click', (e) => {
+    const retry = e.target && e.target.closest ? e.target.closest('[data-content-retry]') : null;
+    if (!retry) return;
+    e.preventDefault();
+    emitRefresh('retry');
+  });
+}
+
+if (typeof window !== 'undefined') {
+  // 走查钩子：只读渲染用，不写库；自动化探针可验证错误态/骨架，不影响正常用户路径。
+  window.__printshelfShowContentError = renderContentError;
+}
+
 function updateEmptyState() {
   const empty = qs('#empty-state');
   if (!empty) return;
@@ -612,6 +728,16 @@ function updateEmptyState() {
     clearBtn.textContent = catEmpty ? tr('看看全部模型') : tr('清除筛选');
   }
 }
+if (typeof window !== 'undefined') {
+  // 只读测试钩子：配合 __printshelfSetItems 验证空库引导，不参与正常业务。
+  window.__printshelfUpdateEmptyState = updateEmptyState;
+  window.__printshelfForceEmptyLibrary = () => {
+    state.total = 0;
+    state.folders = [];
+    state.stats = Object.assign({}, state.stats, { total: 0 });
+    updateEmptyState();
+  };
+}
 function updateStatusBar() {
   const text = qs('#status-text');
   if (text) {
@@ -657,7 +783,9 @@ function updateLanguageButton() {
   const label = btn.querySelector('#lang-label');
   if (label) label.textContent = en ? 'EN' : '中';
   btn.setAttribute('title', tr(en ? 'language.switchToZh' : 'language.switchToEn'));
-  btn.setAttribute('aria-label', tr('language.label'));
+  // 按钮内部已有「中/EN + 切换语言」可见文案，让可访问名称直接来自内容，
+  // 避免 aria-label="Language" 与可见文字不一致（axe: label-content-name-mismatch）。
+  btn.removeAttribute('aria-label');
 }
 
 async function toggleLanguage() {
@@ -673,6 +801,40 @@ async function toggleLanguage() {
 
 function bindTitlebar() {
   bind('#btn-language', 'click', toggleLanguage);
+  // 更多菜单里的可见文字也要跟语言走：标题栏只有图标，菜单里是文字标签。
+  const relabelMore = (id, key, cut) => {
+    const el = qs('#' + id + ' .app-more-label');
+    if (!el) return;
+    const text = tr(key);
+    el.textContent = cut ? text.split(/[：:]/)[0].trim() : text;
+  };
+  relabelMore('btn-filaments', '耗材管理');
+  relabelMore('btn-roulette', '打印轮盘：随机挑一个未打印模型', true);
+  relabelMore('btn-language', 'language.label');
+  relabelMore('btn-theme', '主题');
+  relabelMore('btn-settings', '设置');
+  // 次要动作收进“更多”菜单；按钮 id 全部保留，原有面板绑定不变。
+  const moreBtn = qs('#btn-app-more');
+  const morePanel = qs('#app-more-panel');
+  const setMoreOpen = (open) => {
+    if (!moreBtn || !morePanel) return;
+    morePanel.hidden = !open;
+    moreBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  if (moreBtn && morePanel) {
+    bind('#btn-app-more', 'click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setMoreOpen(morePanel.hidden);
+    });
+    morePanel.addEventListener('click', () => setMoreOpen(false));
+    document.addEventListener('click', (e) => {
+      if (morePanel.hidden) return;
+      if (e.target === moreBtn || moreBtn.contains(e.target)) return;
+      if (morePanel.contains(e.target)) return;
+      setMoreOpen(false);
+    });
+  }
   bind('#btn-quick-add', 'click', quickAdd);
   bind('#empty-add', 'click', quickAdd);
   bind('#empty-demo', 'click', addDemo);
@@ -963,11 +1125,28 @@ async function globalUndo() {
   emitToast('success', tr('已撤销'));
   emitRefresh('undo');
 }
+function closeAppMore() {
+  const panel = qs('#app-more-panel');
+  const btn = qs('#btn-app-more');
+  if (!panel || panel.hidden) return false;
+  panel.hidden = true;
+  if (btn) {
+    btn.setAttribute('aria-expanded', 'false');
+    btn.focus();
+  }
+  return true;
+}
 function handleEsc(e) {
   // 逐层关闭：自建表单 > 向导 > 灯箱 > 弹窗 > 菜单 > 设置 > 详情 > 清空选择，只关一层。
   if (typeof window !== 'undefined') {
     const d = (window.__printshelfKeys = window.__printshelfKeys || {});
     d.escSeen = (d.escSeen || 0) + 1;
+  }
+  // 「更多」是标题栏里的一层浮层：先于详情/选择关闭，避免 Esc 一次退两层。
+  if (closeAppMore()) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    return;
   }
   // 设备页 promptForm 自建的 .ow-backdrop 不在 modal 栈里：先取消它并截断事件，
   // 否则会连底下的设备面板一起关掉（表单还留在屏幕上）。
@@ -1015,6 +1194,9 @@ function onKey(e) {
 
   // Esc 是唯一的例外：逐层关闭由 handleEsc 统一处理
   if (e.key === 'Escape') { handleEsc(e); return; }
+  // 卡片自己用 Space 勾选（grid.js 的卡片级键盘契约）。全局 Space 是「看大图」，
+  // 但焦点在卡片上时应优先勾选，否则每勾一次都会弹一次灯箱。
+  if ((e.key === ' ' || e.key === 'Spacebar') && e.target && e.target.closest && e.target.closest('.card')) return;
   if (isOverlayOpen()) {
     if (typeof window !== 'undefined') {
       const d = (window.__printshelfKeys = window.__printshelfKeys || {});

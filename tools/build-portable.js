@@ -420,6 +420,8 @@ function main() {
       // launch.js 在开发模式下会生成带图标的 PrintShelf-dev.exe；
       // 它只是本机调试用的副本（约 180MB），绝不能进发布包。
       if (/^PrintShelf-dev.*\.exe$/i.test(name)) continue;
+      // 开发版可能把本机模型库/缩略图写进 electron/dist/data，绝不能打进发布包。
+      if (name === 'data' || name === 'debug.log') continue;
       if (name === 'resources') continue;
       copyTree(src, path.join(OUT_DIR, name), { skipRoot: true });
     }

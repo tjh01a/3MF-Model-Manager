@@ -316,24 +316,23 @@ function cardHtml(m) {
   }
 
   // 勾选态不写进 HTML：由 syncSelectionDom() 统一刷，这样勾一张卡不会让所有卡片重建
-  return '<article class="card"' + catStyle + ' data-id="' + id + '" tabindex="0" draggable="true">' +
+  return '<article class="card"' + catStyle + ' data-id="' + id + '" tabindex="0" draggable="true" role="group" aria-label="' + title + '">' +
     '<div class="card-media">' +
-      '<img class="card-img" src="' + src + '" loading="lazy" alt="">' +
-      '<label class="card-check"><input type="checkbox" class="card-cb"></label>' +
-      '<button class="card-fav' + (m.favorite ? ' is-fav' : '') + tr('" data-act="fav" title="收藏">') + icon('i-star') + '</button>' +
+      '<img class="card-img" src="' + src + '" loading="lazy" decoding="async" alt="">' +
+      '<label class="card-check" title="' + tr('选择这个模型') + '"><input type="checkbox" class="card-cb" aria-label="' + tr('选择 ') + title + '"></label>' +
+      tr('<button class="card-fav' + (m.favorite ? ' is-fav' : '') + '" data-act="fav" title="收藏" aria-pressed="') +
+        (m.favorite ? 'true' : 'false') + '">' + icon('i-star') + '</button>' +
       '<div class="card-badges">' + badges.join('') + '</div>' +
       colorsHtml(meta) +
+      // 可见动作只留三个：切片打开、来源网页、更多。删除/定位/复制路径全部进“更多”菜单，
+      // 避免 hover 时底部工具条盖住状态徽标，也减少误点删除。
       '<div class="card-quick">' +
-        // 常态高亮的主按钮：悬停弹出「拓竹 / Orca（快造）/ Orca（官方）」三选一，直接点按默认方式打开
         '<span class="q-open-wrap">' +
           tr('<button data-act="open" class="q-open" title="用切片软件打开（悬停可选拓竹 / Orca）">') + icon('i-printer') + '</button>' +
         '</span>' +
-        // 浏览器图标：有来源链接就打开原网页；没有就静默无反应（不做假动作）
         '<button data-act="source"' + sourceClass + sourceUrlAttr +
           ' title="' + (srcUrl ? tr('在浏览器打开来源网页') : tr('没有来源链接')) + '">' + icon('i-globe') + '</button>' +
-        tr('<button data-act="reveal" title="在资源管理器中显示">') + icon('i-folder-open') + '</button>' +
-        tr('<button data-act="trash" class="q-del" title="删除（移入系统回收站）">') + icon('i-trash') + '</button>' +
-        tr('<button data-act="more" title="更多">') + icon('i-more') + '</button>' +
+        tr('<button data-act="more" title="更多操作">') + icon('i-more') + '</button>' +
       '</div>' +
     '</div>' +
     '<div class="card-info">' +
@@ -410,12 +409,39 @@ export function applyViewClass() {
 // 轻量诊断计数：走查探针据此量化「全量重建 vs 增量替换」，常态开销只有一次 performance.now()
 if (typeof window !== 'undefined') {
   window.__printshelfRender = { full: 0, patch: 0, lastMs: 0, lastMode: '', replaced: 0 };
+  // 走查钩子：只渲染占位，不写库；自动化探针据此验证加载态。
+  window.__printshelfShowSkeleton = (n) => showSkeleton(n);
   // 走查用：卡片上的眼睛按钮已改成「打开来源网页」，--ui=lightbox 场景改从这里开大图。
   // 产品逻辑不依赖它，键盘 Space 与右键菜单「大图预览」才是正式入口。
   window.__printshelfPreviewFirst = () => {
     const ids = visibleItems().map((x) => x.id);
     if (ids.length) openLightbox(ids, 0);
   };
+  // 仅自动化性能测试：直接喂内存 items 并重建网格，不写库、不发 IPC。
+  // 页面关掉就恢复；正式交互仍走 doRefresh → renderGrid。
+  window.__printshelfSetItems = (items) => {
+    state.items = Array.isArray(items) ? items : [];
+    state.total = state.items.length;
+    renderGrid();
+    const d = window.__printshelfRender || {};
+    return { cards: qsa('.card', qs('#content')).length, ms: d.lastMs, mode: d.lastMode };
+  };
+}
+
+/** 首屏/空库慢查询骨架：只画占位，不碰 state，也不发 IPC。 */
+export function showSkeleton(count) {
+  const content = qs('#content');
+  if (!content) return;
+  const n = Math.max(1, Math.min(12, Number(count) || 6));
+  const card = '<div class="skeleton-card" aria-hidden="true">' +
+    '<div class="skeleton skeleton-media"></div>' +
+    '<div class="skeleton skeleton-line"></div>' +
+    '<div class="skeleton skeleton-line short"></div>' +
+  '</div>';
+  content.className = 'content-grid skeleton-grid';
+  content.innerHTML = new Array(n).fill(card).join('');
+  // 骨架不是真实卡片：让下一次 renderGrid 走全量替换，避免拿真实 items 去 patch 占位节点。
+  lastRender = { cls: '', items: [], sig: [] };
 }
 
 export function renderGrid() {
@@ -655,6 +681,21 @@ function onContextMenu(e) {
   const id = card.dataset.id;
   openMenu(e.clientX, e.clientY, menuItemsFor(state.selection.has(id) ? Array.from(state.selection) : [id]));
 }
+/** 卡片键盘契约：Enter 看详情，Space 勾选；避免焦点落在卡片后按 Space 误开灯箱。 */
+function onKeyDown(e) {
+  const card = e.target && e.target.closest ? e.target.closest('.card') : null;
+  if (!card) return;
+  if (e.target.closest('button, input, textarea, select, a, label')) return;
+  const id = card.dataset.id;
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    Promise.resolve(openDetail(id)).catch(() => {});
+  } else if (e.key === ' ' || e.key === 'Spacebar') {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleSelect(id);
+  }
+}
 function onChange(e) {
   if (!e.target || !e.target.classList || !e.target.classList.contains('card-cb')) return;
   const card = e.target.closest('.card');
@@ -806,6 +847,7 @@ export function mountGrid() {
   content.addEventListener('click', onClick);
   content.addEventListener('dblclick', onDblClick);
   content.addEventListener('contextmenu', onContextMenu);
+  content.addEventListener('keydown', onKeyDown);
   content.addEventListener('change', onChange);
   content.addEventListener('error', onImgError, true);
   content.addEventListener('dragstart', onDragStart);

@@ -148,20 +148,31 @@ function render(m) {
       '</div>';
   }
 
-  // 大图 + 按钮组
+  // 标题 + 状态 + 主操作放最上面，并 sticky：打开详情第一眼先看到“这是什么”，
+  // 而不是先看到大图和 8 个平铺按钮。其余动作收进“更多”，避免 360px 面板换行成三排。
   parts.push(
-    '<div class="detail-preview">' +
-      '<img class="detail-hero" src="' + (m.thumbnail ? esc('shelf://thumbs/' + m.thumbnail) : 'assets/placeholder.svg') + '" alt="' + esc(title) + '">' +
-      '<div class="detail-actions">' +
+    '<div class="detail-summary">' +
+      '<div class="detail-titlebar">' +
+        tr('<h2 class="detail-title" data-act="title" title="点击重命名">') + esc(title) +
+          '<span class="detail-title-edit">' + icon('i-edit') + '</span></h2>' +
+        '<div class="detail-status-row">' +
+          '<span class="badge status-' + esc(m.printStatus || 'unprinted') + tr('" data-act="status-cycle" title="点击循环切换状态" style="--badge-color:') + esc(ps.color) + '">' + esc(ps.label) + '</span>' +
+          tr('<button type="button" class="link-btn" data-act="status-pick">手动选择</button>') +
+        '</div>' +
+      '</div>' +
+      '<div class="detail-actions detail-summary-actions">' +
         textBtn('open', 'i-printer', tr('用切片软件打开'), 'btn btn-primary btn-sm', tr('使用默认切片软件打开')) +
         textBtn('meshopt', 'i-sparkle', tr('体检 / 优化'), 'btn btn-ghost btn-sm', tr('分析网格并优化表面质量（生成新的 3MF，原文件不动）')) +
         iconBtn('open-menu', 'i-chevron-down', tr('选择切片软件')) +
-        iconBtn('reveal', 'i-folder-open', tr('在资源管理器中显示')) +
-        iconBtn('copyPath', 'i-copy', tr('复制路径')) +
-        iconBtn('preview', 'i-image', tr('大图预览')) +
-        iconBtn('fav', 'i-star', m.favorite ? tr('取消收藏') : tr('收藏')) +
         iconBtn('more', 'i-more', tr('更多操作')) +
       '</div>' +
+    '</div>'
+  );
+
+  // 大图（动作已上移到 sticky 摘要，不再从底部滑出工具条）
+  parts.push(
+    '<div class="detail-preview">' +
+      '<img class="detail-hero" src="' + (m.thumbnail ? esc('shelf://thumbs/' + m.thumbnail) : 'assets/placeholder.svg') + '" alt="' + esc(title) + '">' +
     '</div>'
   );
   if (dupSectionHtml) parts.push(dupSectionHtml);
@@ -170,18 +181,6 @@ function render(m) {
   parts.push('<div class="detail-section detail-alias-section" id="detail-aliases" hidden></div>');
   // I · 模型护照（许可 / 作者 / 商用判断），异步填
   parts.push('<div class="detail-section" id="detail-passport" hidden></div>');
-
-  // 标题 + 打印状态徽标
-  parts.push(
-    '<div class="detail-titlebar">' +
-      tr('<h2 class="detail-title" data-act="title" title="点击重命名">') + esc(title) +
-        '<span class="detail-title-edit">' + icon('i-edit') + '</span></h2>' +
-      '<div class="detail-status-row">' +
-        '<span class="badge status-' + esc(m.printStatus || 'unprinted') + tr('" data-act="status-cycle" title="点击循环切换状态" style="--badge-color:') + esc(ps.color) + '">' + esc(ps.label) + '</span>' +
-        tr('<button type="button" class="link-btn" data-act="status-pick">手动选择</button>') +
-      '</div>' +
-    '</div>'
-  );
 
   // 失效提示
   if (m.status && m.status !== 'ok') {
@@ -640,6 +639,12 @@ async function doCopyPath(id) {
 
 function openMoreMenu(id, m, node) {
   const items = [
+    { label: tr('大图预览'), icon: 'i-image', action: () => openLightbox([id], 0) },
+    { label: tr('在资源管理器中显示'), icon: 'i-folder-open', action: () => doReveal(id) },
+    { label: tr('复制路径'), icon: 'i-copy', action: () => doCopyPath(id) },
+    { label: m && m.favorite ? tr('取消收藏') : tr('收藏'), icon: 'i-star', action: () => toggleFav(id, m) },
+    { label: tr('体检 / 优化…'), icon: 'i-sparkle', action: () => openMeshOpt(id) },
+    { divider: true },
     { label: tr('重命名'), icon: 'i-edit', action: () => editTitle(id, m) },
     { label: tr('修改磁盘文件名'), icon: 'i-edit', action: () => renameFile(id, m) },
     { divider: true },
